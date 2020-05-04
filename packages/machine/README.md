@@ -1,64 +1,46 @@
-# @turing-machine-js/machine
+# @post-machine-js/machine
 
-[![Build Status](https://travis-ci.com/mellonis/turing-machine-js.svg?branch=master)](https://travis-ci.com/mellonis/turing-machine-js)
-![npm (scoped)](https://img.shields.io/npm/v/@turing-machine-js/machine)
+[![Build Status](https://travis-ci.com/mellonis/post-machine-js.svg?branch=master)](https://travis-ci.com/mellonis/post-machine-js)
+![npm (scoped)](https://img.shields.io/npm/v/@post-machine-js/machine)
 
-Some basic objects to build your own turing machine  
+Some basic objects to build your own post machine  
 
 ## Install
 
 Using npm:
 
 ```sh
-npm install @turing-machine-js/machine
+npm install @post-machine-js/machine
 ```
 
 or using yarn:
 
 ```sh
-yarn add @turing-machine-js/machine
+yarn add @post-machine-js/machine
 ```
 
 ## Classes
 
-### Alphabet
-
-### Command
-
-### Reference
-
-### State
+### PostMachine
 
 ### Tape
 
-### TuringMachine
+This class is reexported from the [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/next/packages/machine) library  
 
-## Special objects
+## Constants
 
-### haltState
+* `blankSymbol` - the blank symbol, ` ` (space)
+* `markSymbol` - the mark symbol, `*`
 
-A special state for stopping the machine
+## Commands
 
-### ifOtherSymbol
-
-A special symbol for representing the other symbols in `State` class definition
-
-### movements
-
-* left - move the head to the left
-* right - move the head to the right
-* stay - do not move the head
-
-### symbolCommands
-
-* erase - write the blank symbol
-* keep - leave the current symbol
-
-## Libraries
-
-- [@turing-machine-js/library-binary-numbers](https://github.com/mellonis/turing-machine-js/tree/master/packages/library-binary-numbers)
-
+* `left`/`left(ix)` - move the carriage to the left and go to the `next`/`ix` instruction
+* `right`/`right(ix)` - move the carriage to the right and go to the `next`/`ix` instruction
+* `mark`/`mark(ix)` - put the mark symbol into current tape section and go to the `next`/`ix` instruction
+* `erase`/`erase(ix)` - put the blank symbol into current tape section and go to the `next`/`ix` instruction 
+* `check(ix1,ix0)` - if current tape section marked go to `ix1` instruction or go to `ix0` instruction otherwise
+* `stop` - stop the machine
 
 ## Links
 
-- [Turing Machine](https://en.wikipedia.org/wiki/Turing_machine) on the Wikipedia
+- [Post–Turing machine](https://en.wikipedia.org/wiki/Post–Turing_machine) on the Wikipedia
