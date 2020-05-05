@@ -43,7 +43,7 @@ export default class PostMachine extends TuringMachine {
   }
 
   * runStepByStep({ stepsLimit = 1e5 } = {}) {
-    yield* super.runStepByStep(this.#initialState, stepsLimit);
+    yield* super.runStepByStep({ initialState: this.#initialState, stepsLimit });
   }
 
   get tape() {

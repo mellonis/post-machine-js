@@ -1885,9 +1885,9 @@
     "@sinonjs/commons" "^1.7.0"
 
 "@turing-machine-js/machine@^0.3.0-alpha.2":
-  version "0.3.0-alpha.2"
-  resolved "https://registry.yarnpkg.com/@turing-machine-js/machine/-/machine-0.3.0-alpha.2.tgz#ca031b2c976c636b00818f9bc819027e15541b33"
-  integrity sha512-GjOoKCAHwADHxIfCC1t56Q9/0b6RLcHEHXJq7ARZbi7dbyddyr8RlrQEk9/Nu/4H2ve76y2CoCg4fMPNBtWXyQ==
+  version "0.3.0-alpha.3"
+  resolved "https://registry.yarnpkg.com/@turing-machine-js/machine/-/machine-0.3.0-alpha.3.tgz#1fd2b85f40c2c8d713d4c0e9a993a8d6008a826a"
+  integrity sha512-hEY9tXHmlZ/NJlCP5zOS+sc2mfsJCnOLeFdGtE+xsewlUAYnvp7MXVnVVVdp09VwjWmAtxGnuky2DDl+AUUPWA==
 
 "@types/babel__core@^7.1.7":
   version "7.1.7"
