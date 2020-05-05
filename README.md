@@ -5,7 +5,7 @@
 
 A convenient Post machine.
 
-Under the hood, the `PostMachine` class builds some `State`s for `TuringMachine` from provided instructions. When you run it, it runs the build TuringMachine. 
+Under the hood, the `PostMachine` class builds some `State`s for `TuringMachine` from provided instructions. When you run it, it runs the built TuringMachine. 
 
 This repository contains following packages:
 * [@post-machine-js/machine](https://github.com/mellonis/post-machine-js/tree/master/packages/machine)
