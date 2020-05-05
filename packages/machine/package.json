@@ -1,6 +1,6 @@
 {
   "name": "@post-machine-js/machine",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "description": "A convenient Turing machine",
   "author": "Ruslan Gilmullin <mellonis14@gmain.com>",
   "homepage": "https://github.com/mellonis/post-machine-js#readme",
