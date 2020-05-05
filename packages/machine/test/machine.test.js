@@ -1,5 +1,5 @@
 import PostMachine, {
-  left, right, mark, erase, check, stop, Tape,
+  call, check, erase, left, mark, noop, right, stop, Tape,
 } from '@post-machine-js/machine';
 
 describe('constructor', () => {
@@ -15,17 +15,17 @@ describe('constructor', () => {
       new PostMachine({});
     })
       .toThrow('there is no instructions');
-  });
 
-  test('invalid indexes', () => {
     expect(() => {
       // eslint-disable-next-line no-new
       new PostMachine({
         a: null, // not integer index
       });
     })
-      .toThrow('invalid instruction index(es)');
+      .toThrow('there is no instructions');
+  });
 
+  test('invalid indexes', () => {
     expect(() => {
       // eslint-disable-next-line no-new
       new PostMachine({
@@ -216,7 +216,7 @@ describe('run tests', () => {
   });
 
   test('last and next command', () => {
-    [left, right, mark, erase].forEach((fn) => {
+    [left, right, mark, erase, noop].forEach((fn) => {
       const machine1 = new PostMachine({
         10: fn,
       });
@@ -250,6 +250,130 @@ describe('run tests', () => {
       expect(onStepMock3.mock.calls.length).toBe(1);
       expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
       expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+    });
+  });
+
+  describe('the \'call\' command', () => {
+    test('non integer keys', () => {
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          subroutine: {
+            10: stop,
+          },
+          10: stop,
+        });
+      })
+        .not.toThrow();
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          subroutine: {
+            subSubroutine: {
+              10: stop,
+            },
+            10: stop,
+          },
+          10: stop,
+        });
+      })
+        .toThrow('invalid instruction index(es)');
+    });
+
+    test('an undefined subroutine call', () => {
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          subroutine: {
+            10: stop,
+          },
+          10: call('undefinedSubroutine'),
+        });
+      })
+        .toThrow(/^undefined '.*?' subroutine$/);
+    });
+
+    test('a subroutine call', () => {
+      const machine = new PostMachine({
+        ToRightAndMark: {
+          10: right,
+          20: mark,
+        },
+        10: call('ToRightAndMark'),
+        20: call('ToRightAndMark'),
+        30: call('ToRightAndMark'),
+      });
+
+      expect(() => {
+        machine.run();
+      })
+        .not.toThrow();
+
+      expect(machine.tape.symbolList.join('').trim())
+        .toBe('***');
+    });
+
+    test('subroutine call order', () => {
+      const subroutines = {
+        ToBegin: {
+          10: left,
+          20: check(10, 30),
+          30: right,
+        },
+        ToEnd: {
+          10: right,
+          20: check(10, 30),
+          30: left,
+        },
+      };
+
+      const machineList = [
+        new PostMachine({
+          ...subroutines,
+          10: call('ToBegin'),
+          20: call('ToEnd'),
+          30: erase,
+        }),
+        new PostMachine({
+          ...subroutines,
+          10: call('ToEnd'),
+          20: call('ToBegin'),
+          30: erase,
+        }),
+        new PostMachine({
+          ...subroutines,
+          10: noop(30),
+          20: call('ToEnd', 40),
+          30: call('ToBegin', 20),
+          40: erase,
+        }),
+        new PostMachine({
+          ...subroutines,
+          10: noop(30),
+          20: call('ToBegin', 40),
+          30: call('ToEnd', 20),
+          40: erase,
+        }),
+      ];
+
+      expect(() => {
+        machineList.forEach((machine) => {
+          // eslint-disable-next-line no-param-reassign
+          machine.tape = new Tape({
+            alphabet: machine.tape.alphabet,
+            symbolList: '***  *'.split(''),
+          });
+          machine.run();
+        });
+      })
+        .not.toThrow();
+      expect(machineList.map((machine) => machine.tape.symbolList.join('').trim()))
+        .toEqual(machineList.map((_, ix) => (
+          ix % 2 === 0
+            ? '**   *'
+            : '**  *'
+        )));
     });
   });
 });

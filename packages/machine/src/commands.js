@@ -3,179 +3,52 @@ import {
 } from '@turing-machine-js/machine';
 import { blankSymbol, defaultNextInstructionIndex, markSymbol } from './consts';
 
-function leftFn({
-  instructionIndex, nextInstructionIndex, references, states,
+function callCommandStateProducer({
+  instructionIndex, nextInstructionIndex, references, states, subroutineInitialStates,
 }) {
-  let nextState;
+  const { subroutineName } = this;
 
-  if (this.nextInstructionIndex === defaultNextInstructionIndex) {
-    this.nextInstructionIndex = nextInstructionIndex;
+  if (!Object.prototype.hasOwnProperty.call(subroutineInitialStates, subroutineName)) {
+    throw new Error(`undefined '${subroutineName}' subroutine`);
   }
 
-  if (this.nextInstructionIndex == null) {
+  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+  let nextState;
+
+  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+    boundNextInstructionIndex = nextInstructionIndex;
+  }
+
+  if (boundNextInstructionIndex == null) {
     nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, this.nextInstructionIndex)) {
-    if (instructionIndex === this.nextInstructionIndex) {
+  } else if (Object.prototype.hasOwnProperty.call(references, boundNextInstructionIndex)) {
+    if (instructionIndex === boundNextInstructionIndex) {
       throw new Error(`infinite loop at instruction ${instructionIndex}`);
     }
 
-    nextState = references[this.nextInstructionIndex];
+    nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${this.nextInstructionIndex}`);
+    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
   }
 
-  const hash = `:leftFn:${this.nextInstructionIndex}:`;
+  const hash = `:callFn:${boundNextInstructionIndex}:`;
 
   if (states.has(hash)) {
     return states.get(hash);
   }
 
-  const state = new State({
+  const state = subroutineInitialStates[subroutineName].withOverrodeHaltState(new State({
     [ifOtherSymbol]: {
-      command: [
-        {
-          movement: movements.left,
-        },
-      ],
       nextState,
     },
-  }, instructionIndex);
+  }));
 
   states.set(hash, state);
 
   return state;
 }
 
-function rightFn({
-  instructionIndex, nextInstructionIndex, references, states,
-}) {
-  let nextState;
-
-  if (this.nextInstructionIndex === defaultNextInstructionIndex) {
-    this.nextInstructionIndex = nextInstructionIndex;
-  }
-
-  if (this.nextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, this.nextInstructionIndex)) {
-    if (instructionIndex === this.nextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
-    }
-
-    nextState = references[this.nextInstructionIndex];
-  } else {
-    throw new Error(`invalid instruction index: ${this.nextInstructionIndex}`);
-  }
-
-  const hash = `:rightFn:${this.nextInstructionIndex}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash);
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          movement: movements.right,
-        },
-      ],
-      nextState,
-    },
-  }, instructionIndex);
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function markFn({
-  instructionIndex, nextInstructionIndex, references, states,
-}) {
-  let nextState;
-
-  if (this.nextInstructionIndex === defaultNextInstructionIndex) {
-    this.nextInstructionIndex = nextInstructionIndex;
-  }
-
-  if (this.nextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, this.nextInstructionIndex)) {
-    if (instructionIndex === this.nextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
-    }
-
-    nextState = references[this.nextInstructionIndex];
-  } else {
-    throw new Error(`invalid instruction index: ${this.nextInstructionIndex}`);
-  }
-
-  const hash = `:markFn:${this.nextInstructionIndex}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash);
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          symbol: markSymbol,
-        },
-      ],
-      nextState,
-    },
-  }, instructionIndex);
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function eraseFn({
-  instructionIndex, nextInstructionIndex, references, states,
-}) {
-  let nextState;
-
-  if (this.nextInstructionIndex === defaultNextInstructionIndex) {
-    this.nextInstructionIndex = nextInstructionIndex;
-  }
-
-  if (this.nextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, this.nextInstructionIndex)) {
-    if (instructionIndex === this.nextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
-    }
-
-    nextState = references[this.nextInstructionIndex];
-  } else {
-    throw new Error(`invalid instruction index: ${this.nextInstructionIndex}`);
-  }
-
-  const hash = `:eraseFn:${this.nextInstructionIndex}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash);
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          symbol: blankSymbol,
-        },
-      ],
-      nextState,
-    },
-  }, instructionIndex);
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function checkFn({
+function checkCommandStateProducer({
   instructionIndex, references, states, tapeBlock,
 }) {
   const { nextInstructionIndexIfMarked, nextInstructionIndexOtherwise } = this;
@@ -219,42 +92,231 @@ function checkFn({
   return state;
 }
 
-export function left(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+function eraseCommandStateProducer({
+  instructionIndex, nextInstructionIndex, references, states,
+}) {
+  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+  let nextState;
+
+  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+    boundNextInstructionIndex = nextInstructionIndex;
   }
 
-  return leftFn.bind({
-    nextInstructionIndex,
-  });
+  if (boundNextInstructionIndex == null) {
+    nextState = haltState;
+  } else if (Object.prototype.hasOwnProperty.call(references, boundNextInstructionIndex)) {
+    if (instructionIndex === boundNextInstructionIndex) {
+      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    }
+
+    nextState = references[boundNextInstructionIndex];
+  } else {
+    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+  }
+
+  const hash = `:eraseFn:${boundNextInstructionIndex}:`;
+
+  if (states.has(hash)) {
+    return states.get(hash);
+  }
+
+  const state = new State({
+    [ifOtherSymbol]: {
+      command: [
+        {
+          symbol: blankSymbol,
+        },
+      ],
+      nextState,
+    },
+  }, instructionIndex);
+
+  states.set(hash, state);
+
+  return state;
 }
 
-export function right(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+function leftCommandStateProducer({
+  instructionIndex, nextInstructionIndex, references, states,
+}) {
+  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+  let nextState;
+
+  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+    boundNextInstructionIndex = nextInstructionIndex;
   }
 
-  return rightFn.bind({
-    nextInstructionIndex,
-  });
+  if (boundNextInstructionIndex == null) {
+    nextState = haltState;
+  } else if (Object.prototype.hasOwnProperty.call(references, boundNextInstructionIndex)) {
+    if (instructionIndex === boundNextInstructionIndex) {
+      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    }
+
+    nextState = references[boundNextInstructionIndex];
+  } else {
+    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+  }
+
+  const hash = `:leftFn:${boundNextInstructionIndex}:`;
+
+  if (states.has(hash)) {
+    return states.get(hash);
+  }
+
+  const state = new State({
+    [ifOtherSymbol]: {
+      command: [
+        {
+          movement: movements.left,
+        },
+      ],
+      nextState,
+    },
+  }, instructionIndex);
+
+  states.set(hash, state);
+
+  return state;
 }
 
-export function mark(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+function markCommandStateProducer({
+  instructionIndex, nextInstructionIndex, references, states,
+}) {
+  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+  let nextState;
+
+  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+    boundNextInstructionIndex = nextInstructionIndex;
   }
 
-  return markFn.bind({
-    nextInstructionIndex,
-  });
+  if (boundNextInstructionIndex == null) {
+    nextState = haltState;
+  } else if (Object.prototype.hasOwnProperty.call(references, boundNextInstructionIndex)) {
+    if (instructionIndex === boundNextInstructionIndex) {
+      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    }
+
+    nextState = references[boundNextInstructionIndex];
+  } else {
+    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+  }
+
+  const hash = `:markFn:${boundNextInstructionIndex}:`;
+
+  if (states.has(hash)) {
+    return states.get(hash);
+  }
+
+  const state = new State({
+    [ifOtherSymbol]: {
+      command: [
+        {
+          symbol: markSymbol,
+        },
+      ],
+      nextState,
+    },
+  }, instructionIndex);
+
+  states.set(hash, state);
+
+  return state;
 }
 
-export function erase(nextInstructionIndex) {
+function noopCommandStateProducer({
+  instructionIndex, nextInstructionIndex, references, states,
+}) {
+  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+  let nextState;
+
+  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+    boundNextInstructionIndex = nextInstructionIndex;
+  }
+
+  if (boundNextInstructionIndex == null) {
+    nextState = haltState;
+  } else if (Object.prototype.hasOwnProperty.call(references, boundNextInstructionIndex)) {
+    if (instructionIndex === boundNextInstructionIndex) {
+      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    }
+
+    nextState = references[boundNextInstructionIndex];
+  } else {
+    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+  }
+
+  const hash = `:noopFn:${boundNextInstructionIndex}:`;
+
+  if (states.has(hash)) {
+    return states.get(hash);
+  }
+
+  const state = new State({
+    [ifOtherSymbol]: {
+      nextState,
+    },
+  }, instructionIndex);
+
+  states.set(hash, state);
+
+  return state;
+}
+function rightCommandStateProducer({
+  instructionIndex, nextInstructionIndex, references, states,
+}) {
+  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+  let nextState;
+
+  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+    boundNextInstructionIndex = nextInstructionIndex;
+  }
+
+  if (boundNextInstructionIndex == null) {
+    nextState = haltState;
+  } else if (Object.prototype.hasOwnProperty.call(references, boundNextInstructionIndex)) {
+    if (instructionIndex === boundNextInstructionIndex) {
+      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    }
+
+    nextState = references[boundNextInstructionIndex];
+  } else {
+    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+  }
+
+  const hash = `:rightFn:${boundNextInstructionIndex}:`;
+
+  if (states.has(hash)) {
+    return states.get(hash);
+  }
+
+  const state = new State({
+    [ifOtherSymbol]: {
+      command: [
+        {
+          movement: movements.right,
+        },
+      ],
+      nextState,
+    },
+  }, instructionIndex);
+
+  states.set(hash, state);
+
+  return state;
+}
+
+export function call(subroutineName, nextInstructionIndex = defaultNextInstructionIndex) {
+  if (typeof subroutineName !== 'string' || !subroutineName.trim()) {
+    throw new Error('invalid subroutine name');
+  }
+
   if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
     throw new Error('invalid instruction index');
   }
 
-  return eraseFn.bind({
+  return callCommandStateProducer.bind({
+    subroutineName,
     nextInstructionIndex,
   });
 }
@@ -268,9 +330,59 @@ export function check(nextInstructionIndexIfMarked, nextInstructionIndexOtherwis
     throw new Error(`invalid instruction index: ${nextInstructionIndexOtherwise}`);
   }
 
-  return checkFn.bind({
+  return checkCommandStateProducer.bind({
     nextInstructionIndexIfMarked,
     nextInstructionIndexOtherwise,
+  });
+}
+
+export function erase(nextInstructionIndex) {
+  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('invalid instruction index');
+  }
+
+  return eraseCommandStateProducer.bind({
+    nextInstructionIndex,
+  });
+}
+
+export function left(nextInstructionIndex) {
+  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('invalid instruction index');
+  }
+
+  return leftCommandStateProducer.bind({
+    nextInstructionIndex,
+  });
+}
+
+export function mark(nextInstructionIndex) {
+  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('invalid instruction index');
+  }
+
+  return markCommandStateProducer.bind({
+    nextInstructionIndex,
+  });
+}
+
+export function noop(nextInstructionIndex) {
+  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('invalid instruction index');
+  }
+
+  return noopCommandStateProducer.bind({
+    nextInstructionIndex,
+  });
+}
+
+export function right(nextInstructionIndex) {
+  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('invalid instruction index');
+  }
+
+  return rightCommandStateProducer.bind({
+    nextInstructionIndex,
   });
 }
 
@@ -279,7 +391,7 @@ export function stop(nextInstructionIndex) {
     throw new Error('invalid \'stop\' command usage');
   }
 
-  return function stopFn() {
+  return function stopCommandStateProducer() {
     return haltState;
   };
 }
