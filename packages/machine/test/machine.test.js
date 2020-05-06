@@ -547,19 +547,21 @@ describe('run tests', () => {
     });
   });
 
-  test('subsubroutines', () => {
+  test('sub-subroutines', () => {
+    const ixList = getIxRange(2);
+    const subroutineNameList = [...Array(2)].map((_, ix) => `sr${ixList[0] + ix}`);
     const machine = new PostMachine({
-      sr1: {
-        sr1: {
-          10: erase,
+      [subroutineNameList[0]]: {
+        [subroutineNameList[0]]: {
+          [ixList[1]]: erase,
         },
-        10: call('sr2'),
-        20: call('sr1'),
+        [ixList[1]]: call([subroutineNameList[1]]),
+        [ixList[2]]: call([subroutineNameList[0]]),
       },
-      sr2: {
-        10: mark,
+      [subroutineNameList[1]]: {
+        [ixList[1]]: mark,
       },
-      10: call('sr1'),
+      [ixList[1]]: call([subroutineNameList[0]]),
     });
 
     const onStepMock = jest.fn();
