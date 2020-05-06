@@ -296,7 +296,7 @@ describe('constructor', () => {
           [ix]: noop,
         });
       })
-        .toThrow('invalid instruction index(es)');
+        .not.toThrow('invalid instruction index(es)');
     });
 
     test('invalid subroutine name', () => {
@@ -430,28 +430,28 @@ describe('run tests', () => {
 
       expect(() => {
         machine1.run({
-          stepsLimit: 2,
+          stepsLimit: 3,
           onStep: (...args) => onStepMock1(...args),
         });
       })
         .not.toThrow();
       expect(() => {
         machine2.run({
-          stepsLimit: 2,
+          stepsLimit: 3,
           onStep: (...args) => onStepMock2(...args),
         });
       })
         .not.toThrow();
       expect(() => {
         machine3.run({
-          stepsLimit: 2,
+          stepsLimit: 3,
           onStep: (...args) => onStepMock3(...args),
         });
       })
         .not.toThrow();
-      expect(onStepMock1).toHaveBeenCalledTimes(2);
-      expect(onStepMock2).toHaveBeenCalledTimes(2);
-      expect(onStepMock3).toHaveBeenCalledTimes(2);
+      expect(onStepMock1).toHaveBeenCalledTimes(3);
+      expect(onStepMock2).toHaveBeenCalledTimes(3);
+      expect(onStepMock3).toHaveBeenCalledTimes(3);
       expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
       expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
     });
@@ -545,6 +545,40 @@ describe('run tests', () => {
             : '**  *'
         )));
     });
+  });
+
+  test('sub-subroutines', () => {
+    const ixList = getIxRange(2);
+    const subroutineNameList = [...Array(2)].map((_, ix) => `sr${ixList[0] + ix}`);
+    const machine = new PostMachine({
+      [subroutineNameList[0]]: {
+        [subroutineNameList[0]]: {
+          [ixList[1]]: erase,
+        },
+        [ixList[1]]: call([subroutineNameList[1]]),
+        [ixList[2]]: call([subroutineNameList[0]]),
+      },
+      [subroutineNameList[1]]: {
+        [ixList[1]]: mark,
+      },
+      [ixList[1]]: call([subroutineNameList[0]]),
+    });
+
+    const onStepMock = jest.fn();
+
+    expect(() => {
+      machine.run({
+        onStep: (...args) => onStepMock(...args),
+      });
+    })
+      .not.toThrow();
+
+    expect(onStepMock).toHaveBeenCalledTimes(8);
+    expect(machine.tape.viewport[0]).toEqual(' ');
+
+    const nextSymbolHistory = onStepMock.mock.calls.map((aCall) => aCall[0].nextSymbolList[0]);
+
+    expect(nextSymbolHistory.filter((symbol, ix, list) => list.indexOf(symbol) === ix)).toEqual([' ', '*']);
   });
 
   describe('states count minification', () => {
