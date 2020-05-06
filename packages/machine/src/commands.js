@@ -2,11 +2,16 @@ import {
   haltState, ifOtherSymbol, movements, State,
 } from '@turing-machine-js/machine';
 import { blankSymbol, defaultNextInstructionIndex, markSymbol } from './consts';
+import { instructionIndexValidator, subroutineNameValidator } from './validators';
 
 function callCommandStateProducer({
   instructionIndex, nextInstructionIndex, references, states, subroutineInitialStates,
 }) {
   const { subroutineName } = this;
+
+  if (!subroutineNameValidator(subroutineName)) {
+    throw new Error(`invalid subroutine name: '${subroutineName}'`);
+  }
 
   if (!Object.prototype.hasOwnProperty.call(subroutineInitialStates, subroutineName)) {
     throw new Error(`undefined '${subroutineName}' subroutine`);
@@ -14,6 +19,13 @@ function callCommandStateProducer({
 
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
   let nextState;
+
+  if (
+    boundNextInstructionIndex !== defaultNextInstructionIndex
+    && !instructionIndexValidator(boundNextInstructionIndex)
+  ) {
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
+  }
 
   if (boundNextInstructionIndex === defaultNextInstructionIndex) {
     boundNextInstructionIndex = nextInstructionIndex;
@@ -28,10 +40,10 @@ function callCommandStateProducer({
 
     nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
   }
 
-  const hash = `:callFn:${boundNextInstructionIndex}:`;
+  const hash = `:callFn:${subroutineName}:${boundNextInstructionIndex}:`;
 
   if (states.has(hash)) {
     return states.get(hash);
@@ -54,11 +66,11 @@ function checkCommandStateProducer({
   const { nextInstructionIndexIfMarked, nextInstructionIndexOtherwise } = this;
 
   if (!Object.prototype.hasOwnProperty.call(references, nextInstructionIndexIfMarked)) {
-    throw new Error(`invalid instruction index: ${nextInstructionIndexIfMarked}`);
+    throw new Error(`invalid next instruction index: ${nextInstructionIndexIfMarked}`);
   }
 
   if (!Object.prototype.hasOwnProperty.call(references, nextInstructionIndexOtherwise)) {
-    throw new Error(`invalid instruction index: ${nextInstructionIndexOtherwise}`);
+    throw new Error(`invalid next instruction index: ${nextInstructionIndexOtherwise}`);
   }
 
   if (nextInstructionIndexIfMarked === nextInstructionIndexOtherwise) {
@@ -72,7 +84,7 @@ function checkCommandStateProducer({
     throw new Error(`potential infinite loop at instruction ${instructionIndex}`);
   }
 
-  const hash = `:checkFn:${nextInstructionIndexIfMarked}:${nextInstructionIndexOtherwise}`;
+  const hash = `:checkFn:${nextInstructionIndexIfMarked}:${nextInstructionIndexOtherwise}:`;
 
   if (states.has(hash)) {
     return states.get(hash);
@@ -85,7 +97,7 @@ function checkCommandStateProducer({
     [tapeBlock.symbol([tapeBlock.tapeList[0].alphabet.blankSymbol])]: {
       nextState: references[nextInstructionIndexOtherwise],
     },
-  }, instructionIndex);
+  });
 
   states.set(hash, state);
 
@@ -97,6 +109,13 @@ function eraseCommandStateProducer({
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
   let nextState;
+
+  if (
+    boundNextInstructionIndex !== defaultNextInstructionIndex
+    && !instructionIndexValidator(boundNextInstructionIndex)
+  ) {
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
+  }
 
   if (boundNextInstructionIndex === defaultNextInstructionIndex) {
     boundNextInstructionIndex = nextInstructionIndex;
@@ -111,7 +130,7 @@ function eraseCommandStateProducer({
 
     nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
   }
 
   const hash = `:eraseFn:${boundNextInstructionIndex}:`;
@@ -129,7 +148,7 @@ function eraseCommandStateProducer({
       ],
       nextState,
     },
-  }, instructionIndex);
+  });
 
   states.set(hash, state);
 
@@ -141,6 +160,13 @@ function leftCommandStateProducer({
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
   let nextState;
+
+  if (
+    boundNextInstructionIndex !== defaultNextInstructionIndex
+    && !instructionIndexValidator(boundNextInstructionIndex)
+  ) {
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
+  }
 
   if (boundNextInstructionIndex === defaultNextInstructionIndex) {
     boundNextInstructionIndex = nextInstructionIndex;
@@ -155,7 +181,7 @@ function leftCommandStateProducer({
 
     nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
   }
 
   const hash = `:leftFn:${boundNextInstructionIndex}:`;
@@ -173,7 +199,7 @@ function leftCommandStateProducer({
       ],
       nextState,
     },
-  }, instructionIndex);
+  });
 
   states.set(hash, state);
 
@@ -185,6 +211,13 @@ function markCommandStateProducer({
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
   let nextState;
+
+  if (
+    boundNextInstructionIndex !== defaultNextInstructionIndex
+    && !instructionIndexValidator(boundNextInstructionIndex)
+  ) {
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
+  }
 
   if (boundNextInstructionIndex === defaultNextInstructionIndex) {
     boundNextInstructionIndex = nextInstructionIndex;
@@ -199,7 +232,7 @@ function markCommandStateProducer({
 
     nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
   }
 
   const hash = `:markFn:${boundNextInstructionIndex}:`;
@@ -217,7 +250,7 @@ function markCommandStateProducer({
       ],
       nextState,
     },
-  }, instructionIndex);
+  });
 
   states.set(hash, state);
 
@@ -230,6 +263,13 @@ function noopCommandStateProducer({
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
   let nextState;
 
+  if (
+    boundNextInstructionIndex !== defaultNextInstructionIndex
+    && !instructionIndexValidator(boundNextInstructionIndex)
+  ) {
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
+  }
+
   if (boundNextInstructionIndex === defaultNextInstructionIndex) {
     boundNextInstructionIndex = nextInstructionIndex;
   }
@@ -243,7 +283,7 @@ function noopCommandStateProducer({
 
     nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
   }
 
   const hash = `:noopFn:${boundNextInstructionIndex}:`;
@@ -256,17 +296,25 @@ function noopCommandStateProducer({
     [ifOtherSymbol]: {
       nextState,
     },
-  }, instructionIndex);
+  });
 
   states.set(hash, state);
 
   return state;
 }
+
 function rightCommandStateProducer({
   instructionIndex, nextInstructionIndex, references, states,
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
   let nextState;
+
+  if (
+    boundNextInstructionIndex !== defaultNextInstructionIndex
+    && !instructionIndexValidator(boundNextInstructionIndex)
+  ) {
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
+  }
 
   if (boundNextInstructionIndex === defaultNextInstructionIndex) {
     boundNextInstructionIndex = nextInstructionIndex;
@@ -281,7 +329,7 @@ function rightCommandStateProducer({
 
     nextState = references[boundNextInstructionIndex];
   } else {
-    throw new Error(`invalid instruction index: ${boundNextInstructionIndex}`);
+    throw new Error(`invalid next instruction index: ${boundNextInstructionIndex}`);
   }
 
   const hash = `:rightFn:${boundNextInstructionIndex}:`;
@@ -299,20 +347,17 @@ function rightCommandStateProducer({
       ],
       nextState,
     },
-  }, instructionIndex);
+  });
 
   states.set(hash, state);
 
   return state;
 }
 
-export function call(subroutineName, nextInstructionIndex = defaultNextInstructionIndex) {
-  if (typeof subroutineName !== 'string' || !subroutineName.trim()) {
-    throw new Error('invalid subroutine name');
-  }
-
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+export function call(subroutineName, nextInstructionIndex) {
+  if (arguments.length === 1) {
+    // eslint-disable-next-line no-param-reassign
+    nextInstructionIndex = defaultNextInstructionIndex;
   }
 
   return callCommandStateProducer.bind({
@@ -322,14 +367,6 @@ export function call(subroutineName, nextInstructionIndex = defaultNextInstructi
 }
 
 export function check(nextInstructionIndexIfMarked, nextInstructionIndexOtherwise) {
-  if (typeof nextInstructionIndexIfMarked !== 'number') {
-    throw new Error(`invalid instruction index: ${nextInstructionIndexIfMarked}`);
-  }
-
-  if (typeof nextInstructionIndexOtherwise !== 'number') {
-    throw new Error(`invalid instruction index: ${nextInstructionIndexOtherwise}`);
-  }
-
   return checkCommandStateProducer.bind({
     nextInstructionIndexIfMarked,
     nextInstructionIndexOtherwise,
@@ -337,8 +374,8 @@ export function check(nextInstructionIndexIfMarked, nextInstructionIndexOtherwis
 }
 
 export function erase(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+  if (arguments.length === 0) {
+    throw new Error('invalid next instruction index: undefined');
   }
 
   return eraseCommandStateProducer.bind({
@@ -347,8 +384,8 @@ export function erase(nextInstructionIndex) {
 }
 
 export function left(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+  if (arguments.length === 0) {
+    throw new Error('invalid next instruction index: undefined');
   }
 
   return leftCommandStateProducer.bind({
@@ -357,8 +394,8 @@ export function left(nextInstructionIndex) {
 }
 
 export function mark(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+  if (arguments.length === 0) {
+    throw new Error('invalid next instruction index: undefined');
   }
 
   return markCommandStateProducer.bind({
@@ -367,8 +404,8 @@ export function mark(nextInstructionIndex) {
 }
 
 export function noop(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+  if (arguments.length === 0) {
+    throw new Error('invalid next instruction index: undefined');
   }
 
   return noopCommandStateProducer.bind({
@@ -377,8 +414,8 @@ export function noop(nextInstructionIndex) {
 }
 
 export function right(nextInstructionIndex) {
-  if (typeof nextInstructionIndex !== 'number' && nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid instruction index');
+  if (arguments.length === 0) {
+    throw new Error('invalid next instruction index: undefined');
   }
 
   return rightCommandStateProducer.bind({
@@ -388,7 +425,7 @@ export function right(nextInstructionIndex) {
 
 export function stop(nextInstructionIndex) {
   if (nextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('invalid \'stop\' command usage');
+    throw new Error('inappropriate \'stop\' command usage');
   }
 
   return function stopCommandStateProducer() {

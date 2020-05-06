@@ -3,6 +3,7 @@ import { defaultNextInstructionIndex, originalTapeBlock } from '../consts';
 import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
+import { instructionIndexValidator, subroutineNameValidator } from '../validators';
 
 export default class PostMachine extends TuringMachine {
   #initialState;
@@ -11,10 +12,6 @@ export default class PostMachine extends TuringMachine {
     super({ tapeBlock: originalTapeBlock.clone() });
 
     this.#initialState = this.#buildInitialState(instructions);
-
-    if (!this.#initialState) {
-      throw new Error('invalid instructions');
-    }
   }
 
   get tape() {
@@ -50,8 +47,14 @@ export default class PostMachine extends TuringMachine {
     }
 
     const subroutineInitialStates = Object.keys(instructionsCopy)
-      .filter((instructionIndex) => !isSubroutine && Number.isNaN(Number(instructionIndex)))
+      .filter((instructionIndexStr) => (
+        !isSubroutine && !instructionIndexValidator(instructionIndexStr)
+      ))
       .reduce((result, subroutineName) => {
+        if (!subroutineNameValidator(subroutineName)) {
+          throw new Error(`invalid subroutine name: '${subroutineName}'`);
+        }
+
         // eslint-disable-next-line no-param-reassign
         result[subroutineName] = this.#buildInitialState(instructionsCopy[subroutineName], true);
         delete instructionsCopy[subroutineName];
@@ -66,7 +69,7 @@ export default class PostMachine extends TuringMachine {
     }
 
     const areInstructionIndexesValid = instructionIndexList
-      .every((instructionIndex) => Number.isFinite(Number(instructionIndex)));
+      .every(instructionIndexValidator);
 
     if (!areInstructionIndexesValid) {
       throw new Error('invalid instruction index(es)');
@@ -83,23 +86,19 @@ export default class PostMachine extends TuringMachine {
 
     instructionIndexList.map(Number).forEach((instructionIndex, ix, list) => {
       switch (instructionsCopy[instructionIndex]) {
-        case left:
-        case right:
-        case mark:
         case erase:
+        case left:
+        case mark:
         case noop:
+        case right:
+        case stop:
           // eslint-disable-next-line max-len
           instructionsCopy[instructionIndex] = instructionsCopy[instructionIndex](defaultNextInstructionIndex);
           break;
-        case stop:
-          instructionsCopy[instructionIndex] = stop(defaultNextInstructionIndex);
-          break;
         case call:
-          throw new Error(`invalid 'call' command usage at instruction ${instructionIndex}`);
         case check:
-          throw new Error(`invalid 'check' command usage at instruction ${instructionIndex}`);
-        default:
-          break;
+          throw new Error(`inappropriate '${instructionsCopy[instructionIndex].name}' command usage at instruction ${instructionIndex}`);
+        // no default
       }
 
       references[instructionIndex].bind(instructionsCopy[instructionIndex].call(null, {
