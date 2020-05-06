@@ -1,4 +1,4 @@
-import TuringMachine, { Reference } from '@turing-machine-js/machine';
+import TuringMachine, { Reference, State, ifOtherSymbol } from '@turing-machine-js/machine';
 import { defaultNextInstructionIndex, originalTapeBlock } from '../consts';
 import {
   call, check, erase, left, mark, noop, right, stop,
@@ -11,7 +11,9 @@ export default class PostMachine extends TuringMachine {
   constructor(instructions = {}) {
     super({ tapeBlock: originalTapeBlock.clone() });
 
-    this.#initialState = this.#buildInitialState(instructions);
+    this.#initialState = this.#buildInitialState({
+      instructions,
+    });
   }
 
   get tape() {
@@ -37,7 +39,11 @@ export default class PostMachine extends TuringMachine {
     yield* super.runStepByStep({ initialState: this.#initialState, stepsLimit });
   }
 
-  #buildInitialState = (instructions, isSubroutine = false) => {
+  #buildInitialState = ({
+    instructions,
+    subroutinesDataFromUpperScope = {},
+    subroutineInitialStatesFromUpperScope = {},
+  }) => {
     const instructionsCopy = { ...instructions };
 
     const hasSymbolKeyProperties = Object.getOwnPropertySymbols(instructionsCopy).length > 0;
@@ -46,33 +52,60 @@ export default class PostMachine extends TuringMachine {
       throw new Error('invalid instruction index(es)');
     }
 
-    const subroutineInitialStates = Object.keys(instructionsCopy)
-      .filter((instructionIndexStr) => (
-        !isSubroutine && !instructionIndexValidator(instructionIndexStr)
-      ))
+    const localSubroutinesData = Object.keys(instructionsCopy)
+      .filter((instructionIndexStr) => !instructionIndexValidator(instructionIndexStr))
       .reduce((result, subroutineName) => {
         if (!subroutineNameValidator(subroutineName)) {
           throw new Error(`invalid subroutine name: '${subroutineName}'`);
         }
 
         // eslint-disable-next-line no-param-reassign
-        result[subroutineName] = this.#buildInitialState(instructionsCopy[subroutineName], true);
+        result[subroutineName] = {
+          willBeBoundSoon: false,
+          reference: new Reference(),
+          instructions: instructionsCopy[subroutineName],
+        };
         delete instructionsCopy[subroutineName];
 
         return result;
       }, {});
 
+    const subroutinesData = {
+      ...subroutinesDataFromUpperScope,
+      ...localSubroutinesData,
+    };
+    const subroutineInitialStates = {
+      ...subroutineInitialStatesFromUpperScope,
+      ...Object.keys(localSubroutinesData)
+        .reduce((result, subroutineName) => {
+          // eslint-disable-next-line no-param-reassign
+          result[subroutineName] = new State({
+            [ifOtherSymbol]: {
+              nextState: localSubroutinesData[subroutineName].reference,
+            },
+          });
+
+          return result;
+        }, {}),
+    };
+
+    Object.keys(localSubroutinesData).forEach((subroutineName) => {
+      const {
+        reference,
+        instructions: subroutineInstructions,
+      } = subroutinesData[subroutineName];
+
+      reference.bind(this.#buildInitialState({
+        instructions: subroutineInstructions,
+        subroutinesDataFromUpperScope: subroutinesData,
+        subroutineInitialStatesFromUpperScope: subroutineInitialStates,
+      }));
+    });
+
     const instructionIndexList = Object.keys(instructionsCopy);
 
     if (instructionIndexList.length === 0) {
       throw new Error('there is no instructions');
-    }
-
-    const areInstructionIndexesValid = instructionIndexList
-      .every(instructionIndexValidator);
-
-    if (!areInstructionIndexesValid) {
-      throw new Error('invalid instruction index(es)');
     }
 
     const references = instructionIndexList.reduce((result, instructionIndex) => {
