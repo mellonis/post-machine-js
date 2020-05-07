@@ -33,7 +33,7 @@ const machine = new PostMachine({
   80: stop, // stop execution
   90: left, // move the carriage to the left and go to the 100th instruction
   100: check(90, 110), // if marked go to the 90th instruction, or to the 110th otherwise
-  110: right(10), // move the carriage to the right and go to the 80th instruction
+  110: right(10), // move the carriage to the right and go to the 10th instruction
 });
 
 machine.tape = new Tape({
