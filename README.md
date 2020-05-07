@@ -15,7 +15,7 @@ This repository contains following packages:
 
 A tape contains two marked sections divided by the blank symbol(s). The issue is to move the first section close to the second. In other words, to remove blank symbols between these sections.
 
-This example demonstrates solving issue 
+This example demonstrates an issue solving. 
 
 ```javascript
 import PostMachine, {
