@@ -1,6 +1,7 @@
 import { Alphabet, TapeBlock } from '@turing-machine-js/machine';
 
 export const blankSymbol = ' ';
+export const commandsSet = new WeakSet();
 export const defaultNextInstructionIndex = Symbol('defaultNextInstructionIndex');
 export const markSymbol = '*';
 export const alphabet = new Alphabet({
