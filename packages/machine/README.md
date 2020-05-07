@@ -35,7 +35,7 @@ This class is reexported from the [`@turing-machine-js/machine`](https://github.
 
 ## Commands
 
-* `call(subroutineName)`/`call(subroutineName,ix)` - execute subroutine by `subroutineName` name and go to the `next`/`ix`th instruction
+* `call(subroutineName)`/`call(subroutineName,ix)` - execute a subroutine by `subroutineName` name and go to the `next`/`ix`th instruction
 * `check(ix1,ix0)` - if current tape section marked go to `ix1`th instruction or go to `ix0`th instruction otherwise
 * `erase`/`erase(ix)` - put the blank symbol into current tape section and go to the `next`/`ix`th instruction
 * `left`/`left(ix)` - move the carriage to the left and go to the `next`/`ix`th instruction
