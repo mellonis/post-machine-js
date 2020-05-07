@@ -1,7 +1,9 @@
 import {
   haltState, ifOtherSymbol, movements, State,
 } from '@turing-machine-js/machine';
-import { blankSymbol, defaultNextInstructionIndex, markSymbol } from './consts';
+import {
+  blankSymbol, commandsSet, defaultNextInstructionIndex, markSymbol,
+} from './consts';
 import { instructionIndexValidator, subroutineNameValidator } from './validators';
 
 function callCommandStateProducer({
@@ -360,75 +362,123 @@ export function call(subroutineName, nextInstructionIndex) {
     nextInstructionIndex = defaultNextInstructionIndex;
   }
 
-  return callCommandStateProducer.bind({
+  const actualCommand = callCommandStateProducer.bind({
     subroutineName,
     nextInstructionIndex,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
 
+commandsSet.add(call);
+
 export function check(nextInstructionIndexIfMarked, nextInstructionIndexOtherwise) {
-  return checkCommandStateProducer.bind({
+  const actualCommand = checkCommandStateProducer.bind({
     nextInstructionIndexIfMarked,
     nextInstructionIndexOtherwise,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(check);
 
 export function erase(nextInstructionIndex) {
   if (arguments.length === 0) {
     throw new Error('invalid next instruction index: undefined');
   }
 
-  return eraseCommandStateProducer.bind({
+  const actualCommand = eraseCommandStateProducer.bind({
     nextInstructionIndex,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(erase);
 
 export function left(nextInstructionIndex) {
   if (arguments.length === 0) {
     throw new Error('invalid next instruction index: undefined');
   }
 
-  return leftCommandStateProducer.bind({
+  const actualCommand = leftCommandStateProducer.bind({
     nextInstructionIndex,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(left);
 
 export function mark(nextInstructionIndex) {
   if (arguments.length === 0) {
     throw new Error('invalid next instruction index: undefined');
   }
 
-  return markCommandStateProducer.bind({
+  const actualCommand = markCommandStateProducer.bind({
     nextInstructionIndex,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(mark);
 
 export function noop(nextInstructionIndex) {
   if (arguments.length === 0) {
     throw new Error('invalid next instruction index: undefined');
   }
 
-  return noopCommandStateProducer.bind({
+  const actualCommand = noopCommandStateProducer.bind({
     nextInstructionIndex,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(noop);
 
 export function right(nextInstructionIndex) {
   if (arguments.length === 0) {
     throw new Error('invalid next instruction index: undefined');
   }
 
-  return rightCommandStateProducer.bind({
+  const actualCommand = rightCommandStateProducer.bind({
     nextInstructionIndex,
   });
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(right);
 
 export function stop(nextInstructionIndex) {
   if (nextInstructionIndex !== defaultNextInstructionIndex) {
     throw new Error('inappropriate \'stop\' command usage');
   }
 
-  return function stopCommandStateProducer() {
+  const actualCommand = function stopCommandStateProducer() {
     return haltState;
   };
+
+  commandsSet.add(actualCommand);
+
+  return actualCommand;
 }
+
+commandsSet.add(stop);

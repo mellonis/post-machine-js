@@ -37,24 +37,61 @@ describe('constructor', () => {
       .toThrow('invalid instruction index(es)');
   });
 
-  [erase, left, mark, noop, right].forEach((fn) => {
-    test(`invalid '${fn.name}' commands next instruction index`, () => {
+  describe('invalid next instruction index', () => {
+    [erase, left, mark, noop, right].forEach((fn) => {
+      test(fn.name, () => {
+        const ix = getRandomInstructionIndex();
+        const nextIx = ix + 1;
+
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ix]: fn(),
+          });
+        })
+          .toThrow('invalid next instruction index: undefined');
+
+        [undefined, null, ' ', Math.random()].forEach((invalidIx) => {
+          expect(() => {
+            // eslint-disable-next-line no-new
+            new PostMachine({
+              [ix]: fn(invalidIx),
+            });
+          })
+            .toThrow(`invalid next instruction index: ${invalidIx}`);
+        });
+
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ix]: fn(nextIx),
+          });
+        })
+          .toThrow(`invalid next instruction index: ${nextIx}`);
+
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ix]: fn(ix),
+          });
+        })
+          .toThrow(`infinite loop at instruction ${ix}`);
+      });
+    });
+
+    test('call', () => {
       const ix = getRandomInstructionIndex();
       const nextIx = ix + 1;
-
-      expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [ix]: fn(),
-        });
-      })
-        .toThrow('invalid next instruction index: undefined');
+      const subroutineName = `subroutine${ix + 2}`;
 
       [undefined, null, ' ', Math.random()].forEach((invalidIx) => {
         expect(() => {
           // eslint-disable-next-line no-new
           new PostMachine({
-            [ix]: fn(invalidIx),
+            [subroutineName]: {
+              [ix]: noop,
+            },
+            [ix]: call(subroutineName, invalidIx),
           });
         })
           .toThrow(`invalid next instruction index: ${invalidIx}`);
@@ -63,7 +100,10 @@ describe('constructor', () => {
       expect(() => {
         // eslint-disable-next-line no-new
         new PostMachine({
-          [ix]: fn(nextIx),
+          [subroutineName]: {
+            [ix]: noop,
+          },
+          [ix]: call(subroutineName, nextIx),
         });
       })
         .toThrow(`invalid next instruction index: ${nextIx}`);
@@ -71,10 +111,118 @@ describe('constructor', () => {
       expect(() => {
         // eslint-disable-next-line no-new
         new PostMachine({
-          [ix]: fn(ix),
+          [subroutineName]: {
+            [ix]: noop,
+          },
+          [ix]: call(subroutineName, ix),
         });
       })
         .toThrow(`infinite loop at instruction ${ix}`);
+    });
+
+    test('check', () => {
+      const ix = getRandomInstructionIndex();
+      const nextIx = ix + 1;
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(),
+        });
+      })
+        .toThrow('invalid next instruction index: undefined');
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(ix),
+        });
+      })
+        .toThrow('invalid next instruction index: undefined');
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(undefined, ix),
+        });
+      })
+        .toThrow('invalid next instruction index: undefined');
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(ix, ix),
+        });
+      })
+        .toThrow('next instruction indexes for this command must be unique');
+
+      [' ', Math.random()].forEach((invalidIx) => {
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ix]: check(nextIx, invalidIx),
+            [nextIx]: noop,
+          });
+        })
+          .toThrow(`invalid next instruction index: ${invalidIx}`);
+
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ix]: check(invalidIx, nextIx),
+            [nextIx]: noop,
+          });
+        })
+          .toThrow(`invalid next instruction index: ${invalidIx}`);
+      });
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(ix, nextIx),
+        });
+      })
+        .toThrow(`invalid next instruction index: ${nextIx}`);
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(nextIx, ix),
+        });
+      })
+        .toThrow(`invalid next instruction index: ${nextIx}`);
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(ix, nextIx),
+          [nextIx]: noop,
+        });
+      })
+        .toThrow(`potential infinite loop at instruction ${ix}`);
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: check(nextIx, ix),
+          [nextIx]: noop,
+        });
+      })
+        .toThrow(`potential infinite loop at instruction ${ix}`);
+    });
+  });
+
+  describe('invalid instruction', () => {
+    [undefined, null, 'a string', Math.random(), Symbol('for test purpose'), {}, ['an', 'array'], function aFunction() {}].forEach((command) => {
+      test(String(command), () => {
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            10: command,
+          });
+        })
+          .toThrow('invalid instruction');
+      });
     });
   });
 
@@ -94,179 +242,51 @@ describe('constructor', () => {
       .toThrow(`invalid subroutine name: '${invalidSubroutineName}'`);
   });
 
-  test('invalid \'call\' command next instruction index', () => {
-    const ix = getRandomInstructionIndex();
-    const nextIx = ix + 1;
-    const subroutineName = `subroutine${ix + 2}`;
-
-    [undefined, null, ' ', Math.random()].forEach((invalidIx) => {
-      expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [subroutineName]: {
-            [ix]: noop,
-          },
-          [ix]: call(subroutineName, invalidIx),
-        });
-      })
-        .toThrow(`invalid next instruction index: ${invalidIx}`);
-    });
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [subroutineName]: {
-          [ix]: noop,
-        },
-        [ix]: call(subroutineName, nextIx),
-      });
-    })
-      .toThrow(`invalid next instruction index: ${nextIx}`);
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [subroutineName]: {
-          [ix]: noop,
-        },
-        [ix]: call(subroutineName, ix),
-      });
-    })
-      .toThrow(`infinite loop at instruction ${ix}`);
-  });
-
-  test('invalid \'check\' command next instruction index', () => {
-    const ix = getRandomInstructionIndex();
-    const nextIx = ix + 1;
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(),
-      });
-    })
-      .toThrow('invalid next instruction index: undefined');
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(ix),
-      });
-    })
-      .toThrow('invalid next instruction index: undefined');
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(undefined, ix),
-      });
-    })
-      .toThrow('invalid next instruction index: undefined');
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(ix, ix),
-      });
-    })
-      .toThrow('next instruction indexes for this command must be unique');
-
-    [' ', Math.random()].forEach((invalidIx) => {
-      expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [ix]: check(nextIx, invalidIx),
-          [nextIx]: noop,
-        });
-      })
-        .toThrow(`invalid next instruction index: ${invalidIx}`);
-
-      expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [ix]: check(invalidIx, nextIx),
-          [nextIx]: noop,
-        });
-      })
-        .toThrow(`invalid next instruction index: ${invalidIx}`);
-    });
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(ix, nextIx),
-      });
-    })
-      .toThrow(`invalid next instruction index: ${nextIx}`);
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(nextIx, ix),
-      });
-    })
-      .toThrow(`invalid next instruction index: ${nextIx}`);
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(ix, nextIx),
-        [nextIx]: noop,
-      });
-    })
-      .toThrow(`potential infinite loop at instruction ${ix}`);
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: check(nextIx, ix),
-        [nextIx]: noop,
-      });
-    })
-      .toThrow(`potential infinite loop at instruction ${ix}`);
-  });
-
-  test('inappropriate \'call\' and \'check\' command  usage', () => {
+  describe('inappropriate command usage', () => {
     [call, check].forEach((fn) => {
+      test(fn.name, () => {
+        // using 'call' or 'check' without parenthesis
+        const ix = getRandomInstructionIndex();
+
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ix]: fn,
+          });
+        })
+          .toThrow(`inappropriate '${fn.name}' command usage at instruction ${ix}`);
+      });
+    });
+
+    test('stop', () => {
+      // using 'stop' with parenthesis
       const ix = getRandomInstructionIndex();
+      const nextIx = ix + 1;
 
       expect(() => {
         // eslint-disable-next-line no-new
         new PostMachine({
-          [ix]: fn,
+          [ix]: stop(),
         });
       })
-        .toThrow(`inappropriate '${fn.name}' command usage at instruction ${ix}`);
+        .toThrow('inappropriate \'stop\' command usage');
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: stop(nextIx),
+        });
+      })
+        .toThrow('inappropriate \'stop\' command usage');
+
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ix]: stop(ix),
+        });
+      })
+        .toThrow('inappropriate \'stop\' command usage');
     });
-  });
-
-  test('inappropriate \'stop\' command usage', () => {
-    const ix = getRandomInstructionIndex();
-    const nextIx = ix + 1;
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: stop(),
-      });
-    })
-      .toThrow('inappropriate \'stop\' command usage');
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: stop(nextIx),
-      });
-    })
-      .toThrow('inappropriate \'stop\' command usage');
-
-    expect(() => {
-      // eslint-disable-next-line no-new
-      new PostMachine({
-        [ix]: stop(ix),
-      });
-    })
-      .toThrow('inappropriate \'stop\' command usage');
   });
 
   describe('subroutines', () => {

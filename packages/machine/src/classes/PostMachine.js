@@ -1,5 +1,5 @@
 import TuringMachine, { Reference, State, ifOtherSymbol } from '@turing-machine-js/machine';
-import { defaultNextInstructionIndex, originalTapeBlock } from '../consts';
+import { commandsSet, defaultNextInstructionIndex, originalTapeBlock } from '../consts';
 import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
@@ -134,14 +134,18 @@ export default class PostMachine extends TuringMachine {
         // no default
       }
 
-      references[instructionIndex].bind(instructionsCopy[instructionIndex].call(null, {
-        instructionIndex: Number(instructionIndex),
-        nextInstructionIndex: list[ix + 1],
-        tapeBlock: this.tapeBlock,
-        references,
-        states,
-        subroutineInitialStates,
-      }));
+      if (commandsSet.has(instructionsCopy[instructionIndex])) {
+        references[instructionIndex].bind(instructionsCopy[instructionIndex].call(null, {
+          instructionIndex: Number(instructionIndex),
+          nextInstructionIndex: list[ix + 1],
+          tapeBlock: this.tapeBlock,
+          references,
+          states,
+          subroutineInitialStates,
+        }));
+      } else {
+        throw new Error('invalid instruction');
+      }
     });
 
     return references[instructionIndexList[0]].ref;
