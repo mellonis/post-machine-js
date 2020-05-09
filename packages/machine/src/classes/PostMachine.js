@@ -1,4 +1,9 @@
-import TuringMachine, { Reference, State, ifOtherSymbol } from '@turing-machine-js/machine';
+import TuringMachine, {
+  Reference,
+  State,
+  ifOtherSymbol,
+  haltState,
+} from '@turing-machine-js/machine';
 import { commandsSet, defaultNextInstructionIndex, originalTapeBlock } from '../consts';
 import {
   call, check, erase, left, mark, noop, right, stop,
@@ -20,7 +25,7 @@ export default class PostMachine extends TuringMachine {
     return this.tapeBlock.tapeList[0];
   }
 
-  set tape(newTape) {
+  replaceTapeWith(newTape) {
     this.tapeBlock.replaceTape(newTape);
   }
 
@@ -43,6 +48,7 @@ export default class PostMachine extends TuringMachine {
     instructions,
     subroutinesDataFromUpperScope = {},
     subroutineInitialStatesFromUpperScope = {},
+    calledFromGroup = false,
   }) => {
     const instructionsCopy = { ...instructions };
 
@@ -59,17 +65,19 @@ export default class PostMachine extends TuringMachine {
           throw new Error(`invalid subroutine name: '${subroutineName}'`);
         }
 
-        // eslint-disable-next-line no-param-reassign
-        result[subroutineName] = {
-          willBeBoundSoon: false,
-          reference: new Reference(),
-          instructions: instructionsCopy[subroutineName],
-        };
+        const instructionsForSubroutinesData = instructionsCopy[subroutineName];
+
         delete instructionsCopy[subroutineName];
 
-        return result;
+        return {
+          ...result,
+          [subroutineName]: {
+            willBeBoundSoon: false,
+            reference: new Reference(),
+            instructions: instructionsForSubroutinesData,
+          },
+        };
       }, {});
-
     const subroutinesData = {
       ...subroutinesDataFromUpperScope,
       ...localSubroutinesData,
@@ -77,16 +85,14 @@ export default class PostMachine extends TuringMachine {
     const subroutineInitialStates = {
       ...subroutineInitialStatesFromUpperScope,
       ...Object.keys(localSubroutinesData)
-        .reduce((result, subroutineName) => {
-          // eslint-disable-next-line no-param-reassign
-          result[subroutineName] = new State({
+        .reduce((result, subroutineName) => ({
+          ...result,
+          [subroutineName]: new State({
             [ifOtherSymbol]: {
               nextState: localSubroutinesData[subroutineName].reference,
             },
-          });
-
-          return result;
-        }, {}),
+          }),
+        }), {}),
     };
 
     Object.keys(localSubroutinesData).forEach((subroutineName) => {
@@ -108,12 +114,10 @@ export default class PostMachine extends TuringMachine {
       throw new Error('there is no instructions');
     }
 
-    const references = instructionIndexList.reduce((result, instructionIndex) => {
-      // eslint-disable-next-line no-param-reassign
-      result[instructionIndex] = new Reference();
-
-      return result;
-    }, {});
+    const references = instructionIndexList.reduce((result, instructionIndex) => ({
+      ...result,
+      [instructionIndex]: new Reference(),
+    }), {});
 
     const states = new Map();
 
@@ -142,7 +146,44 @@ export default class PostMachine extends TuringMachine {
           references,
           states,
           subroutineInitialStates,
+          calledFromGroup,
         }));
+      } else if (Array.isArray(instructionsCopy[instructionIndex])) {
+        if (instructionsCopy[instructionIndex].length === 0) {
+          throw new Error('empty group');
+        }
+
+        const areInstructionsInGroupValid = instructionsCopy[instructionIndex]
+          .every((command) => commandsSet.has(command));
+
+        if (!areInstructionsInGroupValid) {
+          throw new Error('invalid command in the group');
+        }
+
+        const groupState = this.#buildInitialState({
+          instructions: instructionsCopy[instructionIndex]
+            .reduce((result, command, commandIndexInTheGroup) => ({
+              ...result,
+              [commandIndexInTheGroup + 1]: command,
+            }), {}),
+          subroutinesDataFromUpperScope: subroutinesData,
+          subroutineInitialStatesFromUpperScope: subroutineInitialStates,
+          calledFromGroup: true,
+        });
+
+        let nextState;
+
+        if (list[ix + 1] == null) {
+          nextState = haltState;
+        } else {
+          nextState = references[list[ix + 1]];
+        }
+
+        references[instructionIndex].bind(groupState.withOverrodeHaltState(new State({
+          [ifOtherSymbol]: {
+            nextState,
+          },
+        })));
       } else {
         throw new Error('invalid instruction');
       }

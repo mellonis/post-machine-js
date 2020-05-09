@@ -7,5 +7,5 @@ export function instructionIndexValidator(instructionIndexStr) {
 const subroutineNameRegex = /[A-Z$_][A-Z0-9$_]*/i;
 
 export function subroutineNameValidator(subroutineName) {
-  return subroutineNameRegex.test(subroutineName);
+  return subroutineNameRegex.test(subroutineName) && subroutineName !== 'undefined';
 }

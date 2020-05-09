@@ -79,7 +79,7 @@ describe('constructor', () => {
       });
     });
 
-    test('call', () => {
+    test(call.name, () => {
       const ix = getRandomInstructionIndex();
       const nextIx = ix + 1;
       const subroutineName = `subroutine${ix + 2}`;
@@ -120,7 +120,7 @@ describe('constructor', () => {
         .toThrow(`infinite loop at instruction ${ix}`);
     });
 
-    test('check', () => {
+    test(check.name, () => {
       const ix = getRandomInstructionIndex();
       const nextIx = ix + 1;
 
@@ -213,7 +213,7 @@ describe('constructor', () => {
   });
 
   describe('invalid instruction', () => {
-    [undefined, null, 'a string', Math.random(), Symbol('for test purpose'), {}, ['an', 'array'], function aFunction() {}].forEach((command) => {
+    [undefined, null, 'a string', Math.random(), Symbol('for test purpose'), {}, function aFunction() {}].forEach((command) => {
       test(String(command), () => {
         expect(() => {
           // eslint-disable-next-line no-new
@@ -226,7 +226,7 @@ describe('constructor', () => {
     });
   });
 
-  test('invalid \'call\' command subroutine name', () => {
+  test(`invalid '${call.fn}' command subroutine name`, () => {
     const ix = getRandomInstructionIndex();
     const invalidSubroutineName = String(ix);
 
@@ -334,6 +334,19 @@ describe('constructor', () => {
       });
     });
 
+    test('\'undefined\' subroutine name', () => {
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [undefined]: {
+            [ix]: noop,
+          },
+          [ix]: call('undefined'),
+        });
+      })
+        .toThrow('invalid subroutine name: \'undefined\'');
+    });
+
     test('an undefined subroutine call', () => {
       expect(() => {
         // eslint-disable-next-line no-new
@@ -366,10 +379,10 @@ describe('run tests', () => {
       [ixList[11]]: right(ixList[1]),
     });
 
-    machine.tape = new Tape({
+    machine.replaceTapeWith(new Tape({
       alphabet: machine.tape.alphabet,
       symbolList: ['*', '*', '*', ' ', ' ', ' ', '*'],
-    });
+    }));
 
     const onStepMock = jest.fn();
 
@@ -421,7 +434,7 @@ describe('run tests', () => {
       });
     });
 
-    test('call', () => {
+    test(call.name, () => {
       const ixList = getIxRange(2);
       const subroutineName = `subroutine${ixList[1]}`;
       const subroutines = {
@@ -477,7 +490,7 @@ describe('run tests', () => {
     });
   });
 
-  describe('the \'call\' command', () => {
+  describe(`the '${call.name}' command`, () => {
     test('a subroutine call', () => {
       const ixList = getIxRange(3);
       const subroutineName = `ToRightAndMark${ixList[0]}`;
@@ -549,11 +562,10 @@ describe('run tests', () => {
 
       expect(() => {
         machineList.forEach((machine) => {
-          // eslint-disable-next-line no-param-reassign
-          machine.tape = new Tape({
+          machine.replaceTapeWith(new Tape({
             alphabet: machine.tape.alphabet,
             symbolList: '***  *'.split(''),
-          });
+          }));
           machine.run();
         });
       })
@@ -647,7 +659,7 @@ describe('run tests', () => {
       });
     });
 
-    test('call', () => {
+    test(call.name, () => {
       const ix1 = getRandomInstructionIndex();
       const ix2 = ix1 + 1;
       const ix3 = ix2 + 1;
@@ -702,7 +714,7 @@ describe('run tests', () => {
       expect(machine2StateIdList.length).toBe(1);
     });
 
-    test('check', () => {
+    test(check.name, () => {
       const ix1 = getRandomInstructionIndex();
       const ix2 = ix1 + 1;
       const ix3 = ix2 + 1;
@@ -729,5 +741,188 @@ describe('run tests', () => {
 
       expect(machine1StateIdList[0]).toEqual(machine1StateIdList[2]);
     });
+  });
+
+  describe('commands groups', () => {
+    const ixList = getIxRange(3);
+    const subroutineName = `subroutine${ixList[0]}`;
+
+    test('empty group', () => {
+      expect(() => {
+        // eslint-disable-next-line no-new
+        new PostMachine({
+          [ixList[1]]: [],
+        });
+      })
+        .toThrow('empty group');
+    });
+
+    describe('invalid command in the group', () => {
+      [undefined, null, 'a string', Math.random(), Symbol('for test purpose'), {}, ['an', 'array'], function aFunction() {}].forEach((command) => {
+        test(String(command), () => {
+          expect(() => {
+            // eslint-disable-next-line no-new
+            new PostMachine({
+              [ixList[1]]: [
+                command,
+              ],
+            });
+          })
+            .toThrow('invalid command in the group');
+        });
+      });
+
+      test(check.name, () => {
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ixList[1]]: [
+              check(2, 3),
+              noop,
+              noop,
+            ],
+            [ixList[2]]: noop,
+            [ixList[3]]: noop,
+          });
+        })
+          .toThrow('the \'check\' command cannot be used in a group');
+      });
+
+      test(stop.name, () => {
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [ixList[1]]: mark,
+            [ixList[2]]: [
+              stop,
+            ],
+            [ixList[3]]: erase,
+          });
+        })
+          .toThrow('the \'stop\' command cannot be used in a group');
+      });
+    });
+
+    describe('command without the next instruction index', () => {
+      [erase, left, mark, noop, right].forEach((fn) => {
+        test(fn.name, () => {
+          expect(() => {
+            // eslint-disable-next-line no-new
+            new PostMachine({
+              [ixList[1]]: [
+                fn,
+              ],
+            });
+          })
+            .not.toThrow();
+        });
+      });
+
+      test(call.name, () => {
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [subroutineName]: {
+              [ixList[1]]: noop,
+            },
+            [ixList[1]]: [
+              call(subroutineName),
+            ],
+          });
+        })
+          .not.toThrow();
+      });
+    });
+
+    describe('command with the next instruction index', () => {
+      [erase, left, mark, noop, right].forEach((fn) => {
+        test(fn.name, () => {
+          expect(() => {
+            // eslint-disable-next-line no-new
+            new PostMachine({
+              [ixList[1]]: [
+                fn(ixList[2]),
+                noop,
+              ],
+              [ixList[2]]: noop,
+            });
+          })
+            .toThrow('inappropriate command usage in a group');
+        });
+      });
+
+      test(call.name, () => {
+        expect(() => {
+          // eslint-disable-next-line no-new
+          new PostMachine({
+            [subroutineName]: {
+              [ixList[1]]: noop,
+            },
+            [ixList[1]]: [
+              call(subroutineName, ixList[2]),
+              noop,
+            ],
+            [ixList[2]]: noop,
+          });
+        })
+          .toThrow('inappropriate command usage in a group');
+      });
+    });
+
+    test('the next instruction was executed', () => {
+      const machine = new PostMachine({
+        [ixList[1]]: [
+          mark,
+          right,
+          mark,
+          right,
+          mark,
+        ],
+        [ixList[2]]: erase,
+      });
+
+      expect(() => {
+        machine.run();
+      })
+        .not.toThrow();
+
+      expect(machine.tape.symbolList.join('').trim())
+        .toBe('**');
+    });
+
+    test('call works', () => {
+      const machine = new PostMachine({
+        [subroutineName]: {
+          [ixList[1]]: erase,
+        },
+        [ixList[1]]: [
+          mark,
+          right,
+          mark,
+          call(subroutineName),
+          right,
+          mark,
+        ],
+      });
+
+      expect(() => {
+        machine.run();
+      })
+        .not.toThrow();
+
+      expect(machine.tape.symbolList.join('').trim())
+        .toBe('* *');
+    });
+  });
+
+  test('stepByStep', () => {
+    const ixList = getIxRange(2);
+    const machine = new PostMachine({
+      [ixList[1]]: noop,
+      [ixList[2]]: noop,
+    });
+
+    expect([...machine.runStepByStep()].length)
+      .toBe(2);
   });
 });
