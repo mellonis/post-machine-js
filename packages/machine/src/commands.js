@@ -7,7 +7,12 @@ import {
 import { instructionIndexValidator, subroutineNameValidator } from './validators';
 
 function callCommandStateProducer({
-  instructionIndex, nextInstructionIndex, references, states, subroutineInitialStates,
+  instructionIndex,
+  nextInstructionIndex,
+  references,
+  states,
+  subroutineInitialStates,
+  calledFromGroup,
 }) {
   const { subroutineName } = this;
 
@@ -20,6 +25,11 @@ function callCommandStateProducer({
   }
 
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
+
+  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('inappropriate command usage in a group');
+  }
+
   let nextState;
 
   if (
@@ -63,8 +73,12 @@ function callCommandStateProducer({
 }
 
 function checkCommandStateProducer({
-  instructionIndex, references, states, tapeBlock,
+  instructionIndex, references, states, tapeBlock, calledFromGroup,
 }) {
+  if (calledFromGroup) {
+    throw new Error('the \'check\' command cannot be used in a group');
+  }
+
   const { nextInstructionIndexIfMarked, nextInstructionIndexOtherwise } = this;
 
   if (!Object.prototype.hasOwnProperty.call(references, nextInstructionIndexIfMarked)) {
@@ -107,9 +121,14 @@ function checkCommandStateProducer({
 }
 
 function eraseCommandStateProducer({
-  instructionIndex, nextInstructionIndex, references, states,
+  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
+
+  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('inappropriate command usage in a group');
+  }
+
   let nextState;
 
   if (
@@ -158,9 +177,14 @@ function eraseCommandStateProducer({
 }
 
 function leftCommandStateProducer({
-  instructionIndex, nextInstructionIndex, references, states,
+  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
+
+  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('inappropriate command usage in a group');
+  }
+
   let nextState;
 
   if (
@@ -209,9 +233,14 @@ function leftCommandStateProducer({
 }
 
 function markCommandStateProducer({
-  instructionIndex, nextInstructionIndex, references, states,
+  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
+
+  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('inappropriate command usage in a group');
+  }
+
   let nextState;
 
   if (
@@ -260,9 +289,14 @@ function markCommandStateProducer({
 }
 
 function noopCommandStateProducer({
-  instructionIndex, nextInstructionIndex, references, states,
+  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
+
+  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('inappropriate command usage in a group');
+  }
+
   let nextState;
 
   if (
@@ -306,9 +340,14 @@ function noopCommandStateProducer({
 }
 
 function rightCommandStateProducer({
-  instructionIndex, nextInstructionIndex, references, states,
+  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
 }) {
   let { nextInstructionIndex: boundNextInstructionIndex } = this;
+
+  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+    throw new Error('inappropriate command usage in a group');
+  }
+
   let nextState;
 
   if (
@@ -357,22 +396,21 @@ function rightCommandStateProducer({
 }
 
 export function call(subroutineName, nextInstructionIndex) {
+  let actualNextInstructionIndex = nextInstructionIndex;
+
   if (arguments.length === 1) {
-    // eslint-disable-next-line no-param-reassign
-    nextInstructionIndex = defaultNextInstructionIndex;
+    actualNextInstructionIndex = defaultNextInstructionIndex;
   }
 
   const actualCommand = callCommandStateProducer.bind({
     subroutineName,
-    nextInstructionIndex,
+    nextInstructionIndex: actualNextInstructionIndex,
   });
 
   commandsSet.add(actualCommand);
 
   return actualCommand;
 }
-
-commandsSet.add(call);
 
 export function check(nextInstructionIndexIfMarked, nextInstructionIndexOtherwise) {
   const actualCommand = checkCommandStateProducer.bind({
@@ -385,13 +423,7 @@ export function check(nextInstructionIndexIfMarked, nextInstructionIndexOtherwis
   return actualCommand;
 }
 
-commandsSet.add(check);
-
 export function erase(nextInstructionIndex) {
-  if (arguments.length === 0) {
-    throw new Error('invalid next instruction index: undefined');
-  }
-
   const actualCommand = eraseCommandStateProducer.bind({
     nextInstructionIndex,
   });
@@ -401,13 +433,7 @@ export function erase(nextInstructionIndex) {
   return actualCommand;
 }
 
-commandsSet.add(erase);
-
 export function left(nextInstructionIndex) {
-  if (arguments.length === 0) {
-    throw new Error('invalid next instruction index: undefined');
-  }
-
   const actualCommand = leftCommandStateProducer.bind({
     nextInstructionIndex,
   });
@@ -416,14 +442,7 @@ export function left(nextInstructionIndex) {
 
   return actualCommand;
 }
-
-commandsSet.add(left);
-
 export function mark(nextInstructionIndex) {
-  if (arguments.length === 0) {
-    throw new Error('invalid next instruction index: undefined');
-  }
-
   const actualCommand = markCommandStateProducer.bind({
     nextInstructionIndex,
   });
@@ -433,13 +452,7 @@ export function mark(nextInstructionIndex) {
   return actualCommand;
 }
 
-commandsSet.add(mark);
-
 export function noop(nextInstructionIndex) {
-  if (arguments.length === 0) {
-    throw new Error('invalid next instruction index: undefined');
-  }
-
   const actualCommand = noopCommandStateProducer.bind({
     nextInstructionIndex,
   });
@@ -449,13 +462,7 @@ export function noop(nextInstructionIndex) {
   return actualCommand;
 }
 
-commandsSet.add(noop);
-
 export function right(nextInstructionIndex) {
-  if (arguments.length === 0) {
-    throw new Error('invalid next instruction index: undefined');
-  }
-
   const actualCommand = rightCommandStateProducer.bind({
     nextInstructionIndex,
   });
@@ -465,14 +472,18 @@ export function right(nextInstructionIndex) {
   return actualCommand;
 }
 
-commandsSet.add(right);
-
 export function stop(nextInstructionIndex) {
   if (nextInstructionIndex !== defaultNextInstructionIndex) {
     throw new Error('inappropriate \'stop\' command usage');
   }
 
-  const actualCommand = function stopCommandStateProducer() {
+  const actualCommand = function stopCommandStateProducer({
+    calledFromGroup,
+  }) {
+    if (calledFromGroup) {
+      throw new Error('the \'stop\' command cannot be used in a group');
+    }
+
     return haltState;
   };
 
@@ -481,4 +492,11 @@ export function stop(nextInstructionIndex) {
   return actualCommand;
 }
 
+commandsSet.add(call);
+commandsSet.add(check);
+commandsSet.add(erase);
+commandsSet.add(left);
+commandsSet.add(mark);
+commandsSet.add(noop);
+commandsSet.add(right);
 commandsSet.add(stop);

@@ -1884,7 +1884,7 @@
   dependencies:
     "@sinonjs/commons" "^1.7.0"
 
-"@turing-machine-js/machine@^0.3.0-alpha.2":
+"@turing-machine-js/machine@next":
   version "0.3.0-alpha.3"
   resolved "https://registry.yarnpkg.com/@turing-machine-js/machine/-/machine-0.3.0-alpha.3.tgz#1fd2b85f40c2c8d713d4c0e9a993a8d6008a826a"
   integrity sha512-hEY9tXHmlZ/NJlCP5zOS+sc2mfsJCnOLeFdGtE+xsewlUAYnvp7MXVnVVVdp09VwjWmAtxGnuky2DDl+AUUPWA==

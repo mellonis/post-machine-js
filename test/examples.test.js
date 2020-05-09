@@ -18,10 +18,10 @@ describe('README.md', () => {
       110: right(10), // move the carriage to the right and go to the 10th instruction
     });
 
-    machine.tape = new Tape({
+    machine.replaceTapeWith(new Tape({
       alphabet: machine.tape.alphabet,
       symbolList: ['*', '*', '*', ' ', ' ', ' ', '*'],
-    });
+    }));
 
     // console.log(machine.tape.symbolList.join('').trim()); // ***   *
 
