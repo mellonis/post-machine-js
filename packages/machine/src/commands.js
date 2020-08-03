@@ -395,6 +395,16 @@ function rightCommandStateProducer({
   return state;
 }
 
+function stopCommandStateProducer({
+  calledFromGroup,
+}) {
+  if (calledFromGroup) {
+    throw new Error('the \'stop\' command cannot be used in a group');
+  }
+
+  return haltState;
+}
+
 export function call(subroutineName, nextInstructionIndex) {
   let actualNextInstructionIndex = nextInstructionIndex;
 
@@ -442,6 +452,7 @@ export function left(nextInstructionIndex) {
 
   return actualCommand;
 }
+
 export function mark(nextInstructionIndex) {
   const actualCommand = markCommandStateProducer.bind({
     nextInstructionIndex,
@@ -477,15 +488,7 @@ export function stop(nextInstructionIndex) {
     throw new Error('inappropriate \'stop\' command usage');
   }
 
-  const actualCommand = function stopCommandStateProducer({
-    calledFromGroup,
-  }) {
-    if (calledFromGroup) {
-      throw new Error('the \'stop\' command cannot be used in a group');
-    }
-
-    return haltState;
-  };
+  const actualCommand = stopCommandStateProducer.bind(null);
 
   commandsSet.add(actualCommand);
 
