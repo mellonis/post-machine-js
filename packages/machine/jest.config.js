@@ -1,8 +1,15 @@
-const moduleName = 'machine';
+const packageInfo = require('./package.json');
+
+const [, packageName] = packageInfo.name.split('/');
 
 module.exports = {
-  name: moduleName,
-  displayName: moduleName,
+  displayName: {
+    name: packageName,
+    color: 'yellow',
+  },
+  moduleNameMapper: {
+    [`^${packageInfo.name}`]: '<rootDir>/src',
+  },
   transformIgnorePatterns: [
     'node_modules/(?!@turing-machine-js)',
   ],
