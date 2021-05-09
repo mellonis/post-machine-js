@@ -2292,10 +2292,10 @@
   resolved "https://registry.yarnpkg.com/@tootallnate/once/-/once-1.1.2.tgz#ccb91445360179a04e7fe6aff78c00ffc1eeaf82"
   integrity sha512-RbzJvlNzmRq5c3O09UipeuXno4tA1FE6ikOjxZK0tuxVv3412l64l5t1W5pj4+rJq9vpkm/kwiR07aZXnsKPxw==
 
-"@turing-machine-js/machine@next":
-  version "0.3.0-alpha.4"
-  resolved "https://registry.yarnpkg.com/@turing-machine-js/machine/-/machine-0.3.0-alpha.4.tgz#acc758108c4bc1a9c8e205f74642e4cc334712dd"
-  integrity sha512-gE8VQCRlz6Xo2jBs/WfEb/JmV1VfLEfo5YS2tZ3Y0OOayyNaVRfbZX80OmyTtq0lznz7lU+I+QGiDzH1dByC6g==
+"@turing-machine-js/machine@^1.0.0":
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/@turing-machine-js/machine/-/machine-1.0.0.tgz#144a84fa72150ba1034352d07d2783302bbf0af8"
+  integrity sha512-A4lHT1mFZ5VxtPiT6am754F+j9e4r//toKRL2aVc4Hmn/dCGLa2BXeZi9XPCRYYVTkSXJQTU6Hr9HsZq/rbzyw==
 
 "@types/babel__core@^7.0.0":
   version "7.1.9"
