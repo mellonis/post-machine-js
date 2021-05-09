@@ -21,7 +21,7 @@
     "machine"
   ],
   "dependencies": {
-    "@turing-machine-js/machine": "next"
+    "@turing-machine-js/machine": "^1.0.0"
   },
   "main": "dist/index.cjs.js",
   "module": "dist/index.es.js",
