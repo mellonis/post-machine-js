@@ -23,17 +23,17 @@ import PostMachine, {
 } from '@post-machine-js/machine';
 
 const machine = new PostMachine({
-  10: erase, // erase symbol and go to the 20th instruction
-  20: right, // move the carriage to the right and go to the 30th instruction
-  30: check(20, 40), // if marked go to the 20th instruction, or to the 40th otherwise
-  40: mark, // put symbol and go to the 50th instruction
-  50: right, // move the carriage to the right and go to the 60th instruction
-  60: check(70, 90), // if marked go to the 70th instruction, or to the 90th otherwise
-  70: left, // move the carriage to the left and go to the 80th instruction
-  80: stop, // stop execution
-  90: left, // move the carriage to the left and go to the 100th instruction
-  100: check(90, 110), // if marked go to the 90th instruction, or to the 110th otherwise
-  110: right(10), // move the carriage to the right and go to the 10th instruction
+  10: erase,
+  20: right,
+  30: check(20, 40),
+  40: mark,
+  50: right,
+  60: check(70, 90),
+  70: left,
+  80: stop,
+  90: left,
+  100: check(90, 110),
+  110: right(10),
 });
 
 machine.replaceTapeWith(new Tape({
@@ -46,4 +46,67 @@ console.log(machine.tape.symbolList.join('').trim()); // ***   *
 machine.run();
 
 console.log(machine.tape.symbolList.join('').trim()); // ****
+```
+
+# An example with subroutines
+
+A tape contains a marked section. The issue is to duplicate it.
+
+This example demonstrates an issue solving with subroutines. A subroutine is a peace of code which can be reused multiple times. The issue could be solved without subroutines at all, but with them the algorithm looks more readable. 
+
+```javascript
+import PostMachine, {
+  call, check, erase, left, mark, right, stop, Tape,
+} from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  leftAndGoToBlank: {
+    1: left,
+    2: check(1, 3),
+    3: stop,
+  },
+  rightAndGoToBlank: {
+    1: right,
+    2: check(1, 3),
+    3: stop,
+  },
+  markTwoCells: {
+    1: [mark, right, mark],
+  },
+  1: call('leftAndGoToBlank'),
+  2: [right, erase],
+  3: call('rightAndGoToBlank'),
+  4: call('rightAndGoToBlank'),
+  5: call('markTwoCells'),
+  6: call('leftAndGoToBlank'),
+  7: left,
+  8: check(1, 9),
+  9: stop,
+});
+
+// the first run
+
+machine.replaceTapeWith(new Tape({
+  alphabet: machine.tape.alphabet,
+  symbolList: ['*'],
+}));
+
+console.log(machine.tape.symbolList.join('').trim()); // *
+
+machine.run();
+
+console.log(machine.tape.symbolList.join('').trim()); // **
+
+// the second run
+
+machine.replaceTapeWith(new Tape({
+  alphabet: machine.tape.alphabet,
+  symbolList: ['*', '*', '*'],
+}));
+
+console.log(machine.tape.symbolList.join('').trim()); // ***
+
+machine.run();
+
+console.log(machine.tape.symbolList.join('').trim()); // ******
 ```
