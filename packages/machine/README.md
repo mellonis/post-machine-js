@@ -1,6 +1,6 @@
-# @post-machine-js/machine
+\# @post-machine-js/machine
 
-[![Build Status](https://travis-ci.com/mellonis/post-machine-js.svg?branch=master)](https://travis-ci.com/mellonis/post-machine-js)
+[![build](https://github.com/mellonis/post-machine-js/actions/workflows/main.yml/badge.svg?branch=master)](https://github.com/mellonis/post-machine-js/actions/workflows/main.yml)
 ![npm (scoped)](https://img.shields.io/npm/v/@post-machine-js/machine)
 
 Some basic objects to build your own post machine  
@@ -27,13 +27,13 @@ The following classes are exported from the library.
 
 ### Tape
 
-This class is reexported from the [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/next/packages/machine) library.
+This class is reexported from the [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine) library.
 
 ## Constants
 
 The following constants are exported from the library.
 
-* `alphabet` - the alphabet for the machine tapes. An `Alphabet` class instance implemented in [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/next/packages/machine) library.
+* `alphabet` - the alphabet for the machine tapes. An `Alphabet` class instance implemented in [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine) library.
 * `blankSymbol` - the blank symbol, ` ` (space)
 * `markSymbol` - the mark symbol, `*`
 
