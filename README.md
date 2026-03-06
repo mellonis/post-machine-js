@@ -11,6 +11,14 @@ Under the hood, the `PostMachine` class builds some `State`s for `TuringMachine`
 This repository contains following packages:
 * [@post-machine-js/machine](https://github.com/mellonis/post-machine-js/tree/master/packages/machine)
 
+## Installation
+
+`@post-machine-js/machine` declares [@turing-machine-js/machine](https://github.com/mellonis/turing-machine-js) as a **peer dependency**, so both use the same Turing machine implementation (one instance in the bundle). Install:
+
+```bash
+npm install @turing-machine-js/machine @post-machine-js/machine
+```
+
 # An example
 
 A tape contains two marked sections divided by the blank symbol(s). The issue is to move the first section close to the second. In other words, to remove blank symbols between these sections.
@@ -18,8 +26,8 @@ A tape contains two marked sections divided by the blank symbol(s). The issue is
 This example demonstrates an issue solving. 
 
 ```javascript
-import PostMachine, {
-  check, erase, left, mark, right, stop, Tape,
+import {
+  PostMachine, check, erase, left, mark, right, stop, Tape,
 } from '@post-machine-js/machine';
 
 const machine = new PostMachine({
@@ -38,14 +46,14 @@ const machine = new PostMachine({
 
 machine.replaceTapeWith(new Tape({
   alphabet: machine.tape.alphabet,
-  symbolList: ['*', '*', '*', ' ', ' ', ' ', '*'],
+  symbols: ['*', '*', '*', ' ', ' ', ' ', '*'],
 }));
 
-console.log(machine.tape.symbolList.join('').trim()); // ***   *
+console.log(machine.tape.symbols.join('').trim()); // ***   *
 
 machine.run();
 
-console.log(machine.tape.symbolList.join('').trim()); // ****
+console.log(machine.tape.symbols.join('').trim()); // ****
 ```
 
 # An example with subroutines
@@ -55,8 +63,8 @@ A tape contains a marked section. The issue is to duplicate it.
 This example demonstrates an issue solving with subroutines. A subroutine is a peace of code which can be reused multiple times. The issue could be solved without subroutines at all, but with them the algorithm looks more readable. 
 
 ```javascript
-import PostMachine, {
-  call, check, erase, left, mark, right, stop, Tape,
+import {
+  PostMachine, call, check, erase, left, mark, right, stop, Tape,
 } from '@post-machine-js/machine';
 
 const machine = new PostMachine({
@@ -88,25 +96,25 @@ const machine = new PostMachine({
 
 machine.replaceTapeWith(new Tape({
   alphabet: machine.tape.alphabet,
-  symbolList: ['*'],
+  symbols: ['*'],
 }));
 
-console.log(machine.tape.symbolList.join('').trim()); // *
+console.log(machine.tape.symbols.join('').trim()); // *
 
 machine.run();
 
-console.log(machine.tape.symbolList.join('').trim()); // **
+console.log(machine.tape.symbols.join('').trim()); // **
 
 // the second run
 
 machine.replaceTapeWith(new Tape({
   alphabet: machine.tape.alphabet,
-  symbolList: ['*', '*', '*'],
+  symbols: ['*', '*', '*'],
 }));
 
-console.log(machine.tape.symbolList.join('').trim()); // ***
+console.log(machine.tape.symbols.join('').trim()); // ***
 
 machine.run();
 
-console.log(machine.tape.symbolList.join('').trim()); // ******
+console.log(machine.tape.symbols.join('').trim()); // ******
 ```

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@post-machine-js/machine": ["./src/index"],
+      "@turing-machine-js/machine": ["../../node_modules/@turing-machine-js/machine/dist/index"]
+    }
+  },
+  "include": ["src/**/*"]
+}

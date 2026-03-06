@@ -1,0 +1,222 @@
+import {
+  Reference,
+  State,
+  Tape,
+  TapeBlock,
+  TuringMachine,
+  ifOtherSymbol,
+  haltState,
+} from '@turing-machine-js/machine';
+
+type MachineState = {
+  step: number;
+  state: State;
+  currentSymbols: string[];
+  nextSymbols: string[];
+  movements: symbol[];
+  nextState: State;
+};
+import { commandsSet, type CommandFn, defaultNextInstructionIndex, originalTapeBlock } from '../consts';
+import type { CommandContext } from '../commands';
+import {
+  call, check, erase, left, mark, noop, right, stop,
+} from '../commands';
+import { instructionIndexValidator, subroutineNameValidator } from '../validators';
+
+type Instructions = Record<string | number, unknown>;
+
+export class PostMachine extends TuringMachine {
+  #initialState: State;
+
+  constructor(instructions: Instructions = {}) {
+    super({ tapeBlock: originalTapeBlock.clone() });
+
+    this.#initialState = this.#buildInitialState({
+      instructions,
+    });
+  }
+
+  get tapeBlock(): TapeBlock {
+    return super.tapeBlock;
+  }
+
+  get tape(): Tape {
+    return this.tapeBlock.tapes[0];
+  }
+
+  replaceTapeWith(newTape: Tape): void {
+    this.tapeBlock.replaceTape(newTape);
+  }
+
+  override run({ stepsLimit = 1e5, onStep }: { stepsLimit?: number; onStep?: (machineState: MachineState) => void } = {}): void {
+    super.run({ initialState: this.#initialState, stepsLimit, onStep });
+  }
+
+  override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
+    yield* super.runStepByStep({ initialState: this.#initialState, stepsLimit });
+  }
+
+  #buildInitialState = ({
+    instructions,
+    subroutinesDataFromUpperScope = {},
+    subroutineInitialStatesFromUpperScope = {},
+    calledFromGroup = false,
+  }: {
+    instructions: Instructions;
+    subroutinesDataFromUpperScope?: Record<string, { willBeBoundSoon: boolean; reference: Reference; instructions: Instructions }>;
+    subroutineInitialStatesFromUpperScope?: Record<string, State>;
+    calledFromGroup?: boolean;
+  }): State => {
+    const instructionsCopy = { ...instructions };
+
+    const hasSymbolKeyProperties = Object.getOwnPropertySymbols(instructionsCopy).length > 0;
+
+    if (hasSymbolKeyProperties) {
+      throw new Error('invalid instruction index(es)');
+    }
+
+    const localSubroutinesData = Object.keys(instructionsCopy)
+      .filter((instructionIndexStr) => !instructionIndexValidator(instructionIndexStr))
+      .reduce<Record<string, { willBeBoundSoon: boolean; reference: Reference; instructions: Instructions }>>((result, subroutineName) => {
+        if (!subroutineNameValidator(subroutineName)) {
+          throw new Error(`invalid subroutine name: '${subroutineName}'`);
+        }
+
+        const instructionsForSubroutinesData = instructionsCopy[subroutineName] as Instructions;
+
+        delete instructionsCopy[subroutineName];
+
+        return {
+          ...result,
+          [subroutineName]: {
+            willBeBoundSoon: false,
+            reference: new Reference(),
+            instructions: instructionsForSubroutinesData,
+          },
+        };
+      }, {});
+    const subroutinesData = {
+      ...subroutinesDataFromUpperScope,
+      ...localSubroutinesData,
+    };
+    const subroutineInitialStates: Record<string, State> = {
+      ...subroutineInitialStatesFromUpperScope,
+      ...Object.keys(localSubroutinesData).reduce<Record<string, State>>((result, subroutineName) => ({
+        ...result,
+        [subroutineName]: new State({
+          [ifOtherSymbol]: {
+            nextState: localSubroutinesData[subroutineName].reference,
+          },
+        }),
+      }), {}),
+    };
+
+    Object.keys(localSubroutinesData).forEach((subroutineName) => {
+      const {
+        reference,
+        instructions: subroutineInstructions,
+      } = subroutinesData[subroutineName];
+
+      reference.bind(this.#buildInitialState({
+        instructions: subroutineInstructions,
+        subroutinesDataFromUpperScope: subroutinesData,
+        subroutineInitialStatesFromUpperScope: subroutineInitialStates,
+      }));
+    });
+
+    const instructionIndexList = Object.keys(instructionsCopy);
+
+    if (instructionIndexList.length === 0) {
+      throw new Error('there is no instructions');
+    }
+
+    const references: Record<string, Reference> = instructionIndexList.reduce((result, instructionIndex) => ({
+      ...result,
+      [instructionIndex]: new Reference(),
+    }), {});
+
+    const states = new Map<string, State>();
+    const list = instructionIndexList.map(Number);
+
+    list.forEach((instructionIndex) => {
+      const cmd = instructionsCopy[String(instructionIndex)];
+      switch (cmd) {
+        case erase:
+        case left:
+        case mark:
+        case noop:
+        case right:
+        case stop:
+          (instructionsCopy as Record<string, unknown>)[String(instructionIndex)] = (cmd as (ix?: number | symbol) => unknown)(defaultNextInstructionIndex);
+          break;
+        case call:
+        case check:
+          throw new Error(`inappropriate '${(cmd as { name?: string }).name}' command usage at instruction ${instructionIndex}`);
+        default:
+          break;
+      }
+    });
+
+    const builtStates = new Map<string, State>();
+
+    list.forEach((instructionIndex, ix) => {
+      const instruction = (instructionsCopy as Record<string, unknown>)[String(instructionIndex)];
+
+      if (commandsSet.has(instruction as CommandFn)) {
+        const context: CommandContext = {
+          instructionIndex: Number(instructionIndex),
+          nextInstructionIndex: list[ix + 1],
+          tapeBlock: this.tapeBlock,
+          references,
+          states,
+          subroutineInitialStates,
+          calledFromGroup,
+        };
+        builtStates.set(String(instructionIndex), (instruction as (context: CommandContext) => State)(context));
+      } else if (Array.isArray(instruction)) {
+        if (instruction.length === 0) {
+          throw new Error('empty group');
+        }
+
+        const areInstructionsInGroupValid = instruction
+          .every((command) => commandsSet.has(command as CommandFn));
+
+        if (!areInstructionsInGroupValid) {
+          throw new Error('invalid command in the group');
+        }
+
+        const groupState = this.#buildInitialState({
+          instructions: instruction.reduce<Instructions>((result, command, commandIndexInTheGroup) => ({
+            ...result,
+            [commandIndexInTheGroup + 1]: command,
+          }), {}),
+          subroutinesDataFromUpperScope: subroutinesData,
+          subroutineInitialStatesFromUpperScope: subroutineInitialStates,
+          calledFromGroup: true,
+        });
+
+        let nextState: State | Reference;
+
+        if (list[ix + 1] == null) {
+          nextState = haltState;
+        } else {
+          nextState = references[String(list[ix + 1])];
+        }
+
+        builtStates.set(String(instructionIndex), groupState.withOverrodeHaltState(new State({
+          [ifOtherSymbol]: {
+            nextState,
+          },
+        })));
+      } else {
+        throw new Error('invalid instruction');
+      }
+    });
+
+    builtStates.forEach((state, instructionIndex) => {
+      references[instructionIndex].bind(state);
+    });
+
+    return references[instructionIndexList[0]].ref;
+  };
+}

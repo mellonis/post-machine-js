@@ -1,25 +1,22 @@
-import PostMachine, {
-  call, check, erase, left, mark, noop, right, stop, Tape,
-} from '@post-machine-js/machine';
+import {
+  PostMachine, call, check, erase, left, mark, noop, right, stop, Tape,
+} from '../src/index';
 import { subroutineNameValidator } from '../src/validators';
 import { getIxRange, getRandomInstructionIndex } from './helpers';
 
 describe('constructor', () => {
   test('no instructions', () => {
     expect(() => {
-      // eslint-disable-next-line no-new
       new PostMachine();
     })
       .toThrow('there is no instructions');
 
     expect(() => {
-      // eslint-disable-next-line no-new
       new PostMachine({});
     })
       .toThrow('there is no instructions');
 
     expect(() => {
-      // eslint-disable-next-line no-new
       new PostMachine({
         a: null, // not integer index
       });
@@ -29,7 +26,6 @@ describe('constructor', () => {
 
   test('invalid instructions indexes', () => {
     expect(() => {
-      // eslint-disable-next-line no-new
       new PostMachine({
         [Symbol('a')]: null, // symbol index
       });
@@ -44,7 +40,6 @@ describe('constructor', () => {
         const nextIx = ix + 1;
 
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [ix]: fn(),
           });
@@ -53,16 +48,14 @@ describe('constructor', () => {
 
         [undefined, null, ' ', Math.random()].forEach((invalidIx) => {
           expect(() => {
-            // eslint-disable-next-line no-new
-            new PostMachine({
-              [ix]: fn(invalidIx),
+          new PostMachine({
+              [ix]: fn(invalidIx as number | symbol),
             });
           })
             .toThrow(`invalid next instruction index: ${invalidIx}`);
         });
 
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [ix]: fn(nextIx),
           });
@@ -70,7 +63,6 @@ describe('constructor', () => {
           .toThrow(`invalid next instruction index: ${nextIx}`);
 
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [ix]: fn(ix),
           });
@@ -86,20 +78,18 @@ describe('constructor', () => {
 
       [undefined, null, ' ', Math.random()].forEach((invalidIx) => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [subroutineName]: {
               [ix]: noop,
             },
-            [ix]: call(subroutineName, invalidIx),
+            [ix]: call(subroutineName, invalidIx as number),
           });
         })
           .toThrow(`invalid next instruction index: ${invalidIx}`);
       });
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [subroutineName]: {
             [ix]: noop,
           },
@@ -109,8 +99,7 @@ describe('constructor', () => {
         .toThrow(`invalid next instruction index: ${nextIx}`);
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [subroutineName]: {
             [ix]: noop,
           },
@@ -125,32 +114,28 @@ describe('constructor', () => {
       const nextIx = ix + 1;
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [ix]: check(),
+          new PostMachine({
+          [ix]: (check as (...args: unknown[]) => unknown)(),
         });
       })
         .toThrow('invalid next instruction index: undefined');
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [ix]: check(ix),
+          new PostMachine({
+          [ix]: (check as (...args: unknown[]) => unknown)(ix),
         });
       })
         .toThrow('invalid next instruction index: undefined');
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [ix]: check(undefined, ix),
+          new PostMachine({
+          [ix]: (check as (...args: unknown[]) => unknown)(undefined, ix),
         });
       })
         .toThrow('invalid next instruction index: undefined');
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: check(ix, ix),
         });
       })
@@ -158,18 +143,16 @@ describe('constructor', () => {
 
       [' ', Math.random()].forEach((invalidIx) => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
-            [ix]: check(nextIx, invalidIx),
+            [ix]: check(nextIx, invalidIx as number),
             [nextIx]: noop,
           });
         })
           .toThrow(`invalid next instruction index: ${invalidIx}`);
 
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
-            [ix]: check(invalidIx, nextIx),
+            [ix]: check(invalidIx as number, nextIx),
             [nextIx]: noop,
           });
         })
@@ -177,24 +160,21 @@ describe('constructor', () => {
       });
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: check(ix, nextIx),
         });
       })
         .toThrow(`invalid next instruction index: ${nextIx}`);
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: check(nextIx, ix),
         });
       })
         .toThrow(`invalid next instruction index: ${nextIx}`);
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: check(ix, nextIx),
           [nextIx]: noop,
         });
@@ -202,8 +182,7 @@ describe('constructor', () => {
         .toThrow(`potential infinite loop at instruction ${ix}`);
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: check(nextIx, ix),
           [nextIx]: noop,
         });
@@ -216,7 +195,6 @@ describe('constructor', () => {
     [undefined, null, 'a string', Math.random(), Symbol('for test purpose'), {}, function aFunction() {}].forEach((command) => {
       test(String(command), () => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             10: command,
           });
@@ -226,7 +204,7 @@ describe('constructor', () => {
     });
   });
 
-  test(`invalid '${call.fn}' command subroutine name`, () => {
+  test(`invalid '${call.name}' command subroutine name`, () => {
     const ix = getRandomInstructionIndex();
     const invalidSubroutineName = String(ix);
 
@@ -234,7 +212,6 @@ describe('constructor', () => {
       .toBe(false);
 
     expect(() => {
-      // eslint-disable-next-line no-new
       new PostMachine({
         [ix]: call(invalidSubroutineName),
       });
@@ -249,7 +226,6 @@ describe('constructor', () => {
         const ix = getRandomInstructionIndex();
 
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [ix]: fn,
           });
@@ -264,24 +240,21 @@ describe('constructor', () => {
       const nextIx = ix + 1;
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: stop(),
         });
       })
         .toThrow('inappropriate \'stop\' command usage');
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: stop(nextIx),
         });
       })
         .toThrow('inappropriate \'stop\' command usage');
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ix]: stop(ix),
         });
       })
@@ -294,8 +267,7 @@ describe('constructor', () => {
 
     test('non integer keys are valid', () => {
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           subroutine: {
             [ix]: noop,
           },
@@ -305,8 +277,7 @@ describe('constructor', () => {
         .not.toThrow();
 
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           subroutine: {
             subSubroutine: {
               [ix]: noop,
@@ -322,7 +293,6 @@ describe('constructor', () => {
     test('invalid subroutine name', () => {
       [' ', Math.random()].forEach((subRoutineName) => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [subRoutineName]: {
               [ix]: noop,
@@ -336,9 +306,8 @@ describe('constructor', () => {
 
     test('\'undefined\' subroutine name', () => {
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
-          [undefined]: {
+          new PostMachine({
+          [undefined as unknown as string]: {
             [ix]: noop,
           },
           [ix]: call('undefined'),
@@ -349,8 +318,7 @@ describe('constructor', () => {
 
     test('an undefined subroutine call', () => {
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           subroutine: {
             [ix]: noop,
           },
@@ -381,7 +349,7 @@ describe('run tests', () => {
 
     machine.replaceTapeWith(new Tape({
       alphabet: machine.tape.alphabet,
-      symbolList: ['*', '*', '*', ' ', ' ', ' ', '*'],
+      symbols: ['*', '*', '*', ' ', ' ', ' ', '*'],
     }));
 
     const onStepMock = jest.fn();
@@ -390,7 +358,7 @@ describe('run tests', () => {
 
     machine.run({ stepsLimit: exactStepCount, onStep: () => onStepMock() });
 
-    expect(machine.tape.symbolList.join('').trim()).toBe('****');
+    expect(machine.tape.symbols.join('').trim()).toBe('****');
     expect(onStepMock).toHaveBeenCalledTimes(exactStepCount);
   });
 
@@ -509,7 +477,7 @@ describe('run tests', () => {
       })
         .not.toThrow();
 
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('***');
     });
 
@@ -564,13 +532,13 @@ describe('run tests', () => {
         machineList.forEach((machine) => {
           machine.replaceTapeWith(new Tape({
             alphabet: machine.tape.alphabet,
-            symbolList: '***  *'.split(''),
+            symbols: '***  *'.split(''),
           }));
           machine.run();
         });
       })
         .not.toThrow();
-      expect(machineList.map((machine) => machine.tape.symbolList.join('').trim()))
+      expect(machineList.map((machine) => machine.tape.symbols.join('').trim()))
         .toEqual(machineList.map((_, ix) => (
           ix % 2 === 0
             ? '**   *'
@@ -587,13 +555,13 @@ describe('run tests', () => {
         [subroutineNameList[0]]: {
           [ixList[1]]: erase,
         },
-        [ixList[1]]: call([subroutineNameList[1]]),
-        [ixList[2]]: call([subroutineNameList[0]]),
+        [ixList[1]]: call(subroutineNameList[1]),
+        [ixList[2]]: call(subroutineNameList[0]),
       },
       [subroutineNameList[1]]: {
         [ixList[1]]: mark,
       },
-      [ixList[1]]: call([subroutineNameList[0]]),
+      [ixList[1]]: call(subroutineNameList[0]),
     });
 
     const onStepMock = jest.fn();
@@ -608,7 +576,7 @@ describe('run tests', () => {
     expect(onStepMock).toHaveBeenCalledTimes(8);
     expect(machine.tape.viewport[0]).toEqual(' ');
 
-    const nextSymbolHistory = onStepMock.mock.calls.map((aCall) => aCall[0].nextSymbolList[0]);
+    const nextSymbolHistory = onStepMock.mock.calls.map((aCall) => aCall[0].nextSymbols[0]);
 
     expect(nextSymbolHistory.filter((symbol, ix, list) => list.indexOf(symbol) === ix)).toEqual([' ', '*']);
   });
@@ -702,13 +670,13 @@ describe('run tests', () => {
 
       const regExp = />/;
       const machine1StateIdList = machine1OnStepMock.mock.calls
-        .map((args) => args[0].state.id)
-        .filter((id) => regExp.test(id))
-        .filter((id, ix, list) => list.indexOf(id) === ix);
+        .map((args) => args[0].state.name)
+        .filter((name) => regExp.test(name))
+        .filter((name, ix, list) => list.indexOf(name) === ix);
       const machine2StateIdList = machine2OnStepMock.mock.calls
-        .map((args) => args[0].state.id)
-        .filter((id) => regExp.test(id))
-        .filter((id, ix, list) => list.indexOf(id) === ix);
+        .map((args) => args[0].state.name)
+        .filter((name) => regExp.test(name))
+        .filter((name, ix, list) => list.indexOf(name) === ix);
 
       expect(machine1StateIdList.length).toBe(1);
       expect(machine2StateIdList.length).toBe(1);
@@ -749,8 +717,7 @@ describe('run tests', () => {
 
     test('empty group', () => {
       expect(() => {
-        // eslint-disable-next-line no-new
-        new PostMachine({
+          new PostMachine({
           [ixList[1]]: [],
         });
       })
@@ -761,8 +728,7 @@ describe('run tests', () => {
       [undefined, null, 'a string', Math.random(), Symbol('for test purpose'), {}, ['an', 'array'], function aFunction() {}].forEach((command) => {
         test(String(command), () => {
           expect(() => {
-            // eslint-disable-next-line no-new
-            new PostMachine({
+          new PostMachine({
               [ixList[1]]: [
                 command,
               ],
@@ -774,7 +740,6 @@ describe('run tests', () => {
 
       test(check.name, () => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [ixList[1]]: [
               check(2, 3),
@@ -790,7 +755,6 @@ describe('run tests', () => {
 
       test(stop.name, () => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [ixList[1]]: mark,
             [ixList[2]]: [
@@ -807,8 +771,7 @@ describe('run tests', () => {
       [erase, left, mark, noop, right].forEach((fn) => {
         test(fn.name, () => {
           expect(() => {
-            // eslint-disable-next-line no-new
-            new PostMachine({
+          new PostMachine({
               [ixList[1]]: [
                 fn,
               ],
@@ -820,7 +783,6 @@ describe('run tests', () => {
 
       test(call.name, () => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [subroutineName]: {
               [ixList[1]]: noop,
@@ -838,8 +800,7 @@ describe('run tests', () => {
       [erase, left, mark, noop, right].forEach((fn) => {
         test(fn.name, () => {
           expect(() => {
-            // eslint-disable-next-line no-new
-            new PostMachine({
+          new PostMachine({
               [ixList[1]]: [
                 fn(ixList[2]),
                 noop,
@@ -853,7 +814,6 @@ describe('run tests', () => {
 
       test(call.name, () => {
         expect(() => {
-          // eslint-disable-next-line no-new
           new PostMachine({
             [subroutineName]: {
               [ixList[1]]: noop,
@@ -886,7 +846,7 @@ describe('run tests', () => {
       })
         .not.toThrow();
 
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('**');
     });
 
@@ -910,7 +870,7 @@ describe('run tests', () => {
       })
         .not.toThrow();
 
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('* *');
     });
   });
