@@ -24,10 +24,26 @@
     "machine"
   ],
   "peerDependencies": {
-    "@turing-machine-js/machine": "^2.0.0"
+    "@turing-machine-js/machine": "^2.0.2"
   },
   "devDependencies": {
-    "@turing-machine-js/machine": "^2.0.0"
+    "@turing-machine-js/machine": "^2.0.2"
   },
-  "module": "dist/index.js"
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
+    },
+    "./src": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
+    }
+  }
 }
