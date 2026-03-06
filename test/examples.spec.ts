@@ -1,10 +1,10 @@
-import PostMachine, {
-  call, check, erase, left, mark, right, stop, Tape,
-} from '@post-machine-js/machine';
+import {
+  PostMachine, call, check, erase, left, mark, right, stop, Tape,
+} from '../packages/machine/src/index';
 
 describe('README.md', () => {
   describe('An example', () => {
-    let machine;
+    let machine: PostMachine;
 
     beforeAll(() => {
       machine = new PostMachine({
@@ -25,25 +25,21 @@ describe('README.md', () => {
     test('***   * -> ****', () => {
       machine.replaceTapeWith(new Tape({
         alphabet: machine.tape.alphabet,
-        symbolList: ['*', '*', '*', ' ', ' ', ' ', '*'],
+        symbols: ['*', '*', '*', ' ', ' ', ' ', '*'],
       }));
 
-      // console.log(machine.tape.symbolList.join('').trim()); // ***   *
-
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('***   *');
 
       machine.run();
 
-      // console.log(machine.tape.symbolList.join('').trim()); // ****
-
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('****');
     });
   });
 
   describe('An example with subroutines', () => {
-    let machine;
+    let machine: PostMachine;
 
     beforeAll(() => {
       machine = new PostMachine({
@@ -75,38 +71,30 @@ describe('README.md', () => {
     test('* -> **', () => {
       machine.replaceTapeWith(new Tape({
         alphabet: machine.tape.alphabet,
-        symbolList: ['*'],
+        symbols: ['*'],
       }));
 
-      // console.log(machine.tape.symbolList.join('').trim()); // *
-
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('*');
 
       machine.run();
 
-      // console.log(machine.tape.symbolList.join('').trim()); // **
-
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('**');
     });
 
     test('*** -> ******', () => {
       machine.replaceTapeWith(new Tape({
         alphabet: machine.tape.alphabet,
-        symbolList: ['*', '*', '*'],
+        symbols: ['*', '*', '*'],
       }));
 
-      // console.log(machine.tape.symbolList.join('').trim()); // ***
-
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('***');
 
       machine.run();
 
-      // console.log(machine.tape.symbolList.join('').trim()); // ******
-
-      expect(machine.tape.symbolList.join('').trim())
+      expect(machine.tape.symbols.join('').trim())
         .toBe('******');
     });
   });

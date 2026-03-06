@@ -7,16 +7,8 @@ Some basic objects to build your own post machine
 
 ## Install
 
-Using npm:
-
 ```sh
 npm install @post-machine-js/machine
-```
-
-or using yarn:
-
-```sh
-yarn add @post-machine-js/machine
 ```
 
 ## Classes

@@ -1,7 +1,10 @@
 {
   "name": "@post-machine-js/machine",
-  "version": "0.0.1-alpha.6",
-  "description": "A convenient Turing machine",
+  "version": "2.0.0",
+  "description": "A convenient Post machine",
+  "engines": {
+    "npm": ">=7.0.0"
+  },
   "author": "Ruslan Gilmullin <mellonis14@gmain.com>",
   "homepage": "https://github.com/mellonis/post-machine-js#readme",
   "license": "GPL-3.0-or-later",
@@ -20,13 +23,11 @@
     "post",
     "machine"
   ],
-  "dependencies": {
-    "@turing-machine-js/machine": "^1.0.0"
+  "peerDependencies": {
+    "@turing-machine-js/machine": "^2.0.0"
   },
-  "main": "dist/index.cjs.js",
-  "module": "dist/index.es.js",
-  "scripts": {
-    "build": "rollup -c ../../rollup.config.mjs",
-    "test": "jest --colors"
-  }
+  "devDependencies": {
+    "@turing-machine-js/machine": "^2.0.0"
+  },
+  "module": "dist/index.js"
 }
