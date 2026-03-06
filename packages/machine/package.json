@@ -1,6 +1,6 @@
 {
   "name": "@post-machine-js/machine",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "description": "A convenient Post machine",
   "engines": {
     "npm": ">=7.0.0"
