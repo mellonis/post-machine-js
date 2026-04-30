@@ -1,4 +1,5 @@
 import {
+  type MachineState,
   Reference,
   State,
   Tape,
@@ -13,14 +14,6 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator } from '../validators';
-
-// Mirror turing's `MachineState` shape by extracting the yielded type from
-// `runStepByStep`'s return signature. turing-machine-js exports the type from
-// its source but doesn't re-export it from the package barrel; this extraction
-// stays in sync if the upstream shape evolves. (Drop in favor of a direct
-// import once turing adds `MachineState` to its index.ts re-exports.)
-type MachineState =
-  ReturnType<TuringMachine['runStepByStep']> extends Generator<infer T> ? T : never;
 
 export class PostMachine extends TuringMachine {
   #initialState: State;

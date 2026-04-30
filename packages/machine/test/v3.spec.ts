@@ -1,7 +1,8 @@
 // Non-README v3 tests — sentinel identity of re-exports, getter sanity,
-// equivalentOn end-to-end. README-driven tests live in examples.spec.ts
-// (one per README — root tests in <repo>/test/examples.spec.ts, per-package
-// tests in <package>/test/examples.spec.ts).
+// equivalentOn end-to-end, and wrapper-vs-manual-call equivalence.
+// README-driven tests live in examples.spec.ts (one per README — root tests
+// in <repo>/test/examples.spec.ts, per-package tests in
+// <package>/test/examples.spec.ts).
 
 import {
   PostMachine,
@@ -11,6 +12,8 @@ import {
   summarize as postSummarize,
   summarizeGraph as postSummarizeGraph,
   equivalentOn as postEquivalentOn,
+  summarizePostMachine,
+  equivalentPostMachines,
   check, mark, right, stop,
 } from '../src/index';
 import {
@@ -106,5 +109,57 @@ describe('equivalentOn end-to-end with PostMachine', () => {
     expect(report.allAgree).toBe(false);
     expect(report.results[0].referenceOutput).toBe('***');
     expect(report.results[0].candidateOutput).toBe('**');
+  });
+});
+
+describe('Post-aware wrappers — equivalence to manual upstream calls', () => {
+  function buildWalkAndMark(): PostMachine {
+    return new PostMachine({
+      10: check(20, 30),
+      20: right(10),
+      30: mark,
+      40: stop,
+    });
+  }
+
+  test('summarizePostMachine matches summarize(initialState, tapeBlock)', () => {
+    const machine = buildWalkAndMark();
+
+    expect(summarizePostMachine(machine))
+      .toEqual(postSummarize(machine.initialState, machine.tapeBlock));
+  });
+
+  test('equivalentPostMachines matches equivalentOn with clone-based getTapeBlock', () => {
+    const reference = buildWalkAndMark();
+    const candidate = buildWalkAndMark();
+
+    const wrapped = equivalentPostMachines(reference, candidate, ['** ']);
+    const manual = postEquivalentOn(
+      { state: reference.initialState, getTapeBlock: () => reference.tapeBlock.clone() },
+      { state: candidate.initialState, getTapeBlock: () => candidate.tapeBlock.clone() },
+      ['** '],
+    );
+
+    // Both should agree (identical machines on identical input). The reports
+    // contain step counts and snapshots that are deterministic for fresh runs,
+    // so toEqual on the full structure is fair.
+    expect(wrapped.allAgree).toBe(true);
+    expect(manual.allAgree).toBe(true);
+    expect(wrapped.results[0].referenceOutput).toBe(manual.results[0].referenceOutput);
+    expect(wrapped.results[0].candidateOutput).toBe(manual.results[0].candidateOutput);
+    expect(wrapped.results[0].referenceSteps).toBe(manual.results[0].referenceSteps);
+    expect(wrapped.results[0].candidateSteps).toBe(manual.results[0].candidateSteps);
+  });
+
+  test('equivalentPostMachines passes through options to upstream equivalentOn', () => {
+    const reference = buildWalkAndMark();
+    const candidate = buildWalkAndMark();
+
+    // compareOutputs that always returns false → wrapper should report disagreement.
+    const report = equivalentPostMachines(reference, candidate, ['** '], {
+      compareOutputs: () => false,
+    });
+
+    expect(report.allAgree).toBe(false);
   });
 });

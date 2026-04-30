@@ -141,7 +141,7 @@ For a single subroutine called from MULTIPLE sites — the other archetypal use 
 
 ## Introspection and equivalence
 
-The v3 utilities from [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine) work directly against a `PostMachine` — `machine.initialState` exposes the precomputed start state and `machine.tapeBlock` is inherited from `TuringMachine`. The utilities are re-exported here so the upstream package doesn't need to be imported separately. Call them as bare functions — `PostMachine` doesn't wrap them in methods (the bare-function form keeps a single way to do each thing).
+The v3 utilities from [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine) work directly against a `PostMachine`. For the two most common ones — `summarize` and `equivalentOn` — this package also ships Post-aware free-function wrappers (`summarizePostMachine`, `equivalentPostMachines`) that bind the standard arguments and hide the `getTapeBlock`-must-clone footgun. **Prefer the wrappers for typical use.** The bare upstream functions are still re-exported here for advanced cases.
 
 ### Visualization — `toMermaid` + `State.toGraph`
 
@@ -161,14 +161,14 @@ console.log(mermaid.split('\n')[0]); // flowchart TD
 
 For the raw `Graph` as input to other tools, use `State.toGraph(machine.initialState, machine.tapeBlock)` directly.
 
-### Structural summary — `summarize`
+### Structural summary — `summarizePostMachine`
 
-`summarize(initialState, tapeBlock)` returns counts about the assembled state graph: `stateCount`, `transitionCount`, `compositionEdgeCount`, `maxCompositionDepth`, `selfLoopCount`, `hasCycles`, `tapeCount`, `alphabetCardinalities`. For a PostMachine, `tapeCount` is always `1` and `alphabetCardinalities` is always `[2]` (one tape, two symbols — blank and mark); the interesting fields are the rest.
+`summarizePostMachine(machine)` returns counts about the assembled state graph: `stateCount`, `transitionCount`, `compositionEdgeCount`, `maxCompositionDepth`, `selfLoopCount`, `hasCycles`, `tapeCount`, `alphabetCardinalities`. For a PostMachine, `tapeCount` is always `1` and `alphabetCardinalities` is always `[2]` (one tape, two symbols — blank and mark); the interesting fields are the rest.
 
 The typical use is comparing two implementations of the same algorithm — for example, an inline version against one factored through a subroutine:
 
 ```javascript
-import { PostMachine, summarize, call, check, mark, right, stop } from '@post-machine-js/machine';
+import { PostMachine, summarizePostMachine, call, check, mark, right, stop } from '@post-machine-js/machine';
 
 // Both machines walk right to the first blank cell and mark it.
 
@@ -190,8 +190,8 @@ const withSubroutine = new PostMachine({
   30: stop,
 });
 
-const a = summarize(inline.initialState, inline.tapeBlock);
-const b = summarize(withSubroutine.initialState, withSubroutine.tapeBlock);
+const a = summarizePostMachine(inline);
+const b = summarizePostMachine(withSubroutine);
 
 console.log(a.stateCount, a.compositionEdgeCount, a.maxCompositionDepth);
 // 4 0 0 — inline: 4 states, no composition
@@ -200,14 +200,16 @@ console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
 // 6 1 1 — subroutine: 2 more states; 1 composition edge from `call` (depth 1)
 ```
 
-Both programs do the same thing on the same input. The `withSubroutine` version pays for readability — factoring out the walk loop — with 50% more states and one composition edge. `summarize` makes that cost measurable.
+Both programs do the same thing on the same input. The `withSubroutine` version pays for readability — factoring out the walk loop — with 50% more states and one composition edge. `summarizePostMachine` makes that cost measurable.
 
-### Behavioral equivalence — `equivalentOn`
+`summarizePostMachine(machine)` is sugar for `summarize(machine.initialState, machine.tapeBlock)`. The bare `summarize` is also re-exported for callers who already hold a `(state, tapeBlock)` pair.
 
-`equivalentOn(reference, candidate, cases, options?)` is re-exported from `@post-machine-js/machine`. Each side is a `Runnable` of the form `{ state: postMachine.initialState, getTapeBlock: () => postMachine.tapeBlock.clone() }`. **The `getTapeBlock` factory must clone the originating PostMachine's `tapeBlock`** — a fresh `TapeBlock.fromAlphabets([alphabet])` won't work because PostMachine's state graph references symbols interned in the originating block. Each case string is loaded into the cloned tape's cells.
+### Behavioral equivalence — `equivalentPostMachines`
+
+`equivalentPostMachines(reference, candidate, cases, options?)` runs both PostMachine instances against the same list of input tapes and reports per-case agreement, first-divergence step, and per-side step counts.
 
 ```javascript
-import { PostMachine, equivalentOn, check, mark, right, stop } from '@post-machine-js/machine';
+import { PostMachine, equivalentPostMachines, check, mark, right, stop } from '@post-machine-js/machine';
 
 const reference = new PostMachine({
   10: check(20, 30), 20: right(10), 30: mark, 40: stop,
@@ -216,15 +218,13 @@ const candidate = new PostMachine({
   10: check(20, 30), 20: right(10), 30: stop,  // forgot to mark
 });
 
-const report = equivalentOn(
-  { state: reference.initialState, getTapeBlock: () => reference.tapeBlock.clone() },
-  { state: candidate.initialState, getTapeBlock: () => candidate.tapeBlock.clone() },
-  ['** '],
-);
+const report = equivalentPostMachines(reference, candidate, ['** ']);
 console.log(report.allAgree); // false
 ```
 
-Cross-alphabet comparison and the `compareOutputs` / `compareSnapshots` options are documented in the upstream's [equivalence specs](https://github.com/mellonis/turing-machine-js/blob/master/packages/machine/src/utilities/equivalence.spec.ts).
+Each case string is loaded onto a fresh clone of the originating PostMachine's tapeBlock per run (the wrapper handles the cloning — required because state-graph symbols are interned per-block). Cross-alphabet comparison and the `compareOutputs` / `compareSnapshots` options are passed through to upstream `equivalentOn`; see [equivalence specs](https://github.com/mellonis/turing-machine-js/blob/master/packages/machine/src/utilities/equivalence.spec.ts) for full option semantics.
+
+The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
 
 ## Links
 
