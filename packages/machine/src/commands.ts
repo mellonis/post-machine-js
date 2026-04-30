@@ -18,6 +18,27 @@ export type CommandContext = {
   calledFromGroup: boolean;
 };
 
+// A bound state-producer — what each command function returns when called.
+// Takes the per-build context, returns the State node to insert into the graph.
+export type CommandStateProducer = (context: CommandContext) => State;
+
+// A bare command function — `mark`, `erase`, `right`, etc. as exported.
+// Calling with no arg (or with the internal sentinel) advances to the next
+// numbered instruction; calling with an explicit index jumps there.
+export type CommandConstructor = (nextInstructionIndex?: number | symbol) => CommandStateProducer;
+
+// The recursive type for what users pass to `new PostMachine(...)`.
+// Number-keyed values are commands or groups of commands; string-keyed values
+// are subroutines (themselves Instructions). The runtime validators decide
+// which key categories are valid where — TypeScript's index signature can't.
+export type Instructions = {
+  [key: string | number]:
+    | CommandStateProducer
+    | CommandConstructor
+    | Array<CommandStateProducer | CommandConstructor>
+    | Instructions;
+};
+
 function callCommandStateProducer(this: { subroutineName: string; nextInstructionIndex: number | symbol }, {
   instructionIndex,
   nextInstructionIndex,
@@ -122,10 +143,10 @@ function checkCommandStateProducer(this: {
   }
 
   const state = new State({
-    [tapeBlock.symbol([tapeBlock.tapes[0].alphabet.symbols[1]])]: {
+    [tapeBlock.symbol([markSymbol])]: {
       nextState: references[String(nextInstructionIndexIfMarked)],
     },
-    [tapeBlock.symbol([tapeBlock.tapes[0].alphabet.blankSymbol])]: {
+    [tapeBlock.symbol([blankSymbol])]: {
       nextState: references[String(nextInstructionIndexOtherwise)],
     },
   });
@@ -135,280 +156,69 @@ function checkCommandStateProducer(this: {
   return state;
 }
 
-function eraseCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
-  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
-}: CommandContext): State {
-  let { nextInstructionIndex: boundNextInstructionIndex } = this;
+type UnaryCommand = { symbol?: string; movement?: symbol };
 
-  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('inappropriate command usage in a group');
-  }
+// Factory for the five "unary" commands (erase, left, mark, noop, right) that
+// share an identical state-producer skeleton. They differ only in:
+//   - `hashPrefix`: a unique cache-key tag per command kind
+//   - `command`: the per-tape TapeCommand to issue (or `null` for noop)
+function makeUnaryCommandProducer(
+  hashPrefix: string,
+  command: UnaryCommand | null,
+): (this: { nextInstructionIndex?: number | symbol }, ctx: CommandContext) => State {
+  return function unaryCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
+    instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
+  }: CommandContext): State {
+    let { nextInstructionIndex: boundNextInstructionIndex } = this;
 
-  let nextState: StateOrRef;
-
-  if (
-    boundNextInstructionIndex !== defaultNextInstructionIndex
-    && !instructionIndexValidator(boundNextInstructionIndex as number)
-  ) {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
-    boundNextInstructionIndex = nextInstructionIndex as number | symbol;
-  }
-
-  if (boundNextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, String(boundNextInstructionIndex))) {
-    if (instructionIndex === boundNextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
+      throw new Error('inappropriate command usage in a group');
     }
 
-    nextState = references[String(boundNextInstructionIndex)];
-  } else {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  const hash = `:eraseFn:${String(boundNextInstructionIndex)}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash)!;
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          symbol: blankSymbol,
-        },
-      ],
-      nextState,
-    },
-  });
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function leftCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
-  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
-}: CommandContext): State {
-  let { nextInstructionIndex: boundNextInstructionIndex } = this;
-
-  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('inappropriate command usage in a group');
-  }
-
-  let nextState: StateOrRef;
-
-  if (
-    boundNextInstructionIndex !== defaultNextInstructionIndex
-    && !instructionIndexValidator(boundNextInstructionIndex as number)
-  ) {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
-    boundNextInstructionIndex = nextInstructionIndex as number | symbol;
-  }
-
-  if (boundNextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, String(boundNextInstructionIndex))) {
-    if (instructionIndex === boundNextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    if (
+      boundNextInstructionIndex !== defaultNextInstructionIndex
+      && !instructionIndexValidator(boundNextInstructionIndex as number)
+    ) {
+      throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
     }
 
-    nextState = references[String(boundNextInstructionIndex)];
-  } else {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  const hash = `:leftFn:${String(boundNextInstructionIndex)}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash)!;
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          movement: movements.left,
-        },
-      ],
-      nextState,
-    },
-  });
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function markCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
-  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
-}: CommandContext): State {
-  let { nextInstructionIndex: boundNextInstructionIndex } = this;
-
-  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('inappropriate command usage in a group');
-  }
-
-  let nextState: StateOrRef;
-
-  if (
-    boundNextInstructionIndex !== defaultNextInstructionIndex
-    && !instructionIndexValidator(boundNextInstructionIndex as number)
-  ) {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
-    boundNextInstructionIndex = nextInstructionIndex as number | symbol;
-  }
-
-  if (boundNextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, String(boundNextInstructionIndex))) {
-    if (instructionIndex === boundNextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    if (boundNextInstructionIndex === defaultNextInstructionIndex) {
+      boundNextInstructionIndex = nextInstructionIndex as number | symbol;
     }
 
-    nextState = references[String(boundNextInstructionIndex)];
-  } else {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
+    let nextState: StateOrRef;
 
-  const hash = `:markFn:${String(boundNextInstructionIndex)}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash)!;
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          symbol: markSymbol,
-        },
-      ],
-      nextState,
-    },
-  });
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function noopCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
-  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
-}: CommandContext): State {
-  let { nextInstructionIndex: boundNextInstructionIndex } = this;
-
-  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('inappropriate command usage in a group');
-  }
-
-  let nextState: StateOrRef;
-
-  if (
-    boundNextInstructionIndex !== defaultNextInstructionIndex
-    && !instructionIndexValidator(boundNextInstructionIndex as number)
-  ) {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
-    boundNextInstructionIndex = nextInstructionIndex as number | symbol;
-  }
-
-  if (boundNextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, String(boundNextInstructionIndex))) {
-    if (instructionIndex === boundNextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    if (boundNextInstructionIndex == null) {
+      nextState = haltState;
+    } else if (Object.prototype.hasOwnProperty.call(references, String(boundNextInstructionIndex))) {
+      if (instructionIndex === boundNextInstructionIndex) {
+        throw new Error(`infinite loop at instruction ${instructionIndex}`);
+      }
+      nextState = references[String(boundNextInstructionIndex)];
+    } else {
+      throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
     }
 
-    nextState = references[String(boundNextInstructionIndex)];
-  } else {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
+    const hash = `${hashPrefix}${String(boundNextInstructionIndex)}:`;
 
-  const hash = `:noopFn:${String(boundNextInstructionIndex)}:`;
-
-  if (states.has(hash)) {
-    return states.get(hash)!;
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      nextState,
-    },
-  });
-
-  states.set(hash, state);
-
-  return state;
-}
-
-function rightCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
-  instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
-}: CommandContext): State {
-  let { nextInstructionIndex: boundNextInstructionIndex } = this;
-
-  if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
-    throw new Error('inappropriate command usage in a group');
-  }
-
-  let nextState: StateOrRef;
-
-  if (
-    boundNextInstructionIndex !== defaultNextInstructionIndex
-    && !instructionIndexValidator(boundNextInstructionIndex as number)
-  ) {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
-
-  if (boundNextInstructionIndex === defaultNextInstructionIndex) {
-    boundNextInstructionIndex = nextInstructionIndex as number | symbol;
-  }
-
-  if (boundNextInstructionIndex == null) {
-    nextState = haltState;
-  } else if (Object.prototype.hasOwnProperty.call(references, String(boundNextInstructionIndex))) {
-    if (instructionIndex === boundNextInstructionIndex) {
-      throw new Error(`infinite loop at instruction ${instructionIndex}`);
+    if (states.has(hash)) {
+      return states.get(hash)!;
     }
 
-    nextState = references[String(boundNextInstructionIndex)];
-  } else {
-    throw new Error(`invalid next instruction index: ${String(boundNextInstructionIndex)}`);
-  }
+    const transition = command === null ? { nextState } : { command: [command], nextState };
+    const state = new State({ [ifOtherSymbol]: transition });
 
-  const hash = `:rightFn:${String(boundNextInstructionIndex)}:`;
+    states.set(hash, state);
 
-  if (states.has(hash)) {
-    return states.get(hash)!;
-  }
-
-  const state = new State({
-    [ifOtherSymbol]: {
-      command: [
-        {
-          movement: movements.right,
-        },
-      ],
-      nextState,
-    },
-  });
-
-  states.set(hash, state);
-
-  return state;
+    return state;
+  };
 }
+
+const eraseCommandStateProducer = makeUnaryCommandProducer(':eraseFn:', { symbol: blankSymbol });
+const leftCommandStateProducer = makeUnaryCommandProducer(':leftFn:', { movement: movements.left });
+const markCommandStateProducer = makeUnaryCommandProducer(':markFn:', { symbol: markSymbol });
+const noopCommandStateProducer = makeUnaryCommandProducer(':noopFn:', null);
+const rightCommandStateProducer = makeUnaryCommandProducer(':rightFn:', { movement: movements.right });
 
 function stopCommandStateProducer(this: null, { calledFromGroup }: CommandContext): State {
   if (calledFromGroup) {
@@ -431,12 +241,10 @@ export function call(subroutineName: string, nextInstructionIndex?: number): (co
   return actualCommand as (context: CommandContext) => State;
 }
 
-export type CommandWithDeps = ((context: CommandContext) => State) & { dependencies?: number[] };
-
 export function check(
   nextInstructionIndexIfMarked: number,
   nextInstructionIndexOtherwise: number,
-): CommandWithDeps {
+): CommandStateProducer {
   const actualCommand = checkCommandStateProducer.bind({
     nextInstructionIndexIfMarked,
     nextInstructionIndexOtherwise,
@@ -444,9 +252,7 @@ export function check(
 
   commandsSet.add(actualCommand as CommandFn);
 
-  const withDeps = actualCommand as CommandWithDeps;
-  withDeps.dependencies = [nextInstructionIndexIfMarked, nextInstructionIndexOtherwise];
-  return withDeps;
+  return actualCommand;
 }
 
 export function erase(nextInstructionIndex?: number | symbol): (context: CommandContext) => State {

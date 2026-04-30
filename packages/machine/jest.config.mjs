@@ -8,8 +8,8 @@ export default {
     color: 'green',
   },
   moduleNameMapper: {
-    [`^${packageJson.name}`]: '<rootDir>/src',
-    '^@turing-machine-js/machine$': '<rootDir>/../../node_modules/@turing-machine-js/machine/dist/index.js',
+    [`^${packageJson.name}$`]: '<rootDir>/src',
+    '^@turing-machine-js/machine$': '<rootDir>/../../node_modules/@turing-machine-js/machine/dist/index.cjs',
   },
   moduleDirectories: ['node_modules', '../../node_modules'],
   transformIgnorePatterns: [
