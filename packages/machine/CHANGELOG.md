@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-04-30
+
+### Added
+
+- **`summarizePostMachine(machine)`** — Post-aware free-function wrapper for `summarize(machine.initialState, machine.tapeBlock)`. Saves the caller from passing the two args.
+- **`equivalentPostMachines(reference, candidate, cases, options?)`** — Post-aware wrapper for `equivalentOn` against two `PostMachine` instances. Hides the `getTapeBlock`-must-clone footgun (PostMachine state-graph symbols are interned per-block, so a fresh `TapeBlock.fromAlphabets([alphabet])` doesn't work — the wrapper passes `() => machine.tapeBlock.clone()` factories internally). Pass-through `options` arg is forwarded to upstream `equivalentOn`.
+
+### Changed (internal)
+
+- **`MachineState`** is now imported directly from `@turing-machine-js/machine` (re-exported from its `index.ts` in turing 3.0.1) instead of being extracted via `Generator<infer T>` from `runStepByStep`'s return signature. No observable change; cleaner code.
+- **`peerDependencies['@turing-machine-js/machine']`** raised from `^3.0.0` to `^3.0.1`. Required because the new direct `MachineState` import only typechecks against turing 3.0.1+. Runtime is unchanged (turing 3.0.1 is a patch — no breaking changes from 3.0.0).
+
 ## [3.0.0] - 2026-04-30
 
 ### Added

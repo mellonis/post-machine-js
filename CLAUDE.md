@@ -74,15 +74,22 @@ When adding or editing a README example, update the matching test in the same ch
 
 Non-README tests (sentinel-identity checks, internal plumbing) live in separately-named spec files (e.g. `v3.spec.ts`, `machine.spec.ts`), keeping the `examples.spec.ts` files purely doc-driven.
 
-## Relationship to `@turing-machine-js/machine` v3.0.0
+## Relationship to `@turing-machine-js/machine` v3.0.x
 
-The peer dependency is `^3.0.0`. The v3 upstream brought one breaking change and a batch of additive utilities; this package was made compatible with v3 in 3.0.0 of itself.
+The peer dependency is `^3.0.1`. The v3 upstream brought one breaking change and a batch of additive utilities; this package was made compatible with v3 in 3.0.0 of itself, and gained Post-aware wrappers + a direct `MachineState` import in 3.0.1.
 
-- **Breaking (upstream):** the `./src` subpath in `@turing-machine-js/machine`'s `exports` was removed. post-machine-js was never affected — all imports use the bare specifier `'@turing-machine-js/machine'`.
-- **Additive (upstream):** `State.toGraph` / `State.fromGraph` / `State.inspect`, Mermaid round-trip via `toMermaid` / `fromMermaid`, `summarize` / `summarizeGraph`, and `equivalentOn`. v3 of `@post-machine-js/machine` re-exports the function-style entry points (`State`, `toMermaid`, `fromMermaid`, `summarize`, `summarizeGraph`, `equivalentOn`) and their types so consumers don't need to import the upstream package separately. `PostMachine` also gained one — and only one — new instance member:
+- **Breaking (upstream, v3.0.0):** the `./src` subpath in `@turing-machine-js/machine`'s `exports` was removed. post-machine-js was never affected — all imports use the bare specifier `'@turing-machine-js/machine'`.
+- **Additive (upstream, v3.0.0):** `State.toGraph` / `State.fromGraph` / `State.inspect`, Mermaid round-trip via `toMermaid` / `fromMermaid`, `summarize` / `summarizeGraph`, and `equivalentOn`. post 3.0.0 re-exports the function-style entry points (`State`, `toMermaid`, `fromMermaid`, `summarize`, `summarizeGraph`, `equivalentOn`) and their types so consumers don't need to import the upstream package separately.
+- **PostMachine instance surface (added in post 3.0.0):** one — and only one — new instance member:
   - `machine.initialState` — getter exposing the precomputed start state. Required for the upstream utilities to act on a PostMachine.
 
-  No v3 utility is exposed as a PostMachine method. They're all called as bare functions against `machine.initialState` and `machine.tapeBlock`: `State.toGraph(machine.initialState, machine.tapeBlock)`, `toMermaid(State.toGraph(...))`, `summarize(machine.initialState, machine.tapeBlock)`, `equivalentOn({ state, getTapeBlock }, ..., cases)`. This is principled, not arbitrary — keeping one way to invoke each utility avoids ambiguity for users (no "do I use `machine.toMermaid()` or `toMermaid(...)`?") and avoids the awkward question of "why does `toMermaid` get a method but `summarize` doesn't?"
+  No v3 utility is exposed as a PostMachine method. The reason — keeping one way to invoke each utility avoids ambiguity (no "do I use `machine.toMermaid()` or `toMermaid(...)`?") and avoids the awkward question of "why does `toMermaid` get a method but `summarize` doesn't?"
+- **Post-aware wrappers (added in post 3.0.1):** two free-function wrappers around the most-used upstream utilities:
+  - `summarizePostMachine(machine)` — sugar for `summarize(machine.initialState, machine.tapeBlock)`.
+  - `equivalentPostMachines(reference, candidate, cases, options?)` — sugar for `equivalentOn` against two PostMachines, hiding the `getTapeBlock` clone-the-originating-block footgun. Pass-through `options` arg is forwarded to upstream.
+
+  These coexist with the bare upstream re-exports — wrappers are the recommended path for typical usage; the bare functions remain available for advanced cases (e.g., comparing a PostMachine against a hand-rolled TuringMachine via `equivalentOn`).
+- **`MachineState` direct import (post 3.0.1, requires turing 3.0.1+):** turing 3.0.1 added `MachineState` to its `index.ts` re-exports. PostMachine.ts now imports it directly via `import { type MachineState } from '@turing-machine-js/machine'` instead of using the prior `Generator<infer T>` extraction workaround. The peer dep was bumped to `^3.0.1` to enforce typecheck against turing 3.0.1+.
 
 ### Jest moduleNameMapper points at `dist/index.cjs`, not `dist/index.js`
 

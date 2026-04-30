@@ -29,3 +29,7 @@ export type {
   CommandContext,
 } from './commands';
 export { PostMachine } from './classes/PostMachine';
+export {
+  summarizePostMachine,
+  equivalentPostMachines,
+} from './wrappers';

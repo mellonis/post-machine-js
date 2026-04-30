@@ -4,8 +4,8 @@ import {
   Tape,
   call, check, left, mark, right, stop,
   toMermaid,
-  summarize,
-  equivalentOn,
+  summarizePostMachine,
+  equivalentPostMachines,
 } from '../src/index';
 
 describe('packages/machine/README.md', () => {
@@ -107,7 +107,7 @@ describe('packages/machine/README.md', () => {
       });
     });
 
-    describe('Structural summary — summarize', () => {
+    describe('Structural summary — summarizePostMachine', () => {
       test('inline vs subroutine have different graph shape', () => {
         const inline = new PostMachine({
           10: check(20, 30),
@@ -127,8 +127,8 @@ describe('packages/machine/README.md', () => {
           30: stop,
         });
 
-        const a = summarize(inline.initialState, inline.tapeBlock);
-        const b = summarize(withSubroutine.initialState, withSubroutine.tapeBlock);
+        const a = summarizePostMachine(inline);
+        const b = summarizePostMachine(withSubroutine);
 
         // console.log(a.stateCount, a.compositionEdgeCount, a.maxCompositionDepth); // 4 0 0
         expect(a.stateCount).toBe(4);
@@ -142,7 +142,7 @@ describe('packages/machine/README.md', () => {
       });
     });
 
-    describe('Behavioral equivalence — equivalentOn', () => {
+    describe('Behavioral equivalence — equivalentPostMachines', () => {
       test('reports allAgree false when candidate forgot to mark', () => {
         const reference = new PostMachine({
           10: check(20, 30), 20: right(10), 30: mark, 40: stop,
@@ -151,11 +151,7 @@ describe('packages/machine/README.md', () => {
           10: check(20, 30), 20: right(10), 30: stop,
         });
 
-        const report = equivalentOn(
-          { state: reference.initialState, getTapeBlock: () => reference.tapeBlock.clone() },
-          { state: candidate.initialState, getTapeBlock: () => candidate.tapeBlock.clone() },
-          ['** '],
-        );
+        const report = equivalentPostMachines(reference, candidate, ['** ']);
 
         // console.log(report.allAgree); // false
         expect(report.allAgree).toBe(false);
