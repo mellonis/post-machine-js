@@ -1,6 +1,6 @@
 {
   "name": "@post-machine-js/machine",
-  "version": "2.0.2",
+  "version": "3.0.0",
   "description": "A convenient Post machine",
   "engines": {
     "npm": ">=7.0.0"
@@ -24,22 +24,16 @@
     "machine"
   ],
   "peerDependencies": {
-    "@turing-machine-js/machine": "^2.0.2"
+    "@turing-machine-js/machine": "^3.0.0"
   },
   "devDependencies": {
-    "@turing-machine-js/machine": "^2.0.2"
+    "@turing-machine-js/machine": "^3.0.0"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.mjs"
-    },
-    "./src": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",

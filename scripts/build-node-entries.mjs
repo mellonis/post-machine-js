@@ -10,7 +10,6 @@ const packages = [
     },
     external: [
       '@turing-machine-js/machine',
-      '@turing-machine-js/machine/src',
     ],
   },
 ];

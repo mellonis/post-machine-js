@@ -7,23 +7,20 @@ import {
   ifOtherSymbol,
   haltState,
 } from '@turing-machine-js/machine';
-
-type MachineState = {
-  step: number;
-  state: State;
-  currentSymbols: string[];
-  nextSymbols: string[];
-  movements: symbol[];
-  nextState: State;
-};
 import { commandsSet, type CommandFn, defaultNextInstructionIndex, originalTapeBlock } from '../consts';
-import type { CommandContext } from '../commands';
+import type { CommandContext, Instructions } from '../commands';
 import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator } from '../validators';
 
-type Instructions = Record<string | number, unknown>;
+// Mirror turing's `MachineState` shape by extracting the yielded type from
+// `runStepByStep`'s return signature. turing-machine-js exports the type from
+// its source but doesn't re-export it from the package barrel; this extraction
+// stays in sync if the upstream shape evolves. (Drop in favor of a direct
+// import once turing adds `MachineState` to its index.ts re-exports.)
+type MachineState =
+  ReturnType<TuringMachine['runStepByStep']> extends Generator<infer T> ? T : never;
 
 export class PostMachine extends TuringMachine {
   #initialState: State;
@@ -44,6 +41,10 @@ export class PostMachine extends TuringMachine {
     return this.tapeBlock.tapes[0];
   }
 
+  get initialState(): State {
+    return this.#initialState;
+  }
+
   replaceTapeWith(newTape: Tape): void {
     this.tapeBlock.replaceTape(newTape);
   }
@@ -56,17 +57,17 @@ export class PostMachine extends TuringMachine {
     yield* super.runStepByStep({ initialState: this.#initialState, stepsLimit });
   }
 
-  #buildInitialState = ({
+  #buildInitialState({
     instructions,
     subroutinesDataFromUpperScope = {},
     subroutineInitialStatesFromUpperScope = {},
     calledFromGroup = false,
   }: {
     instructions: Instructions;
-    subroutinesDataFromUpperScope?: Record<string, { willBeBoundSoon: boolean; reference: Reference; instructions: Instructions }>;
+    subroutinesDataFromUpperScope?: Record<string, { reference: Reference; instructions: Instructions }>;
     subroutineInitialStatesFromUpperScope?: Record<string, State>;
     calledFromGroup?: boolean;
-  }): State => {
+  }): State {
     const instructionsCopy = { ...instructions };
 
     const hasSymbolKeyProperties = Object.getOwnPropertySymbols(instructionsCopy).length > 0;
@@ -77,7 +78,7 @@ export class PostMachine extends TuringMachine {
 
     const localSubroutinesData = Object.keys(instructionsCopy)
       .filter((instructionIndexStr) => !instructionIndexValidator(instructionIndexStr))
-      .reduce<Record<string, { willBeBoundSoon: boolean; reference: Reference; instructions: Instructions }>>((result, subroutineName) => {
+      .reduce<Record<string, { reference: Reference; instructions: Instructions }>>((result, subroutineName) => {
         if (!subroutineNameValidator(subroutineName)) {
           throw new Error(`invalid subroutine name: '${subroutineName}'`);
         }
@@ -89,7 +90,6 @@ export class PostMachine extends TuringMachine {
         return {
           ...result,
           [subroutineName]: {
-            willBeBoundSoon: false,
             reference: new Reference(),
             instructions: instructionsForSubroutinesData,
           },
@@ -139,7 +139,10 @@ export class PostMachine extends TuringMachine {
     const list = instructionIndexList.map(Number);
 
     list.forEach((instructionIndex) => {
-      const cmd = instructionsCopy[String(instructionIndex)];
+      // Widen to `unknown` for the switch — this block runtime-discriminates
+      // on user-supplied values, including the bare `call` / `check` references
+      // which don't fit `CommandConstructor`'s shape and are caught here.
+      const cmd: unknown = instructionsCopy[String(instructionIndex)];
       switch (cmd) {
         case erase:
         case left:
@@ -218,5 +221,5 @@ export class PostMachine extends TuringMachine {
     });
 
     return references[instructionIndexList[0]].ref;
-  };
+  }
 }

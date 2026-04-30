@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     {
-      "path": "packages/machine"
+      "path": "packages/machine/tsconfig.build.json"
     }
   ]
 }

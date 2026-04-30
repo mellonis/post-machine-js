@@ -18,7 +18,7 @@ describe('constructor', () => {
 
     expect(() => {
       new PostMachine({
-        a: null, // not integer index
+        a: null as never, // not integer index
       });
     })
       .toThrow('there is no instructions');
@@ -115,21 +115,21 @@ describe('constructor', () => {
 
       expect(() => {
           new PostMachine({
-          [ix]: (check as (...args: unknown[]) => unknown)(),
+          [ix]: (check as (...args: unknown[]) => unknown)() as never,
         });
       })
         .toThrow('invalid next instruction index: undefined');
 
       expect(() => {
           new PostMachine({
-          [ix]: (check as (...args: unknown[]) => unknown)(ix),
+          [ix]: (check as (...args: unknown[]) => unknown)(ix) as never,
         });
       })
         .toThrow('invalid next instruction index: undefined');
 
       expect(() => {
           new PostMachine({
-          [ix]: (check as (...args: unknown[]) => unknown)(undefined, ix),
+          [ix]: (check as (...args: unknown[]) => unknown)(undefined, ix) as never,
         });
       })
         .toThrow('invalid next instruction index: undefined');
@@ -196,7 +196,7 @@ describe('constructor', () => {
       test(String(command), () => {
         expect(() => {
           new PostMachine({
-            10: command,
+            10: command as never,
           });
         })
           .toThrow('invalid instruction');
@@ -219,6 +219,24 @@ describe('constructor', () => {
       .toThrow(`invalid subroutine name: '${invalidSubroutineName}'`);
   });
 
+  // Regression: the regex used to be unanchored (/[A-Z$_][A-Z0-9$_]*/i),
+  // accepting any string CONTAINING a valid identifier substring. After the
+  // ^...$ anchor fix, leading-digit and embedded-space names are correctly
+  // rejected.
+  describe('subroutineNameValidator anchor regression', () => {
+    ['1abc', 'foo bar', '$$ x', 'a/b', '!name'].forEach((name) => {
+      test(`rejects ${JSON.stringify(name)}`, () => {
+        expect(subroutineNameValidator(name)).toBe(false);
+      });
+    });
+
+    ['foo', '_foo', '$foo', 'F_2', '$_$_'].forEach((name) => {
+      test(`accepts ${JSON.stringify(name)}`, () => {
+        expect(subroutineNameValidator(name)).toBe(true);
+      });
+    });
+  });
+
   describe('inappropriate command usage', () => {
     [call, check].forEach((fn) => {
       test(fn.name, () => {
@@ -227,7 +245,7 @@ describe('constructor', () => {
 
         expect(() => {
           new PostMachine({
-            [ix]: fn,
+            [ix]: fn as never,
           });
         })
           .toThrow(`inappropriate '${fn.name}' command usage at instruction ${ix}`);
@@ -730,7 +748,7 @@ describe('run tests', () => {
           expect(() => {
           new PostMachine({
               [ixList[1]]: [
-                command,
+                command as never,
               ],
             });
           })
