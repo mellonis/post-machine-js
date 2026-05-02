@@ -2,7 +2,7 @@
 
 [![build](https://github.com/mellonis/post-machine-js/actions/workflows/main.yml/badge.svg)](https://github.com/mellonis/post-machine-js/actions/workflows/main.yml)
 [![Coverage Status](https://coveralls.io/repos/github/mellonis/post-machine-js/badge.svg?branch=master)](https://coveralls.io/github/mellonis/post-machine-js?branch=master)
-![GitHub issues](https://img.shields.io/github/issues/mellonis/post-machine-js)
+[![GitHub issues](https://img.shields.io/github/issues/mellonis/post-machine-js)](https://github.com/users/mellonis/projects/5)
 
 A convenient Post machine.
 
