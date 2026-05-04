@@ -89,6 +89,31 @@ describe('packages/machine/README.md', () => {
     });
   });
 
+  describe('Custom symbols', () => {
+    test('## → marks first . to make ### with .# alphabet', () => {
+      const machine = new PostMachine(
+        {
+          10: check(20, 30),
+          20: right(10),
+          30: mark,
+          40: stop,
+        },
+        { blankSymbol: '.', markSymbol: '#' },
+      );
+
+      machine.replaceTapeWith(new Tape({
+        alphabet: machine.tape.alphabet,
+        symbols: ['#', '#', '.'],
+      }));
+
+      machine.run();
+
+      // console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
+      expect(machine.tape.symbols.join('').replace(/\.+$/, ''))
+        .toBe('###');
+    });
+  });
+
   describe('Introspection and equivalence', () => {
     describe('Visualization — toMermaid + State.toGraph', () => {
       test('first line is "flowchart TD"', () => {

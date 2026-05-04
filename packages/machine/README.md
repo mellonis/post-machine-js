@@ -54,6 +54,34 @@ Reexported from [`@turing-machine-js/machine`](https://github.com/mellonis/turin
 * `blankSymbol` — the blank symbol, ` ` (space).
 * `markSymbol` — the mark symbol, `*`.
 
+## Custom symbols
+
+The Post machine semantics are independent of which two characters represent blank and mark. Pass an options object as the second constructor argument to swap the glyphs — useful for rendering, interop with other formats, or didactic clarity. Both must be single characters and distinct from each other; passing neither (or `undefined` / `null`) falls back to the defaults.
+
+```javascript
+import { PostMachine, check, mark, right, stop, Tape } from '@post-machine-js/machine';
+
+const machine = new PostMachine(
+  {
+    10: check(20, 30),
+    20: right(10),
+    30: mark,
+    40: stop,
+  },
+  { blankSymbol: '.', markSymbol: '#' },
+);
+
+machine.replaceTapeWith(new Tape({
+  alphabet: machine.tape.alphabet,
+  symbols: ['#', '#', '.'],
+}));
+
+machine.run();
+console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
+```
+
+`mark`, `erase`, and `check` read the chosen symbols from the per-instance alphabet at build time; subroutines and grouped instructions inherit the same alphabet. Build the initial tape against `machine.tape.alphabet` (as in the snippet above) so your tape symbols are validated against the same alphabet the machine was built with.
+
 ## Commands
 
 Each command is a higher-order function. Invoking it with no argument produces a state-producer that advances to the next numbered instruction; invoking with an explicit index jumps to that instruction.
