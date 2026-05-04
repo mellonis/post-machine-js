@@ -1,4 +1,5 @@
 import {
+  Alphabet,
   type MachineState,
   Reference,
   State,
@@ -8,18 +9,45 @@ import {
   ifOtherSymbol,
   haltState,
 } from '@turing-machine-js/machine';
-import { commandsSet, type CommandFn, defaultNextInstructionIndex, originalTapeBlock } from '../consts';
+import {
+  blankSymbol as defaultBlankSymbol,
+  commandsSet,
+  type CommandFn,
+  defaultNextInstructionIndex,
+  markSymbol as defaultMarkSymbol,
+  originalTapeBlock,
+} from '../consts';
 import type { CommandContext, Instructions } from '../commands';
 import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
-import { instructionIndexValidator, subroutineNameValidator } from '../validators';
+import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
+
+export type PostMachineOptions = {
+  blankSymbol?: string;
+  markSymbol?: string;
+};
 
 export class PostMachine extends TuringMachine {
   #initialState: State;
+  #blankSymbol: string;
+  #markSymbol: string;
 
-  constructor(instructions: Instructions = {}) {
-    super({ tapeBlock: originalTapeBlock.clone() });
+  constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
+    const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
+    const markSymbol = options.markSymbol ?? defaultMarkSymbol;
+
+    validateSymbolPair(blankSymbol, markSymbol);
+
+    const usesDefaultAlphabet = blankSymbol === defaultBlankSymbol && markSymbol === defaultMarkSymbol;
+    const tapeBlock = usesDefaultAlphabet
+      ? originalTapeBlock.clone()
+      : TapeBlock.fromAlphabets([new Alphabet([blankSymbol, markSymbol])]);
+
+    super({ tapeBlock });
+
+    this.#blankSymbol = blankSymbol;
+    this.#markSymbol = markSymbol;
 
     this.#initialState = this.#buildInitialState({
       instructions,
@@ -167,6 +195,8 @@ export class PostMachine extends TuringMachine {
           states,
           subroutineInitialStates,
           calledFromGroup,
+          blankSymbol: this.#blankSymbol,
+          markSymbol: this.#markSymbol,
         };
         builtStates.set(String(instructionIndex), (instruction as (context: CommandContext) => State)(context));
       } else if (Array.isArray(instruction)) {

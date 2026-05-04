@@ -4,7 +4,7 @@ import {
 
 type StateOrRef = State | Reference;
 import {
-  blankSymbol, commandsSet, type CommandFn, defaultNextInstructionIndex, markSymbol,
+  commandsSet, type CommandFn, defaultNextInstructionIndex,
 } from './consts';
 import { instructionIndexValidator, subroutineNameValidator } from './validators';
 
@@ -16,6 +16,8 @@ export type CommandContext = {
   tapeBlock: TapeBlock;
   subroutineInitialStates: Record<string, State>;
   calledFromGroup: boolean;
+  blankSymbol: string;
+  markSymbol: string;
 };
 
 // A bound state-producer — what each command function returns when called.
@@ -109,7 +111,7 @@ function checkCommandStateProducer(this: {
   nextInstructionIndexIfMarked: number;
   nextInstructionIndexOtherwise: number;
 }, {
-  instructionIndex, references, states, tapeBlock, calledFromGroup,
+  instructionIndex, references, states, tapeBlock, calledFromGroup, blankSymbol, markSymbol,
 }: CommandContext): State {
   if (calledFromGroup) {
     throw new Error('the \'check\' command cannot be used in a group');
@@ -161,14 +163,18 @@ type UnaryCommand = { symbol?: string; movement?: symbol };
 // Factory for the five "unary" commands (erase, left, mark, noop, right) that
 // share an identical state-producer skeleton. They differ only in:
 //   - `hashPrefix`: a unique cache-key tag per command kind
-//   - `command`: the per-tape TapeCommand to issue (or `null` for noop)
+//   - `buildCommand`: a function that, given the build-time context, returns
+//     the per-tape TapeCommand to issue (or `null` for noop). Resolving the
+//     command at producer-call time (not factory-call time) lets `mark`/`erase`
+//     read per-instance `blankSymbol`/`markSymbol` from the context.
 function makeUnaryCommandProducer(
   hashPrefix: string,
-  command: UnaryCommand | null,
+  buildCommand: ((ctx: CommandContext) => UnaryCommand) | null,
 ): (this: { nextInstructionIndex?: number | symbol }, ctx: CommandContext) => State {
-  return function unaryCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, {
-    instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
-  }: CommandContext): State {
+  return function unaryCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, ctx: CommandContext): State {
+    const {
+      instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
+    } = ctx;
     let { nextInstructionIndex: boundNextInstructionIndex } = this;
 
     if (calledFromGroup && boundNextInstructionIndex !== defaultNextInstructionIndex) {
@@ -205,7 +211,7 @@ function makeUnaryCommandProducer(
       return states.get(hash)!;
     }
 
-    const transition = command === null ? { nextState } : { command: [command], nextState };
+    const transition = buildCommand === null ? { nextState } : { command: [buildCommand(ctx)], nextState };
     const state = new State({ [ifOtherSymbol]: transition });
 
     states.set(hash, state);
@@ -214,11 +220,11 @@ function makeUnaryCommandProducer(
   };
 }
 
-const eraseCommandStateProducer = makeUnaryCommandProducer(':eraseFn:', { symbol: blankSymbol });
-const leftCommandStateProducer = makeUnaryCommandProducer(':leftFn:', { movement: movements.left });
-const markCommandStateProducer = makeUnaryCommandProducer(':markFn:', { symbol: markSymbol });
+const eraseCommandStateProducer = makeUnaryCommandProducer(':eraseFn:', (ctx) => ({ symbol: ctx.blankSymbol }));
+const leftCommandStateProducer = makeUnaryCommandProducer(':leftFn:', () => ({ movement: movements.left }));
+const markCommandStateProducer = makeUnaryCommandProducer(':markFn:', (ctx) => ({ symbol: ctx.markSymbol }));
 const noopCommandStateProducer = makeUnaryCommandProducer(':noopFn:', null);
-const rightCommandStateProducer = makeUnaryCommandProducer(':rightFn:', { movement: movements.right });
+const rightCommandStateProducer = makeUnaryCommandProducer(':rightFn:', () => ({ movement: movements.right }));
 
 function stopCommandStateProducer(this: null, { calledFromGroup }: CommandContext): State {
   if (calledFromGroup) {

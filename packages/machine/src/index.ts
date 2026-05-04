@@ -29,6 +29,7 @@ export type {
   CommandContext,
 } from './commands';
 export { PostMachine } from './classes/PostMachine';
+export type { PostMachineOptions } from './classes/PostMachine';
 export {
   summarizePostMachine,
   equivalentPostMachines,
