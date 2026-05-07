@@ -17,6 +17,7 @@ export type {
   EquivalenceCase,
   EquivalenceResult,
   EquivalenceReport,
+  MachineState,
 } from '@turing-machine-js/machine';
 export { alphabet, blankSymbol, markSymbol } from './consts';
 export {
