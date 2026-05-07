@@ -10,7 +10,7 @@ import {
 
 describe('packages/machine/README.md', () => {
   describe('Quick start', () => {
-    test('** → marks first blank to make ***', () => {
+    test('** → marks first blank to make ***', async () => {
       const machine = new PostMachine({
         10: check(20, 30),
         20: right(10),
@@ -23,7 +23,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['*', '*', ' '],
       }));
 
-      machine.run();
+      await machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
@@ -32,7 +32,7 @@ describe('packages/machine/README.md', () => {
   });
 
   describe('Subroutines', () => {
-    test('** → marks first blank to make *** (single subroutine, single call)', () => {
+    test('** → marks first blank to make *** (single subroutine, single call)', async () => {
       const machine = new PostMachine({
         rightToBlank: {
           1: right,
@@ -49,14 +49,14 @@ describe('packages/machine/README.md', () => {
         symbols: ['*', '*', ' '],
       }));
 
-      machine.run();
+      await machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
     });
 
-    test(' *  → *** by extending the region one cell on each side', () => {
+    test(' *  → *** by extending the region one cell on each side', async () => {
       const extend = new PostMachine({
         walkRightToBlank: {
           1: check(2, 3),
@@ -81,7 +81,7 @@ describe('packages/machine/README.md', () => {
         position: 1,
       }));
 
-      extend.run();
+      await extend.run();
 
       // console.log(extend.tape.symbols.join('')); // ***
       expect(extend.tape.symbols.join(''))
@@ -90,7 +90,7 @@ describe('packages/machine/README.md', () => {
   });
 
   describe('Custom symbols', () => {
-    test('## → marks first . to make ### with .# alphabet', () => {
+    test('## → marks first . to make ### with .# alphabet', async () => {
       const machine = new PostMachine(
         {
           10: check(20, 30),
@@ -106,7 +106,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      machine.run();
+      await machine.run();
 
       // console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
       expect(machine.tape.symbols.join('').replace(/\.+$/, ''))
