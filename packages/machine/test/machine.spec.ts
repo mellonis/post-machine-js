@@ -349,7 +349,7 @@ describe('constructor', () => {
 });
 
 describe('run tests', () => {
-  test('run', () => {
+  test('run', async () => {
     const ixList = getIxRange(11);
     const machine = new PostMachine({
       [ixList[1]]: erase,
@@ -374,7 +374,7 @@ describe('run tests', () => {
 
     const exactStepCount = 49;
 
-    machine.run({ stepsLimit: exactStepCount, onStep: () => onStepMock() });
+    await machine.run({ stepsLimit: exactStepCount, onStep: () => onStepMock() });
 
     expect(machine.tape.symbols.join('').trim()).toBe('****');
     expect(onStepMock).toHaveBeenCalledTimes(exactStepCount);
@@ -382,7 +382,7 @@ describe('run tests', () => {
 
   describe('last and next command', () => {
     [erase, left, mark, noop, right].forEach((fn) => {
-      test(fn.name, () => {
+      test(fn.name, async () => {
         const ixList = getIxRange(2);
         const machine1 = new PostMachine({
           [ixList[1]]: fn,
@@ -400,18 +400,9 @@ describe('run tests', () => {
         const onStepMock2 = jest.fn();
         const onStepMock3 = jest.fn();
 
-        expect(() => {
-          machine1.run({ stepsLimit: 1, onStep: (stepData) => onStepMock1(stepData) });
-        })
-          .not.toThrow();
-        expect(() => {
-          machine2.run({ stepsLimit: 1, onStep: (stepData) => onStepMock2(stepData) });
-        })
-          .not.toThrow();
-        expect(() => {
-          machine3.run({ stepsLimit: 1, onStep: (stepData) => onStepMock3(stepData) });
-        })
-          .not.toThrow();
+        await expect(machine1.run({ stepsLimit: 1, onStep: (stepData) => onStepMock1(stepData) })).resolves.toBeUndefined();
+        await expect(machine2.run({ stepsLimit: 1, onStep: (stepData) => onStepMock2(stepData) })).resolves.toBeUndefined();
+        await expect(machine3.run({ stepsLimit: 1, onStep: (stepData) => onStepMock3(stepData) })).resolves.toBeUndefined();
         expect(onStepMock1).toHaveBeenCalledTimes(1);
         expect(onStepMock2).toHaveBeenCalledTimes(1);
         expect(onStepMock3).toHaveBeenCalledTimes(1);
@@ -420,7 +411,7 @@ describe('run tests', () => {
       });
     });
 
-    test(call.name, () => {
+    test(call.name, async () => {
       const ixList = getIxRange(2);
       const subroutineName = `subroutine${ixList[1]}`;
       const subroutines = {
@@ -447,27 +438,18 @@ describe('run tests', () => {
       const onStepMock2 = jest.fn();
       const onStepMock3 = jest.fn();
 
-      expect(() => {
-        machine1.run({
-          stepsLimit: 3,
-          onStep: (...args) => onStepMock1(...args),
-        });
-      })
-        .not.toThrow();
-      expect(() => {
-        machine2.run({
-          stepsLimit: 3,
-          onStep: (...args) => onStepMock2(...args),
-        });
-      })
-        .not.toThrow();
-      expect(() => {
-        machine3.run({
-          stepsLimit: 3,
-          onStep: (...args) => onStepMock3(...args),
-        });
-      })
-        .not.toThrow();
+      await expect(machine1.run({
+        stepsLimit: 3,
+        onStep: (...args) => onStepMock1(...args),
+      })).resolves.toBeUndefined();
+      await expect(machine2.run({
+        stepsLimit: 3,
+        onStep: (...args) => onStepMock2(...args),
+      })).resolves.toBeUndefined();
+      await expect(machine3.run({
+        stepsLimit: 3,
+        onStep: (...args) => onStepMock3(...args),
+      })).resolves.toBeUndefined();
       expect(onStepMock1).toHaveBeenCalledTimes(3);
       expect(onStepMock2).toHaveBeenCalledTimes(3);
       expect(onStepMock3).toHaveBeenCalledTimes(3);
@@ -477,7 +459,7 @@ describe('run tests', () => {
   });
 
   describe(`the '${call.name}' command`, () => {
-    test('a subroutine call', () => {
+    test('a subroutine call', async () => {
       const ixList = getIxRange(3);
       const subroutineName = `ToRightAndMark${ixList[0]}`;
       const machine = new PostMachine({
@@ -490,16 +472,13 @@ describe('run tests', () => {
         [ixList[3]]: call(subroutineName),
       });
 
-      expect(() => {
-        machine.run();
-      })
-        .not.toThrow();
+      await expect(machine.run()).resolves.toBeUndefined();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
     });
 
-    test('subroutine call order', () => {
+    test('subroutine call order', async () => {
       const ixList = getIxRange(4);
       const toBeginSubroutineName = `ToBegin${ixList[0]}`;
       const toEndSubroutineName = `ToEnd${ixList[0]}`;
@@ -546,16 +525,13 @@ describe('run tests', () => {
         }),
       ];
 
-      expect(() => {
-        machineList.forEach((machine) => {
-          machine.replaceTapeWith(new Tape({
-            alphabet: machine.tape.alphabet,
-            symbols: '***  *'.split(''),
-          }));
-          machine.run();
-        });
-      })
-        .not.toThrow();
+      for (const machine of machineList) {
+        machine.replaceTapeWith(new Tape({
+          alphabet: machine.tape.alphabet,
+          symbols: '***  *'.split(''),
+        }));
+        await expect(machine.run()).resolves.toBeUndefined();
+      }
       expect(machineList.map((machine) => machine.tape.symbols.join('').trim()))
         .toEqual(machineList.map((_, ix) => (
           ix % 2 === 0
@@ -565,7 +541,7 @@ describe('run tests', () => {
     });
   });
 
-  test('sub-subroutines', () => {
+  test('sub-subroutines', async () => {
     const ixList = getIxRange(2);
     const subroutineNameList = [...Array(2)].map((_, ix) => `sr${ixList[0] + ix}`);
     const machine = new PostMachine({
@@ -584,12 +560,9 @@ describe('run tests', () => {
 
     const onStepMock = jest.fn();
 
-    expect(() => {
-      machine.run({
-        onStep: (...args) => onStepMock(...args),
-      });
-    })
-      .not.toThrow();
+    await expect(machine.run({
+      onStep: (...args) => onStepMock(...args),
+    })).resolves.toBeUndefined();
 
     expect(onStepMock).toHaveBeenCalledTimes(8);
     expect(machine.tape.viewport[0]).toEqual(' ');
@@ -601,7 +574,7 @@ describe('run tests', () => {
 
   describe('states count minification', () => {
     [erase, left, mark, noop, right].forEach((fn) => {
-      test(fn.name, () => {
+      test(fn.name, async () => {
         const ix1 = getRandomInstructionIndex();
         const ix2 = ix1 + 1;
         const ix3 = ix2 + 1;
@@ -619,21 +592,15 @@ describe('run tests', () => {
         const machine1OnStepMock = jest.fn();
         const machine2OnStepMock = jest.fn();
 
-        expect(() => {
-          machine1.run({
-            stepsLimit: 3,
-            onStep: (...args) => machine1OnStepMock(...args),
-          });
-        })
-          .toThrow('Long execution');
+        await expect(machine1.run({
+          stepsLimit: 3,
+          onStep: (...args) => machine1OnStepMock(...args),
+        })).rejects.toThrow('Long execution');
 
-        expect(() => {
-          machine2.run({
-            stepsLimit: 3,
-            onStep: (...args) => machine2OnStepMock(...args),
-          });
-        })
-          .toThrow('Long execution');
+        await expect(machine2.run({
+          stepsLimit: 3,
+          onStep: (...args) => machine2OnStepMock(...args),
+        })).rejects.toThrow('Long execution');
 
         const machine1StateIdList = machine1OnStepMock.mock.calls.map((args) => args[0].state.id);
         const machine2StateIdList = machine2OnStepMock.mock.calls.map((args) => args[0].state.id);
@@ -645,7 +612,7 @@ describe('run tests', () => {
       });
     });
 
-    test(call.name, () => {
+    test(call.name, async () => {
       const ix1 = getRandomInstructionIndex();
       const ix2 = ix1 + 1;
       const ix3 = ix2 + 1;
@@ -670,21 +637,15 @@ describe('run tests', () => {
       const machine1OnStepMock = jest.fn();
       const machine2OnStepMock = jest.fn();
 
-      expect(() => {
-        machine1.run({
-          stepsLimit: 10,
-          onStep: (...args) => machine1OnStepMock(...args),
-        });
-      })
-        .toThrow('Long execution');
+      await expect(machine1.run({
+        stepsLimit: 10,
+        onStep: (...args) => machine1OnStepMock(...args),
+      })).rejects.toThrow('Long execution');
 
-      expect(() => {
-        machine2.run({
-          stepsLimit: 10,
-          onStep: (...args) => machine2OnStepMock(...args),
-        });
-      })
-        .toThrow('Long execution');
+      await expect(machine2.run({
+        stepsLimit: 10,
+        onStep: (...args) => machine2OnStepMock(...args),
+      })).rejects.toThrow('Long execution');
 
       const regExp = />/;
       const machine1StateIdList = machine1OnStepMock.mock.calls
@@ -700,7 +661,7 @@ describe('run tests', () => {
       expect(machine2StateIdList.length).toBe(1);
     });
 
-    test(check.name, () => {
+    test(check.name, async () => {
       const ix1 = getRandomInstructionIndex();
       const ix2 = ix1 + 1;
       const ix3 = ix2 + 1;
@@ -714,13 +675,10 @@ describe('run tests', () => {
       });
       const machineOnStepMock = jest.fn();
 
-      expect(() => {
-        machine.run({
-          stepsLimit: 10,
-          onStep: (...args) => machineOnStepMock(...args),
-        });
-      })
-        .toThrow('Long execution');
+      await expect(machine.run({
+        stepsLimit: 10,
+        onStep: (...args) => machineOnStepMock(...args),
+      })).rejects.toThrow('Long execution');
 
       const machine1StateIdList = machineOnStepMock.mock.calls
         .map((args) => args[0].state.id);
@@ -847,7 +805,7 @@ describe('run tests', () => {
       });
     });
 
-    test('the next instruction was executed', () => {
+    test('the next instruction was executed', async () => {
       const machine = new PostMachine({
         [ixList[1]]: [
           mark,
@@ -859,16 +817,13 @@ describe('run tests', () => {
         [ixList[2]]: erase,
       });
 
-      expect(() => {
-        machine.run();
-      })
-        .not.toThrow();
+      await expect(machine.run()).resolves.toBeUndefined();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('**');
     });
 
-    test('call works', () => {
+    test('call works', async () => {
       const machine = new PostMachine({
         [subroutineName]: {
           [ixList[1]]: erase,
@@ -883,10 +838,7 @@ describe('run tests', () => {
         ],
       });
 
-      expect(() => {
-        machine.run();
-      })
-        .not.toThrow();
+      await expect(machine.run()).resolves.toBeUndefined();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('* *');

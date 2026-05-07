@@ -71,7 +71,7 @@ describe('PostMachine custom alphabet', () => {
       expect(machine.tape.alphabet.blankSymbol).toBe('.');
     });
 
-    test('mark writes the chosen mark symbol', () => {
+    test('mark writes the chosen mark symbol', async () => {
       const machine = new PostMachine(
         { 1: mark, 2: stop },
         { blankSymbol: '.', markSymbol: '#' },
@@ -82,12 +82,12 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['.'],
       }));
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('')).toBe('#');
     });
 
-    test('erase writes the chosen blank symbol', () => {
+    test('erase writes the chosen blank symbol', async () => {
       const machine = new PostMachine(
         { 1: erase, 2: stop },
         { blankSymbol: '.', markSymbol: '#' },
@@ -98,12 +98,12 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['#'],
       }));
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('')).toBe('.');
     });
 
-    test('check branches on the chosen mark/blank symbols', () => {
+    test('check branches on the chosen mark/blank symbols', async () => {
       // Same program as the README quick start, but with .#  alphabet:
       // walk right while marked, write a mark on the first blank.
       const machine = new PostMachine(
@@ -121,12 +121,12 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('').replace(/\.+$/, '')).toBe('###');
     });
 
-    test('left/right/noop work with custom alphabet (no symbol writes)', () => {
+    test('left/right/noop work with custom alphabet (no symbol writes)', async () => {
       const ix = getRandomInstructionIndex();
       const next = ix + 1;
 
@@ -141,13 +141,13 @@ describe('PostMachine custom alphabet', () => {
         position: 0,
       }));
 
-      machine.run();
+      await machine.run();
 
       // head moved right by one; tape contents unchanged
       expect(machine.tape.symbols.join('')).toBe('#.#');
     });
 
-    test('subroutines inherit the custom alphabet', () => {
+    test('subroutines inherit the custom alphabet', async () => {
       const machine = new PostMachine(
         {
           rightToBlank: {
@@ -167,12 +167,12 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('').replace(/\.+$/, '')).toBe('###');
     });
 
-    test('groups inherit the custom alphabet', () => {
+    test('groups inherit the custom alphabet', async () => {
       // group: write mark, then move right.
       const machine = new PostMachine(
         {
@@ -187,7 +187,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['.', '.'],
       }));
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('')).toBe('#.');
     });
@@ -209,7 +209,7 @@ describe('PostMachine custom alphabet', () => {
       expect(summary.alphabetCardinalities).toEqual([2]);
     });
 
-    test('non-ASCII glyphs work (Unicode open box / heavy dot)', () => {
+    test('non-ASCII glyphs work (Unicode open box / heavy dot)', async () => {
       const machine = new PostMachine(
         {
           10: check(20, 30),
@@ -225,14 +225,14 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['•', '•', '␣'],
       }));
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('').replace(/␣+$/, '')).toBe('•••');
     });
   });
 
   describe('left/right/noop unaffected by custom alphabet', () => {
-    test('left moves head one cell to the left regardless of symbols', () => {
+    test('left moves head one cell to the left regardless of symbols', async () => {
       const machine = new PostMachine(
         { 1: left(2), 2: stop },
         { blankSymbol: '.', markSymbol: '#' },
@@ -244,7 +244,7 @@ describe('PostMachine custom alphabet', () => {
         position: 1,
       }));
 
-      machine.run();
+      await machine.run();
 
       // After one left move, head sits at position 0; symbols unchanged.
       expect(machine.tape.symbols.join('')).toBe('##');

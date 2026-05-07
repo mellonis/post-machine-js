@@ -22,7 +22,7 @@ describe('README.md', () => {
       });
     });
 
-    test('***   * -> ****', () => {
+    test('***   * -> ****', async () => {
       machine.replaceTapeWith(new Tape({
         alphabet: machine.tape.alphabet,
         symbols: ['*', '*', '*', ' ', ' ', ' ', '*'],
@@ -31,7 +31,7 @@ describe('README.md', () => {
       expect(machine.tape.symbols.join('').trim())
         .toBe('***   *');
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('****');
@@ -68,7 +68,7 @@ describe('README.md', () => {
       });
     });
 
-    test('* -> **', () => {
+    test('* -> **', async () => {
       machine.replaceTapeWith(new Tape({
         alphabet: machine.tape.alphabet,
         symbols: ['*'],
@@ -77,13 +77,13 @@ describe('README.md', () => {
       expect(machine.tape.symbols.join('').trim())
         .toBe('*');
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('**');
     });
 
-    test('*** -> ******', () => {
+    test('*** -> ******', async () => {
       machine.replaceTapeWith(new Tape({
         alphabet: machine.tape.alphabet,
         symbols: ['*', '*', '*'],
@@ -92,7 +92,7 @@ describe('README.md', () => {
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
 
-      machine.run();
+      await machine.run();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('******');

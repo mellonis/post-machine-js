@@ -74,23 +74,20 @@ When adding or editing a README example, update the matching test in the same ch
 
 Non-README tests (sentinel-identity checks, internal plumbing) live in separately-named spec files (e.g. `v3.spec.ts`, `machine.spec.ts`), keeping the `examples.spec.ts` files purely doc-driven.
 
-## Relationship to `@turing-machine-js/machine` v3.0.x
+## Relationship to `@turing-machine-js/machine` v4.0.x
 
-The peer dependency is `^3.0.1`. The v3 upstream brought one breaking change and a batch of additive utilities; this package was made compatible with v3 in 3.0.0 of itself, and gained Post-aware wrappers + a direct `MachineState` import in 3.0.1.
+The peer dependency is `^4.0.0`. **v3 is no longer supported** — a consumer still on v3 cannot install this package and must upgrade in lockstep.
 
-- **Breaking (upstream, v3.0.0):** the `./src` subpath in `@turing-machine-js/machine`'s `exports` was removed. post-machine-js was never affected — all imports use the bare specifier `'@turing-machine-js/machine'`.
-- **Additive (upstream, v3.0.0):** `State.toGraph` / `State.fromGraph` / `State.inspect`, Mermaid round-trip via `toMermaid` / `fromMermaid`, `summarize` / `summarizeGraph`, and `equivalentOn`. post 3.0.0 re-exports the function-style entry points (`State`, `toMermaid`, `fromMermaid`, `summarize`, `summarizeGraph`, `equivalentOn`) and their types so consumers don't need to import the upstream package separately.
-- **PostMachine instance surface (added in post 3.0.0):** one — and only one — new instance member:
-  - `machine.initialState` — getter exposing the precomputed start state. Required for the upstream utilities to act on a PostMachine.
+v4 of the upstream engine introduced async execution and a debugger primitive layer. The main breaking change for `@post-machine-js/machine` is that `run()` is now async:
 
-  No v3 utility is exposed as a PostMachine method. The reason — keeping one way to invoke each utility avoids ambiguity (no "do I use `machine.toMermaid()` or `toMermaid(...)`?") and avoids the awkward question of "why does `toMermaid` get a method but `summarize` doesn't?"
-- **Post-aware wrappers (added in post 3.0.1):** two free-function wrappers around the most-used upstream utilities:
-  - `summarizePostMachine(machine)` — sugar for `summarize(machine.initialState, machine.tapeBlock)`.
-  - `equivalentPostMachines(reference, candidate, cases, options?)` — sugar for `equivalentOn` against two PostMachines, hiding the `getTapeBlock` clone-the-originating-block footgun. Pass-through `options` arg is forwarded to upstream.
-
-  These coexist with the bare upstream re-exports — wrappers are the recommended path for typical usage; the bare functions remain available for advanced cases (e.g., comparing a PostMachine against a hand-rolled TuringMachine via `equivalentOn`).
-- **`MachineState` direct import (post 3.0.1, requires turing 3.0.1+):** turing 3.0.1 added `MachineState` to its `index.ts` re-exports. PostMachine.ts now imports it directly via `import { type MachineState } from '@turing-machine-js/machine'` instead of using the prior `Generator<infer T>` extraction workaround. The peer dep was bumped to `^3.0.1` to enforce typecheck against turing 3.0.1+.
+- **`pm.run()` is async.** v4 made `TuringMachine.run()` return `Promise<void>` to support awaitable hooks like `onDebugBreak`. `PostMachine.run()` overrides it to match: also async, returns `Promise<void>`. Callers must `await` it — code that called `machine.run()` without `await` will silently stop working correctly.
+- **`runStepByStep` is unchanged.** The `runStepByStep` override remains a synchronous `Generator<MachineState>` in v4 — the override at the top of `PostMachine.ts` reflects that asymmetry between the two execution modes.
+- **Experimental `__onDebugBreak` on `pm.run()`.** The `run()` override accepts an optional `__onDebugBreak?: (s: MachineState) => void | Promise<void>` parameter and forwards it as the upstream `onDebugBreak` hook. The `__` prefix marks this surface as unstable: a per-instruction breakpoint API on PostMachine is being designed (tracked in **#59**), and that design may rename or restructure it. The double-underscore is the contract that lets the future API land without another major bump.
+- **v4 debugger primitives reachable via peer-dep, not wrapped here.** `state.debug` (per-state runtime-mutable breakpoints) and `haltState.debug` (halt-pause) are available by introspecting `pm.initialState` and operating against the upstream API directly. PostMachine deliberately does not wrap them — the planned breakpoint API (#59) will provide a higher-level surface once the design settles.
+- **v3 utility additions persist.** `State.toGraph`, `State.fromGraph`, `State.inspect`, `toMermaid`/`fromMermaid`, `summarize`/`summarizeGraph`, `equivalentOn`, and the `MachineState` type are all still re-exported from `@post-machine-js/machine`. The v4 release added debugger primitives without removing any v3 utilities.
+- **Post-aware wrappers persist unchanged.** `summarizePostMachine(machine)` and `equivalentPostMachines(reference, candidate, cases, options?)` remain the recommended path for typical usage. The bare upstream functions stay re-exported for advanced cases (e.g., comparing a PostMachine against a hand-rolled TuringMachine via `equivalentOn`).
+- **`machine.initialState` getter persists.** It is still the entry point for the upstream graph utilities to act on a PostMachine instance — pass it to `summarize`, `toMermaid`, `equivalentOn`, or directly to the v4 debugger primitives.
 
 ### Jest moduleNameMapper points at `dist/index.cjs`, not `dist/index.js`
 
-A future v3 turing release will trim `dist/**/*.js` from the npm tarball (the `index.js` is the unbundled tsc output that nothing actually consumes once the rollup `.cjs`/`.mjs` exist). The Jest `moduleNameMapper` in both `jest.config.mjs` files therefore resolves `@turing-machine-js/machine` to the bundled `dist/index.cjs` so tests keep working past that trim. Don't switch back to `dist/index.js`.
+`@turing-machine-js/machine` v4 ships only the bundled `.cjs`/`.mjs` builds — the unbundled tsc output (`dist/**/*.js`) is not included in the tarball. The Jest `moduleNameMapper` in both `jest.config.mjs` files therefore resolves `@turing-machine-js/machine` to the bundled `dist/index.cjs` so tests resolve through the bundle. Don't switch back to `dist/index.js`.

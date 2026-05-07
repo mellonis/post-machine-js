@@ -32,7 +32,7 @@ machine.replaceTapeWith(new Tape({
   symbols: ['*', '*', ' '],
 }));
 
-machine.run();
+await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
@@ -76,7 +76,7 @@ machine.replaceTapeWith(new Tape({
   symbols: ['#', '#', '.'],
 }));
 
-machine.run();
+await machine.run();
 console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 ```
 
@@ -126,7 +126,7 @@ machine.replaceTapeWith(new Tape({
   symbols: ['*', '*', ' '],
 }));
 
-machine.run();
+await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
@@ -159,7 +159,7 @@ extend.replaceTapeWith(new Tape({
   position: 1,
 }));
 
-extend.run();
+await extend.run();
 console.log(extend.tape.symbols.join('')); // ***
 ```
 
