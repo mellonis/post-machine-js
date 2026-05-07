@@ -70,8 +70,21 @@ export class PostMachine extends TuringMachine {
     this.tapeBlock.replaceTape(newTape);
   }
 
-  override run({ stepsLimit = 1e5, onStep }: { stepsLimit?: number; onStep?: (machineState: MachineState) => void } = {}): void {
-    super.run({ initialState: this.#initialState, stepsLimit, onStep });
+  override async run({
+    stepsLimit = 1e5,
+    onStep,
+    __onDebugBreak,
+  }: {
+    stepsLimit?: number;
+    onStep?: (machineState: MachineState) => void;
+    __onDebugBreak?: (machineState: MachineState) => void | Promise<void>;
+  } = {}): Promise<void> {
+    await super.run({
+      initialState: this.#initialState,
+      stepsLimit,
+      onStep,
+      onDebugBreak: __onDebugBreak,
+    });
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
