@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-05-07
+
+### Changed
+
+- **BREAKING** — `peerDependencies['@turing-machine-js/machine']` raised from `^3.0.1` to `^4.0.0`. v3 is no longer supported; consumers must upgrade in lockstep. ([#58](https://github.com/mellonis/post-machine-js/issues/58))
+- **BREAKING** — `PostMachine.prototype.run` is now `async` and returns `Promise<void>`. Mirrors turing v4's async `TuringMachine.run`. Callers must `await` it (or chain `.then`); previously-synchronous callers will silently drop work otherwise.
+
+### Added
+
+- **Experimental `__onDebugBreak` callback** on `PostMachine.prototype.run` — `(machineState: MachineState) => void | Promise<void>`. Forwarded to turing v4's `onDebugBreak` hook and fires when a state with `state.debug` set is reached. The `__` prefix marks the surface unstable: a higher-level per-instruction breakpoint API is being designed and may rename or restructure this parameter without another major bump. ([#59](https://github.com/mellonis/post-machine-js/issues/59))
+- **`MachineState`** type re-exported from the package entry so consumers can annotate `onStep` / `__onDebugBreak` callbacks without taking a direct dependency on `@turing-machine-js/machine`.
+
+### Migration
+
+```sh
+npm install @turing-machine-js/machine@^4.0.0 @post-machine-js/machine@^4.0.0
+```
+
+```diff
+- machine.run();
++ await machine.run();
+```
+
+`runStepByStep` is unchanged (still a synchronous `Generator<MachineState>` — only `run()` went async).
+
 ## [3.1.0] - 2026-05-05
 
 ### Added
