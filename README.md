@@ -51,7 +51,7 @@ machine.replaceTapeWith(new Tape({
 
 console.log(machine.tape.symbols.join('').trim()); // ***   *
 
-machine.run();
+await machine.run();
 
 console.log(machine.tape.symbols.join('').trim()); // ****
 ```
@@ -101,7 +101,7 @@ machine.replaceTapeWith(new Tape({
 
 console.log(machine.tape.symbols.join('').trim()); // *
 
-machine.run();
+await machine.run();
 
 console.log(machine.tape.symbols.join('').trim()); // **
 
@@ -114,7 +114,7 @@ machine.replaceTapeWith(new Tape({
 
 console.log(machine.tape.symbols.join('').trim()); // ***
 
-machine.run();
+await machine.run();
 
 console.log(machine.tape.symbols.join('').trim()); // ******
 ```
