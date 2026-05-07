@@ -159,7 +159,7 @@ extend.replaceTapeWith(new Tape({
   position: 1,
 }));
 
-extend.run();
+await extend.run();
 console.log(extend.tape.symbols.join('')); // ***
 ```
 
