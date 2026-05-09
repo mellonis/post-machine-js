@@ -281,7 +281,9 @@ const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock)
 console.log(mermaid.split('\n')[0]); // flowchart TD
 ```
 
-For the raw `Graph` as input to other tools, use `State.toGraph(machine.initialState, machine.tapeBlock)` directly.
+The full rendered output is shown in the [Quick start](#quick-start) section's `<details>` block alongside the hand-drawn diagram, with a reading guide for the engine's compact `read → write/move` edge syntax.
+
+For the raw `Graph` as input to other tools (analysis, custom rendering, alternative serializations), use `State.toGraph(machine.initialState, machine.tapeBlock)` directly. The companion `fromMermaid` and `State.fromGraph` are also re-exported for round-trip workflows — load a Mermaid blob, get a `Graph` back, build a runnable machine from it. The round-trip is *behaviorally* lossless (same inputs produce same outputs) but not bytewise lossless because state IDs auto-reassign on each pass; see [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138)/[#139](https://github.com/mellonis/turing-machine-js/issues/139) for the cleaner-emit and regression-test follow-ups on the upstream side.
 
 ### Structural summary — `summarizePostMachine`
 
