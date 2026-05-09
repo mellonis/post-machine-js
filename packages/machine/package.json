@@ -27,7 +27,7 @@
     "@turing-machine-js/machine": "^6.0.0"
   },
   "devDependencies": {
-    "@turing-machine-js/machine": "^6.0.0"
+    "@turing-machine-js/machine": "^6.0.1"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
