@@ -5,12 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - `npm run build` — TypeScript project-references build (`tsc --build tsconfig.build.json`) followed by `scripts/build-node-entries.mjs`, which uses Rollup to repackage `dist/index.js` into `index.mjs` (ESM) and `index.cjs` (CJS). The Rollup step marks `@turing-machine-js/machine` as `external`, so the upstream Turing-machine engine stays as a runtime dependency.
-- `npm test` — Jest across the root project + each package (configured via `projects` in `jest.config.mjs`). Tests are `*.spec.ts` colocated with sources or in `test/` directories.
-- `npm run test:coverage` — same, with coverage.
-- `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` and per-package `babel.config.js` are ignored.
-- Run a single test: `npx jest packages/machine/test/machine.spec.ts -t "name"`.
+- `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.ts`; tests are `test/**/*.spec.ts` (root README/example tests) plus `packages/*/test/**/*.spec.ts` (per-package). Vitest uses esbuild for TypeScript — no babel toolchain.
+- `npm run test:watch` — Vitest in watch mode (`vitest`).
+- `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.ts`: 95 / 90 / 95 / 95 (~5pt below current 100%).
+- `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` is ignored.
+- Run a single test: `npx vitest run packages/machine/test/machine.spec.ts -t "name"`.
 
-`npm` ≥ 7 is required (workspaces).
+`npm` ≥ 7 is required (workspaces). Node 24 is what CI uses.
 
 ## Architecture
 
@@ -89,6 +90,8 @@ The upstream v5/v6 changes that drove this release:
 - **Post-aware wrappers persist unchanged.** `summarizePostMachine(machine)` and `equivalentPostMachines(reference, candidate, cases, options?)` remain the recommended path for typical usage. The bare upstream functions stay re-exported for advanced cases (e.g., comparing a PostMachine against a hand-rolled TuringMachine via `equivalentOn`).
 - **`machine.initialState` getter persists.** It is still the entry point for the upstream graph utilities to act on a PostMachine instance — pass it to `summarize`, `toMermaid`, `equivalentOn`, or directly to the v4 debugger primitives.
 
-### Jest moduleNameMapper points at `dist/index.cjs`, not `dist/index.js`
+### Source-vs-built imports for `@post-machine-js/machine` (vitest alias)
 
-`@turing-machine-js/machine` v4 ships only the bundled `.cjs`/`.mjs` builds — the unbundled tsc output (`dist/**/*.js`) is not included in the tarball. The Jest `moduleNameMapper` in both `jest.config.mjs` files therefore resolves `@turing-machine-js/machine` to the bundled `dist/index.cjs` so tests resolve through the bundle. Don't switch back to `dist/index.js`.
+Per-package and root spec files import the bare package name — `from '@post-machine-js/machine'`. Inside the repo, vitest's `resolve.alias` (in the single root `vitest.config.ts`) intercepts the bare specifier and routes it to TypeScript source (`packages/machine/src`), so a change in source is picked up by tests with no rebuild step. After publishing, Node resolves the same specifier to `dist/index.{mjs,cjs}` via the package's `exports` field.
+
+`@turing-machine-js/machine` (the peer dep) doesn't need an alias — vitest resolves the package's `exports` field correctly out of the installed `node_modules` copy. (The previous Jest setup hand-mapped it to `dist/index.cjs` because Jest's resolver was older; that hack was dropped during the v6 vitest migration.)
