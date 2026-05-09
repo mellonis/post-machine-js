@@ -116,19 +116,44 @@ describe('packages/machine/README.md', () => {
 
   describe('Introspection and equivalence', () => {
     describe('Visualization — toMermaid + State.toGraph', () => {
-      test('first line is "flowchart TD"', () => {
-        const machine = new PostMachine({
+      function buildQuickStart(): PostMachine {
+        return new PostMachine({
           10: check(20, 30),
           20: right(10),
           30: mark,
           40: stop,
         });
+      }
 
-        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+      test('first line is "flowchart TD"', () => {
+        const mermaid = toMermaid(State.toGraph(buildQuickStart().initialState, buildQuickStart().tapeBlock));
 
         // console.log(mermaid.split('\n')[0]); // flowchart TD
         expect(mermaid.split('\n')[0])
           .toBe('flowchart TD');
+      });
+
+      // Pins the README's <details> engine-source block. Substring assertions
+      // (not full equality) tolerate State ID auto-reassignment, so a refactor
+      // that changes order of state construction won't false-fail this test.
+      test('Quick Start engine output matches README <details> block', () => {
+        const machine = buildQuickStart();
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        // Header lines.
+        expect(mermaid).toContain('flowchart TD');
+        expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
+
+        // Halt node + initial state shape.
+        expect(mermaid).toContain('(((halt)))');
+        expect(mermaid).toContain('(("id:1"))');
+
+        // Each of the 4 transitions described in the README's reading guide.
+        // Edge labels are exact as emitted; node IDs (s0/s1/...) are not pinned.
+        expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
       });
     });
 

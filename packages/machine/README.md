@@ -38,6 +38,43 @@ console.log(machine.tape.symbols.join('').trim()); // ***
 
 Each instruction is a *state-producer*: `mark`, `right`, `erase`, etc. used bare advance to the next-numbered instruction; called as `mark(20)` they jump to instruction `20`. `check(ix1, ix0)` branches — `ix1` if the current cell is marked, else `ix0`. `stop` halts.
 
+The state graph for the example above:
+
+```mermaid
+flowchart TD
+    halt(((halt)))
+    s10(("**10:** check(20, 30)"))
+    s20["**20:** right(10)"]
+    s30["**30:** mark"]
+
+    s10 -- "marked (*)" --> s20
+    s10 -- "blank" --> s30
+    s20 -- "→ R" --> s10
+    s30 -- "write *<br/>(40 stops)" --> halt
+```
+
+The `40: stop` instruction is elided in the graph — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
+
+<details>
+<summary>Same graph, as the engine actually emits via <code>toMermaid(State.toGraph(machine.initialState, machine.tapeBlock))</code>:</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1(("id:1"))
+  s2["id:2"]
+  s3["id:3"]
+  s1 -- "\* → ·/S" --> s2
+  s1 -- "- → ·/S" --> s3
+  s2 -- "* → ·/R" --> s1
+  s3 -- "* → */S" --> s0
+```
+
+Reading the engine output: states use auto-assigned IDs (`s0` is always `haltState`); double-circle nodes are halts, double-paren nodes are entry points, square nodes are intermediate states. Edge labels use the engine's compact `read → write/move` syntax: `\*` is the literal mark symbol, `-` is `ifOtherSymbol` (the catch-all for any symbol not explicitly enumerated), `·` is "keep" (no write), and `S`/`L`/`R` are stay/left/right.
+
+</details>
+
 ## Classes
 
 ### PostMachine
