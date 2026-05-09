@@ -60,7 +60,9 @@ console.log(machine.tape.symbols.join('').trim()); // ****
 
 A tape contains a marked section. The issue is to duplicate it.
 
-This example demonstrates an issue solving with subroutines. A subroutine is a peace of code which can be reused multiple times. The issue could be solved without subroutines at all, but with them the algorithm looks more readable. 
+This example demonstrates an issue solving with subroutines. A subroutine is a peace of code which can be reused multiple times. The issue could be solved without subroutines at all, but with them the algorithm looks more readable.
+
+The example also uses **inline command groups** — `1: [mark, right, mark]` inside `markTwoCells` and `2: [right, erase]` at the top level — to bundle several commands under a single instruction number. See [Grouped instructions](packages/machine/README.md#grouped-instructions) in the package README for the syntax and the constraints (`check` and `stop` always throw in a group; indexed forms like `mark(20)` throw too, but bare forms — including bare `call('sub')` — are fine).
 
 ```javascript
 import {

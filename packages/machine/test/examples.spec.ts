@@ -57,6 +57,72 @@ describe('packages/machine/README.md', () => {
     });
   });
 
+  describe('Grouped instructions', () => {
+    test('[mark, right, mark] under one label produces "**"', async () => {
+      const machine = new PostMachine({
+        1: [mark, right, mark],
+        2: stop,
+      });
+
+      machine.replaceTapeWith(new Tape({
+        alphabet: machine.tape.alphabet,
+        symbols: [' ', ' ', ' '],
+        position: 0,
+      }));
+
+      await machine.run();
+
+      // console.log(machine.tape.symbols.join('').trim()); // **
+      expect(machine.tape.symbols.join('').trim())
+        .toBe('**');
+    });
+
+    test('check inside a group throws at construction', () => {
+      // README claim: `check` always throws inside a group, regardless of form.
+      expect(() => new PostMachine({
+        1: [mark, check(2, 3)],
+        2: stop,
+        3: stop,
+      })).toThrow();
+    });
+
+    test('stop inside a group throws at construction', () => {
+      // README claim: `stop` always throws inside a group, regardless of form.
+      expect(() => new PostMachine({
+        1: [mark, stop],
+      })).toThrow();
+    });
+
+    test('indexed mark inside a group throws at construction', () => {
+      // README claim: indexed forms (mark(N), right(N), ...) throw in a group
+      // because explicit jump conflicts with sequential fall-through.
+      expect(() => new PostMachine({
+        1: [mark, right(10), mark],
+        2: stop,
+        10: stop,
+      })).toThrow();
+    });
+
+    test('indexed call inside a group throws at construction', () => {
+      // README claim: indexed call('sub', N) form throws in a group; bare
+      // call('sub') is allowed.
+      expect(() => new PostMachine({
+        sub: { 1: stop },
+        1: [mark, call('sub', 2)],
+        2: stop,
+      })).toThrow();
+    });
+
+    test('bare call inside a group is allowed', () => {
+      // Sanity-check the bare-form-allowed half of the indexed-vs-bare rule.
+      expect(() => new PostMachine({
+        sub: { 1: stop },
+        1: [mark, call('sub')],
+        2: stop,
+      })).not.toThrow();
+    });
+  });
+
   describe('Subroutines', () => {
     test('engine Mermaid output for the simple subroutine matches README <details>', () => {
       const machine = new PostMachine({

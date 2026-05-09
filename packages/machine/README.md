@@ -135,7 +135,7 @@ console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 
 ## Commands
 
-Each command is a higher-order function. Invoking it with no argument produces a state-producer that advances to the next numbered instruction; invoking with an explicit index jumps to that instruction.
+Each command has two forms: **bare** (`mark`) — falls through to the next position in its containing scope (the next numbered instruction in the map, or the next item in an [array group](#grouped-instructions)); or **with an explicit index** (`mark(20)`) — jumps to instruction `20`. The bare form is what you use when "next entry in this scope" is what you want; the indexed form is for back-edges, branches, and explicit jumps. The bullets below show both forms with the `bare / indexed` shorthand.
 
 ### Core commands
 
@@ -153,6 +153,34 @@ Each command is a higher-order function. Invoking it with no argument produces a
 ### Other commands
 
 * `noop` / `noop(ix)` — do nothing; go to the next / `ix`th instruction. A placeholder useful for reserving an instruction number in a worked example, or for an explicit jump that does no other work.
+
+## Grouped instructions
+
+Several commands can share a single instruction number by passing them as an array:
+
+```javascript
+import { PostMachine, mark, right, stop, Tape } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  1: [mark, right, mark],   // mark, step right, mark — all under label 1
+  2: stop,
+});
+
+machine.replaceTapeWith(new Tape({
+  alphabet: machine.tape.alphabet,
+  symbols: [' ', ' ', ' '],
+  position: 0,
+}));
+
+await machine.run();
+console.log(machine.tape.symbols.join('').trim()); // **
+```
+
+Bare commands inside a group fall through to the next item in the array; the last item falls through to the next *top-level* instruction (`2: stop` here). This is sugar for inlining a fixed sequence without giving each step its own top-level number.
+
+**Inside a group, only bare forms work for movement / write commands.** Indexed forms (`mark(20)`, `right(10)`, `call('sub', 5)`, ...) throw at construction time — an explicit jump conflicts with the group's sequential fall-through semantics.
+
+**`check` and `stop` always throw inside a group**, regardless of form. Branching and halting are control-flow boundaries that need their own top-level instruction number.
 
 ## Subroutines
 
