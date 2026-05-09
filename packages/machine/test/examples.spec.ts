@@ -32,6 +32,42 @@ describe('packages/machine/README.md', () => {
   });
 
   describe('Subroutines', () => {
+    test('engine Mermaid output for the simple subroutine matches README <details>', () => {
+      const machine = new PostMachine({
+        rightToBlank: {
+          1: right,
+          2: check(1, 3),
+          3: stop,
+        },
+        1: call('rightToBlank'),
+        2: mark,
+        3: stop,
+      });
+
+      const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+      // Header.
+      expect(mermaid).toContain('flowchart TD');
+      expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
+
+      // Halt + the entry-state with composite name (id:N>id:M shape — the
+      // withOverrodeHaltState wrapper for the top-level `call`).
+      expect(mermaid).toContain('(((halt)))');
+      expect(mermaid).toMatch(/s\d+\(\("id:\d+>id:\d+"\)\)/);
+
+      // The dotted onHalt edge — the override path back from the subroutine.
+      expect(mermaid).toMatch(/s\d+ -\. onHalt \.-> s\d+/);
+
+      // The subroutine's internal cycle: a right-move state and a check state
+      // that loops back on '*' and exits on the blank.
+      expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);   // right (keep + R)
+      expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/); // check on '*'
+      expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);    // check on blank (ifOtherSymbol)
+
+      // The mark instruction's edge: write '*', stay, transition to halt.
+      expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+    });
+
     test('** → marks first blank to make *** (single subroutine, single call)', async () => {
       const machine = new PostMachine({
         rightToBlank: {

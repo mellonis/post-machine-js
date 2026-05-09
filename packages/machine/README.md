@@ -167,6 +167,51 @@ await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
+The state graph (top-level flow with the subroutine as a black box):
+
+```mermaid
+flowchart TD
+    halt(((halt)))
+    t1(("**1:** call('rightToBlank')"))
+    t2["**2:** mark"]
+    sub[["rightToBlank<br/>(walks right until blank)"]]
+
+    t1 -- "enters" --> sub
+    sub -. "halts → return" .-> t2
+    t2 -- "write *<br/>(3 stops)" --> halt
+```
+
+The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverrodeHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
+
+<details>
+<summary>Same graph, as the engine actually emits. The subroutine and the wrapping <code>withOverrodeHaltState</code> are visible:</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s2["id:2"]
+  s3["id:3"]
+  s4["id:4"]
+  s5(("id:1>id:4"))
+  s6["id:6"]
+  s2 -- "* → ·/R" --> s3
+  s3 -- "\* → ·/S" --> s2
+  s3 -- "- → ·/S" --> s0
+  s4 -- "* → ·/S" --> s6
+  s5 -- "* → ·/S" --> s2
+  s5 -. onHalt .-> s4
+  s6 -- "* → */S" --> s0
+```
+
+Reading the engine output:
+- `s5` is the top-level entry — the `id:1>id:4` label shows it's a `withOverrodeHaltState` wrapper: instruction 1 (`call`) with halt overridden to instruction 4 (the next top-level state after the subroutine returns).
+- `s2`/`s3` form the subroutine's internal cycle: `s2` is `right` (keep+R), `s3` is `check(1, 3)` (loops back on `*`, exits to halt on blank).
+- The dotted `onHalt` edge `s5 -.→ s4` is the override: when control flow reaches the subroutine's halt, the engine pops back to `s4` (the routing intermediate before `s6 = mark`).
+- `s6` is the `mark` instruction (writes `*`, transitions to halt).
+
+</details>
+
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
 
 ```javascript
