@@ -291,6 +291,14 @@ Each case string is loaded onto a fresh clone of the originating PostMachine's t
 
 The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
 
+## Debugging
+
+`pm.run()` accepts an experimental `__onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached. The `__` prefix marks the surface unstable — a higher-level per-instruction breakpoint API is being designed (tracked in [#59](https://github.com/mellonis/post-machine-js/issues/59)) and may rename or restructure this parameter without another major bump.
+
+For the full debugger surface — per-state runtime-mutable breakpoints (`state.debug.before` / `state.debug.after` filters), the halt-pause (`haltState.debug.before`), and the `run({ debug: boolean })` master switch — operate against the upstream API directly. `machine.initialState` is the entry point: walk the graph from there to attach `state.debug` to specific reachable states. **PostMachine deliberately does not wrap any of this** — the planned breakpoint API will provide a higher-level surface once the design settles.
+
+See [Debugging breakpoints (v4+)](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints-v4) in the upstream README for the complete reference: filter shapes, ordering semantics (per-iter lifecycle is `before → step → after` on the same yield as of engine v6), and the `haltState.debug.after` rejection rule.
+
 ## Links
 
 - [Post–Turing machine](https://en.wikipedia.org/wiki/Post%E2%80%93Turing_machine) on Wikipedia
