@@ -17,13 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an npm-workspaces + Lerna monorepo with **one published package** so far:
 
-- **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. It depends on the Turing engine for `State`, `TapeBlock`, `TuringMachine`, `Tape`, and the supporting helpers (`haltState`, `ifOtherSymbol`, `Reference`, `movements`).
-
-### Relationship to `@turing-machine-js/machine`
-
-`@turing-machine-js/machine` is declared as a **peer dependency** (and a devDependency for the in-repo build). Importantly, it must be a peer because the upstream library has runtime singletons (`haltState` / `ifOtherSymbol` / `Symbol(...)` constants for `movements` and `symbolCommands`) — duplicate copies would fail `instanceof` checks and break sentinel identity.
-
-All imports use the bare specifier `'@turing-machine-js/machine'`. There is no `/src` deep-import; that pattern was an in-monorepo dev-time shim of the upstream library that has since been retired.
+- **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. The Turing engine is a **peer dependency** (see [Relationship to `@turing-machine-js/machine` v6.0.x](#relationship-to-turing-machine-jsmachine-v60x) below for the full version-relationship writeup). PostMachine pulls `State`, `TapeBlock`, `TuringMachine`, `Tape`, and several runtime singletons (`haltState`, `ifOtherSymbol`, the `movements` constants) from the engine.
 
 ### How `PostMachine` maps to the Turing engine
 
@@ -77,7 +71,12 @@ Non-README tests (sentinel-identity checks, internal plumbing) live in separatel
 
 ## Relationship to `@turing-machine-js/machine` v6.0.x
 
-The peer dependency is `^6.0.0`. **v4 and v5 are no longer supported** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped a v5 of its own — v6.0.0 is the first post release that crosses to engine v5/v6.)
+`@turing-machine-js/machine` is declared as a **peer dependency** (and a devDependency for the in-repo build). Importantly, it must be a peer because the upstream library exposes two kinds of identity-sensitive surface that duplicate copies would break:
+
+- **Sentinel singletons** keyed by `Symbol(...)` — `haltState`, `ifOtherSymbol`, the members of `movements`, the members of `symbolCommands`. Equality checks (`=== haltState`, etc.) require the same physical object.
+- **Classes** — `Reference`, `State`, `TapeBlock`, `TuringMachine`, `Tape`, `Alphabet`. `instanceof` checks require shared constructor identity.
+
+The current peer range is `^6.0.0`. **v4 and v5 are no longer supported** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped a v5 of its own — v6.0.0 is the first post release that crosses to engine v5/v6.)
 
 The upstream v5/v6 changes that drove this release:
 
@@ -90,8 +89,9 @@ The upstream v5/v6 changes that drove this release:
 - **Post-aware wrappers persist unchanged.** `summarizePostMachine(machine)` and `equivalentPostMachines(reference, candidate, cases, options?)` remain the recommended path for typical usage. The bare upstream functions stay re-exported for advanced cases (e.g., comparing a PostMachine against a hand-rolled TuringMachine via `equivalentOn`).
 - **`machine.initialState` getter persists.** It is still the entry point for the upstream graph utilities to act on a PostMachine instance — pass it to `summarize`, `toMermaid`, `equivalentOn`, or directly to the v4 debugger primitives.
 
-### Source-vs-built imports for `@post-machine-js/machine` (vitest alias)
+### Imports: bare specifiers everywhere
 
-Per-package and root spec files import the bare package name — `from '@post-machine-js/machine'`. Inside the repo, vitest's `resolve.alias` (in the single root `vitest.config.ts`) intercepts the bare specifier and routes it to TypeScript source (`packages/machine/src`), so a change in source is picked up by tests with no rebuild step. After publishing, Node resolves the same specifier to `dist/index.{mjs,cjs}` via the package's `exports` field.
+Source and specs always import the bare package names — `from '@post-machine-js/machine'` and `from '@turing-machine-js/machine'`. Two distinct resolution stories sit behind those specifiers:
 
-`@turing-machine-js/machine` (the peer dep) doesn't need an alias — vitest resolves the package's `exports` field correctly out of the installed `node_modules` copy. (The previous Jest setup hand-mapped it to `dist/index.cjs` because Jest's resolver was older; that hack was dropped during the v6 vitest migration.)
+- **`@post-machine-js/machine`** (our own package). Vitest's `resolve.alias` in the single root `vitest.config.ts` intercepts the bare specifier and routes it to TypeScript source (`packages/machine/src`), so a change in source is picked up by tests with no rebuild step. After publishing, Node resolves the same specifier to `dist/index.{mjs,cjs}` via the package's `exports` field.
+- **`@turing-machine-js/machine`** (the peer dep). No alias — vitest resolves the package's `exports` field correctly out of the installed `node_modules` copy. The upstream package ships only its bundled `dist/{index.mjs,index.cjs}`, so no `@turing-machine-js/machine/src/...` deep-import is possible (an old in-monorepo dev shim that pointed at the upstream's source has been retired). The previous Jest setup hand-mapped this specifier to `dist/index.cjs` because Jest's resolver was older; that hack was dropped during the v6 vitest migration.
