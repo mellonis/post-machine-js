@@ -32,6 +32,14 @@ npm install @turing-machine-js/machine@^6.0.0 @post-machine-js/machine@^6.0.0
 
 No call-site changes for consumers using only `pm.run()` / `pm.runStepByStep()` / the `onStep` hook.
 
+### Internal (consumer-invisible — does not affect the published tarball's runtime)
+
+- **Test runner migrated Jest → Vitest.** Single root `vitest.config.ts` with `resolve.alias` for source-vs-built imports, replaces the per-package `jest.config.mjs` plus root `jest.config.mjs`. The babel toolchain (`@babel/core`, `@babel/preset-env`, `@babel/preset-typescript`, `babel-jest`) is dropped — vitest uses esbuild for TypeScript, no babel needed. `jest.fn()` calls renamed to `vi.fn()`. Coverage thresholds set in config (95 / 90 / 95 / 95).
+- **CI:** Node 22.x → 24, dropped single-value matrix (required check name `build (22.x)` → `build`), removed vestigial `next` from triggers, normalized `actions/add-to-project@v1.0.2` → `@v2`. Mirrors turing-machine-js#142.
+- **Deps refreshed to latest** (`eslint`, `rollup`, `typescript-eslint`, etc.) before the vitest migration so each step started from a clean baseline.
+- **README:** dual-layer Mermaid pattern added for the Quick Start example — hand-drawn diagram with friendly instruction labels (`10:` / `20:` / `30:`) plus a `<details>` block showing the engine-emitted source via `toMermaid(State.toGraph(...))`. Doc-test added pinning the engine output's structural shape (regex on node syntax, exact edge labels) so the README and engine output stay aligned.
+- **Author email** in `package.json` updated `mellonis14@gmain.com` → `mellonis@yandex.ru`.
+
 ## [4.0.0] - 2026-05-07
 
 ### Changed
