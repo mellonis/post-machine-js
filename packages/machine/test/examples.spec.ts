@@ -126,30 +126,38 @@ describe('packages/machine/README.md', () => {
       }
 
       test('first line is "flowchart TD"', () => {
-        const mermaid = toMermaid(State.toGraph(buildQuickStart().initialState, buildQuickStart().tapeBlock));
+        const machine = buildQuickStart();
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
 
         // console.log(mermaid.split('\n')[0]); // flowchart TD
         expect(mermaid.split('\n')[0])
           .toBe('flowchart TD');
       });
 
-      // Pins the README's <details> engine-source block. Substring assertions
-      // (not full equality) tolerate State ID auto-reassignment, so a refactor
-      // that changes order of state construction won't false-fail this test.
+      // Pins the README's <details> engine-source block. State IDs (s0, s1,
+      // ..., and the "id:N" labels) are global counters and shift depending
+      // on which other tests ran before this one — so we pin the *shape*
+      // (regex on node syntax + edge labels) instead of literal IDs. The
+      // README's <details> block shows the in-isolation IDs (id:1/2/3) for
+      // pedagogical clarity.
       test('Quick Start engine output matches README <details> block', () => {
         const machine = buildQuickStart();
         const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
 
-        // Header lines.
+        // Header lines (literal).
         expect(mermaid).toContain('flowchart TD');
         expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-        // Halt node + initial state shape.
+        // Halt node (always literal "halt").
         expect(mermaid).toContain('(((halt)))');
-        expect(mermaid).toContain('(("id:1"))');
+
+        // Initial state — double-paren entry shape with auto-numbered ID label.
+        expect(mermaid).toMatch(/s\d+\(\("id:\d+"\)\)/);
+        // Two intermediate states — square-bracket node shape.
+        expect(mermaid).toMatch(/s\d+\["id:\d+"\]/);
 
         // Each of the 4 transitions described in the README's reading guide.
-        // Edge labels are exact as emitted; node IDs (s0/s1/...) are not pinned.
+        // Edge labels are exact as emitted; node IDs (s\d+) are not pinned.
         expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/);
         expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);
         expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);
