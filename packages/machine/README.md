@@ -135,24 +135,22 @@ console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 
 ## Commands
 
-Each command has two forms: **bare** (`mark`) — falls through to the next position in its containing scope (the next numbered instruction in the map, or the next item in an [array group](#grouped-instructions)); or **with an explicit index** (`mark(20)`) — jumps to instruction `20`. The bare form is what you use when "next entry in this scope" is what you want; the indexed form is for back-edges, branches, and explicit jumps. The bullets below show both forms with the `bare / indexed` shorthand.
+Each command has two forms: **bare** (`mark`) — falls through to the next position in its containing scope (the next numbered instruction in the map, or the next item in an [array group](#grouped-instructions)); or **with an explicit index** (`mark(20)`) — jumps to instruction `20`. The bare form is what you use when "next entry in this scope" is what you want; the indexed form is for back-edges, branches, and explicit jumps.
 
-### Core commands
+| Command | Bare form | Indexed form | Behavior |
+|---|---|---|---|
+| `check` | — | `check(ix1, ix0)` | Branch on the current cell: marked → instruction `ix1`, blank → instruction `ix0` |
+| `erase` | `erase` | `erase(ix)` | Write the blank symbol; fall through / jump to `ix` |
+| `left` | `left` | `left(ix)` | Move the head left; fall through / jump to `ix` |
+| `mark` | `mark` | `mark(ix)` | Write the mark symbol; fall through / jump to `ix` |
+| `right` | `right` | `right(ix)` | Move the head right; fall through / jump to `ix` |
+| `stop` | `stop` | — | Halt the machine |
+| `call` | `call(name)` | `call(name, ix)` | Invoke subroutine `name`; fall through / jump to `ix` afterwards |
+| `noop` | `noop` | `noop(ix)` | Do nothing; fall through / jump to `ix` |
 
-* `check(ix1, ix0)` — if the current cell is marked, go to instruction `ix1`; otherwise go to `ix0`.
-* `erase` / `erase(ix)` — write the blank symbol; go to the next / `ix`th instruction.
-* `left` / `left(ix)` — move the head left; go to the next / `ix`th instruction.
-* `mark` / `mark(ix)` — write the mark symbol; go to the next / `ix`th instruction.
-* `right` / `right(ix)` — move the head right; go to the next / `ix`th instruction.
-* `stop` — halt the machine.
+A `—` in either form column means that form doesn't exist: `check` requires both branch targets so has no bare form; `stop` always halts so has no indexed form.
 
-### Subroutine commands
-
-* `call(subroutineName)` / `call(subroutineName, ix)` — invoke a named subroutine; go to the next / `ix`th instruction afterwards.
-
-### Other commands
-
-* `noop` / `noop(ix)` — do nothing; go to the next / `ix`th instruction. A placeholder useful for reserving an instruction number in a worked example, or for an explicit jump that does no other work.
+**`noop`** is the placeholder of choice: useful for reserving instruction numbers in a worked example, padding a sketch, or as a labelled jump target.
 
 ## Grouped instructions
 
