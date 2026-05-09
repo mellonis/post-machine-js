@@ -2,6 +2,9 @@ import {
   PostMachine,
   State,
   Tape,
+  alphabet,
+  blankSymbol,
+  markSymbol,
   call, check, left, mark, right, stop,
   toMermaid,
   summarizePostMachine,
@@ -9,6 +12,29 @@ import {
 } from '../src/index';
 
 describe('packages/machine/README.md', () => {
+  describe('Constants', () => {
+    test('alphabet is the upstream Alphabet over [" ", "*"]', () => {
+      // The README claims `alphabet` is an `Alphabet` instance for
+      // Post-machine tapes (' ', '*'). `Alphabet` isn't re-exported
+      // (intentional — PostMachine wraps it), so we verify shape
+      // instead of constructor identity. The Alphabet class exposes
+      // `symbols` and `blankSymbol` as prototype getters.
+      expect(alphabet).toBeDefined();
+      expect((alphabet as { symbols: readonly string[] }).symbols).toEqual([' ', '*']);
+      expect((alphabet as { blankSymbol: string }).blankSymbol).toBe(' ');
+    });
+
+    test('blankSymbol is " " (space)', () => {
+      // The README claims `blankSymbol` is the blank symbol, ' ' (space).
+      expect(blankSymbol).toBe(' ');
+    });
+
+    test('markSymbol is "*"', () => {
+      // The README claims `markSymbol` is the mark symbol, '*'.
+      expect(markSymbol).toBe('*');
+    });
+  });
+
   describe('Quick start', () => {
     test('** → marks first blank to make ***', async () => {
       const machine = new PostMachine({
