@@ -5,7 +5,7 @@
   "engines": {
     "npm": ">=7.0.0"
   },
-  "author": "Ruslan Gilmullin <mellonis14@gmain.com>",
+  "author": "Ruslan Gilmullin <mellonis@yandex.ru>",
   "homepage": "https://github.com/mellonis/post-machine-js#readme",
   "license": "GPL-3.0-or-later",
   "publishConfig": {
@@ -24,10 +24,10 @@
     "machine"
   ],
   "peerDependencies": {
-    "@turing-machine-js/machine": "^4.0.0"
+    "@turing-machine-js/machine": "^6.0.0"
   },
   "devDependencies": {
-    "@turing-machine-js/machine": "^4.0.0"
+    "@turing-machine-js/machine": "^6.0.0"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",

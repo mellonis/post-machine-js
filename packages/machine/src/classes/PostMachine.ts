@@ -73,17 +73,17 @@ export class PostMachine extends TuringMachine {
   override async run({
     stepsLimit = 1e5,
     onStep,
-    __onDebugBreak,
+    __onPause,
   }: {
     stepsLimit?: number;
     onStep?: (machineState: MachineState) => void;
-    __onDebugBreak?: (machineState: MachineState) => void | Promise<void>;
+    __onPause?: (machineState: MachineState) => void | Promise<void>;
   } = {}): Promise<void> {
     await super.run({
       initialState: this.#initialState,
       stepsLimit,
       onStep,
-      onDebugBreak: __onDebugBreak,
+      onPause: __onPause,
     });
   }
 
