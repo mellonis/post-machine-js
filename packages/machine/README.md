@@ -137,7 +137,7 @@ console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 
 Each command has two forms: **bare** (`mark`) — falls through to the next position in its containing scope (the next numbered instruction in the map, or the next item in an [array group](#grouped-instructions)); or **with an explicit index** (`mark(20)`) — jumps to instruction `20`. The bare form is what you use when "next entry in this scope" is what you want; the indexed form is for back-edges, branches, and explicit jumps. A `—` in either form column means that form doesn't exist for that command.
 
-The first table is the **canonical instruction set** of a Post(–Turing) machine per Post's 1936 paper. The second is **extensions** authored on top of the classical machine — subroutines (`call`) and a placeholder (`noop`); both are conveniences, not part of the original specification.
+The first table is the **canonical instruction set** of a Post(–Turing) machine per Post's 1936 paper. The second is **the author's extensions** added on top of the classical machine in this implementation — subroutines (`call`) and a placeholder (`noop`); both are conveniences, not part of the original specification.
 
 ### Classical commands
 
@@ -152,7 +152,7 @@ The first table is the **canonical instruction set** of a Post(–Turing) machin
 
 `check` requires both branch targets so has no bare form; `stop` always halts so has no indexed form.
 
-### Extensions
+### Author's extensions
 
 | Command | Bare form | Indexed form | Behavior |
 |---|---|---|---|
