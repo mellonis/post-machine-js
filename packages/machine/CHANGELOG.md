@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2026-05-10
+
+Lockstep release with `@turing-machine-js/machine` v6 (post-machine-js skipped v5 of its own — this is the first release that crosses to engine v5/v6).
+
+### Changed
+
+- **BREAKING** — `peerDependencies['@turing-machine-js/machine']` raised from `^4.0.0` to `^6.0.0`. Engine v4 and v5 are no longer supported; consumers must upgrade in lockstep.
+- **BREAKING** — Experimental `__onDebugBreak` callback on `pm.run()` renamed to `__onPause`, mirroring engine v5's `onDebugBreak` → `onPause` rename (turing-machine-js#109/#110). The `__` prefix was the explicit contract that this surface might rename without warning. Behavior is unchanged (still forwards the callback to the upstream debugger; still `(machineState: MachineState) => void | Promise<void>`).
+
+### Engine v5/v6 surface relevant when consumers reach past PostMachine
+
+- The engine's `state.debug` per-iter lifecycle is now `before → step → after` on the same yield (engine v6/#119) — was v4's "after fires on iter K+1's yield" via a `prevYield` substitution dance. Tests that observed cross-hook ordering at the lifecycle level need a v6-aware shape; PostMachine's own tests don't observe ordering and pass unchanged.
+- `haltState.debug.after = …` is rejected at write-time in engine v5+ (turing-machine-js#108 part 2) — halt is terminal, no iteration-after-halt to anchor on. Use `haltState.debug.before = true` instead.
+- `run({ debug: boolean })` master switch on the engine (turing-machine-js#106) suppresses all `onPause` dispatches without editing `state.debug` assignments. Reachable via the upstream API; not wrapped at the PostMachine level.
+
+### Migration
+
+```sh
+npm install @turing-machine-js/machine@^6.0.0 @post-machine-js/machine@^6.0.0
+```
+
+```diff
+- await pm.run({ __onDebugBreak: handler });
++ await pm.run({ __onPause: handler });
+```
+
+No call-site changes for consumers using only `pm.run()` / `pm.runStepByStep()` / the `onStep` hook.
+
+### Internal (consumer-invisible — does not affect the published tarball's runtime)
+
+- **Test runner migrated Jest → Vitest.** Single root `vitest.config.ts` with `resolve.alias` for source-vs-built imports, replaces the per-package `jest.config.mjs` plus root `jest.config.mjs`. The babel toolchain (`@babel/core`, `@babel/preset-env`, `@babel/preset-typescript`, `babel-jest`) is dropped — vitest uses esbuild for TypeScript, no babel needed. `jest.fn()` calls renamed to `vi.fn()`. Coverage thresholds set in config (95 / 90 / 95 / 95).
+- **CI:** Node 22.x → 24, dropped single-value matrix (required check name `build (22.x)` → `build`), removed vestigial `next` from triggers, normalized `actions/add-to-project@v1.0.2` → `@v2`. Mirrors turing-machine-js#142.
+- **Deps refreshed to latest** (`eslint`, `rollup`, `typescript-eslint`, etc.) before the vitest migration so each step started from a clean baseline.
+- **README:** dual-layer Mermaid pattern added for the Quick Start example — hand-drawn diagram with friendly instruction labels (`10:` / `20:` / `30:`) plus a `<details>` block showing the engine-emitted source via `toMermaid(State.toGraph(...))`. Doc-test added pinning the engine output's structural shape (regex on node syntax, exact edge labels) so the README and engine output stay aligned.
+- **Author email** in `package.json` updated `mellonis14@gmain.com` → `mellonis@yandex.ru`.
+
 ## [4.0.0] - 2026-05-07
 
 ### Changed

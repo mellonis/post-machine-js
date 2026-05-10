@@ -38,15 +38,78 @@ console.log(machine.tape.symbols.join('').trim()); // ***
 
 Each instruction is a *state-producer*: `mark`, `right`, `erase`, etc. used bare advance to the next-numbered instruction; called as `mark(20)` they jump to instruction `20`. `check(ix1, ix0)` branches — `ix1` if the current cell is marked, else `ix0`. `stop` halts.
 
+The state graph for the example above:
+
+```mermaid
+flowchart TD
+    halt(((halt)))
+    s10(("**10:** check(20, 30)"))
+    s20["**20:** right(10)"]
+    s30["**30:** mark"]
+
+    s10 -- "marked (*)" --> s20
+    s10 -- "blank" --> s30
+    s20 -- "→ R" --> s10
+    s30 -- "write *<br/>(40 stops)" --> halt
+```
+
+The `40: stop` instruction is elided in the graph — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
+
+<details>
+<summary>Same graph, as the engine actually emits via <code>toMermaid(State.toGraph(machine.initialState, machine.tapeBlock))</code>:</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1(("id:1"))
+  s2["id:2"]
+  s3["id:3"]
+  s1 -- "\* → ·/S" --> s2
+  s1 -- "- → ·/S" --> s3
+  s2 -- "* → ·/R" --> s1
+  s3 -- "* → */S" --> s0
+```
+
+Reading the engine output:
+
+**Nodes.** Each `s\d+` is a Mermaid-internal node ID; the bracketed/parenthesized text is the state's display label. `s0` is always `haltState`. Node shapes:
+- `(((label)))` — halt state
+- `(("label"))` — entry state (the one passed as `initialState`)
+- `["label"]` — intermediate state
+
+The `id:N` labels (e.g. `id:1`, `id:2`) are the engine's auto-assigned state IDs (a global counter); they're independent of PostMachine instruction indices and shift between runs. Issue [#67](https://github.com/mellonis/post-machine-js/issues/67) tracks replacing them with instruction-derived names.
+
+**Edges.** Compact `read → write/move` syntax:
+- **Read side**: `\*` is the literal mark symbol; `-` is `ifOtherSymbol` (the catch-all when there are also explicit symbol edges from the same state); `*` (without backslash) is the sole-transition match-all — used when a state has only one outgoing edge that matches everything.
+- **Write side**: `·` is "keep" (no write); `*` is the literal mark symbol; ` ` (or whatever blank glyph the alphabet uses) is the literal blank.
+- **Move**: `S` = stay, `L` = left, `R` = right.
+
+</details>
+
 ## Classes
 
 ### PostMachine
 
 The runtime. Subclasses `TuringMachine` from `@turing-machine-js/machine`: the constructor walks the numbered instruction list, materializes a state graph using the upstream `State` and `Reference` primitives, and runs it. Subroutines are introduced by adding string-keyed groups to the program (see [Subroutines](#subroutines) below).
 
+**Constructor.** `new PostMachine(instructions, options?)` — `instructions` is the numbered-instruction map (with optional string-keyed subroutine groups); `options` is `{ blankSymbol?, markSymbol? }` (see [Custom symbols](#custom-symbols)).
+
+**Methods.**
+- `run({ stepsLimit?, onStep?, __onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(machineState)` fires once per applied transition; `__onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
+- `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`.
+- `replaceTapeWith(newTape)` — swap the active tape. Build the new tape against `machine.tape.alphabet` so symbol identities match the machine's interned alphabet.
+
+**Properties.**
+- `tape` — the active `Tape`. Equivalent to `tapeBlock.tapes[0]`.
+- `tapeBlock` — the upstream `TapeBlock` wrapping `tape`. Pass to upstream utilities (`State.toGraph`, `summarize`, `equivalentOn`) when reaching past PostMachine.
+- `initialState` — the entry `State` of the assembled state graph. Pass alongside `tapeBlock` to the upstream graph utilities.
+
 ### Tape
 
-Reexported from [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine). Post machine tapes use the 2-symbol alphabet ` `/`*`.
+Reexported from [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine). Post machine tapes use a 2-symbol alphabet — `' '` / `'*'` by default, but **the two glyphs are configurable per machine instance** (see [Custom symbols](#custom-symbols)). Whatever pair you pass in becomes the blank/mark for that machine; `mark`, `erase`, `check`, and the engine's `Tape` all read those glyphs from the per-instance alphabet at build time. Useful for rendering / visualization (e.g. the `demo.machines.mellonis.ru` interactive playground lets users choose any two characters, then runs the machine against tapes built on that alphabet), interop with other tape formats, or didactic clarity.
+
+Always build initial tapes against `machine.tape.alphabet` so the symbol identities match the machine's interned alphabet — even when you're using the defaults, since `Alphabet` instances aren't structurally interchangeable.
 
 ## Constants
 
@@ -84,24 +147,59 @@ console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 
 ## Commands
 
-Each command is a higher-order function. Invoking it with no argument produces a state-producer that advances to the next numbered instruction; invoking with an explicit index jumps to that instruction.
+Each command has two forms: **bare** (`mark`) — falls through to the next position in its containing scope (the next numbered instruction in the map, or the next item in an [array group](#grouped-instructions)); or **with an explicit index** (`mark(20)`) — jumps to instruction `20`. The bare form is what you use when "next entry in this scope" is what you want; the indexed form is for back-edges, branches, and explicit jumps. A `—` in either form column means that form doesn't exist for that command.
 
-### Core commands
+The first table is the **canonical instruction set** of a Post(–Turing) machine per Post's 1936 paper. The second is **the author's extensions** added on top of the classical machine in this implementation — subroutines (`call`) and a placeholder (`noop`); both are conveniences, not part of the original specification.
 
-* `check(ix1, ix0)` — if the current cell is marked, go to instruction `ix1`; otherwise go to `ix0`.
-* `erase` / `erase(ix)` — write the blank symbol; go to the next / `ix`th instruction.
-* `left` / `left(ix)` — move the head left; go to the next / `ix`th instruction.
-* `mark` / `mark(ix)` — write the mark symbol; go to the next / `ix`th instruction.
-* `right` / `right(ix)` — move the head right; go to the next / `ix`th instruction.
-* `stop` — halt the machine.
+### Classical commands
 
-### Subroutine commands
+| Command | Bare form | Indexed form | Behavior |
+|---|---|---|---|
+| `check` | — | `check(ix1, ix0)` | Branch on the current cell: marked → instruction `ix1`, blank → instruction `ix0` |
+| `erase` | `erase` | `erase(ix)` | Write the blank symbol; fall through / jump to `ix` |
+| `left` | `left` | `left(ix)` | Move the head left; fall through / jump to `ix` |
+| `mark` | `mark` | `mark(ix)` | Write the mark symbol; fall through / jump to `ix` |
+| `right` | `right` | `right(ix)` | Move the head right; fall through / jump to `ix` |
+| `stop` | `stop` | — | Halt the machine |
 
-* `call(subroutineName)` / `call(subroutineName, ix)` — invoke a named subroutine; go to the next / `ix`th instruction afterwards.
+`check` requires both branch targets so has no bare form; `stop` always halts so has no indexed form.
 
-### Other commands
+### Author's extensions
 
-* `noop` / `noop(ix)` — do nothing; go to the next / `ix`th instruction. A placeholder useful for reserving an instruction number in a worked example, or for an explicit jump that does no other work.
+| Command | Bare form | Indexed form | Behavior |
+|---|---|---|---|
+| `call` | `call(name)` | `call(name, ix)` | Invoke subroutine `name`; fall through / jump to `ix` afterwards |
+| `noop` | `noop` | `noop(ix)` | Do nothing; fall through / jump to `ix` |
+
+`call` and the [Subroutines](#subroutines) feature add procedure-like reuse to the classical numbered-instruction model. `noop` is the placeholder of choice: useful for reserving instruction numbers in a worked example, padding a sketch, or as a labelled jump target. (Bare `noop` has no classical analog; `noop(ix)` corresponds to Post's unconditional jump.)
+
+## Grouped instructions
+
+Several commands can share a single instruction number by passing them as an array:
+
+```javascript
+import { PostMachine, mark, right, stop, Tape } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  1: [mark, right, mark],   // mark, step right, mark — all under label 1
+  2: stop,
+});
+
+machine.replaceTapeWith(new Tape({
+  alphabet: machine.tape.alphabet,
+  symbols: [' ', ' ', ' '],
+  position: 0,
+}));
+
+await machine.run();
+console.log(machine.tape.symbols.join('').trim()); // **
+```
+
+Bare commands inside a group fall through to the next item in the array; the last item falls through to the next *top-level* instruction (`2: stop` here). This is sugar for inlining a fixed sequence without giving each step its own top-level number.
+
+**Inside a group, only bare forms work for movement / write commands.** Indexed forms (`mark(20)`, `right(10)`, `call('sub', 5)`, ...) throw at construction time — an explicit jump conflicts with the group's sequential fall-through semantics.
+
+**`check` and `stop` always throw inside a group**, regardless of form. Branching and halting are control-flow boundaries that need their own top-level instruction number.
 
 ## Subroutines
 
@@ -129,6 +227,53 @@ machine.replaceTapeWith(new Tape({
 await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
+
+The state graph (top-level flow with the subroutine as a black box):
+
+```mermaid
+flowchart TD
+    halt(((halt)))
+    t1(("**1:** call('rightToBlank')"))
+    t2["**2:** mark"]
+    sub[["rightToBlank<br/>(walks right until blank)"]]
+
+    t1 -- "enters" --> sub
+    sub -. "halts → return" .-> t2
+    t2 -- "write *<br/>(3 stops)" --> halt
+```
+
+The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverrodeHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
+
+<details>
+<summary>Same graph, as the engine actually emits. The subroutine and the wrapping <code>withOverrodeHaltState</code> are visible:</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s2["id:2"]
+  s3["id:3"]
+  s4["id:4"]
+  s5(("id:1>id:4"))
+  s6["id:6"]
+  s2 -- "* → ·/R" --> s3
+  s3 -- "\* → ·/S" --> s2
+  s3 -- "- → ·/S" --> s0
+  s4 -- "* → ·/S" --> s6
+  s5 -- "* → ·/S" --> s2
+  s5 -. onHalt .-> s4
+  s6 -- "* → */S" --> s0
+```
+
+Reading the engine output:
+- The `id:N` labels are the engine's **auto-assigned state IDs** (a global counter), NOT PostMachine instruction indices. Issue [#67](https://github.com/mellonis/post-machine-js/issues/67) tracks replacing these with instruction-derived names so the labels become user-meaningful (e.g. `1`, `2`, `rightToBlank:2`); for now they're opaque numerics. The `s\d+` node IDs are likewise auto-generated; both kinds of numbers shift between runs.
+- `s5` is the top-level entry — the `id:1>id:4` label is the `withOverrodeHaltState` wrapper notation: state with auto-ID `1` (the underlying subroutine entry before wrapping), with halt overridden to point at state with auto-ID `4` (which is `s4` below).
+- `s2`/`s3` form the subroutine's internal cycle: `s2` is `right` (keep+R), `s3` is `check(1, 3)` (loops back on `*`, exits to halt on blank).
+- The dotted `onHalt` edge `s5 -.→ s4` is the override in action: when control flow reaches the subroutine's halt, the engine pops back to `s4`.
+- `s4` is a routing intermediate; it falls through (keep+S) to `s6`.
+- `s6` is the `mark` instruction (writes `*`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+
+</details>
 
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
 
@@ -187,7 +332,9 @@ const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock)
 console.log(mermaid.split('\n')[0]); // flowchart TD
 ```
 
-For the raw `Graph` as input to other tools, use `State.toGraph(machine.initialState, machine.tapeBlock)` directly.
+The full rendered output is shown in the [Quick start](#quick-start) section's `<details>` block alongside the hand-drawn diagram, with a reading guide for the engine's compact `read → write/move` edge syntax.
+
+For the raw `Graph` as input to other tools (analysis, custom rendering, alternative serializations), use `State.toGraph(machine.initialState, machine.tapeBlock)` directly. The companion `fromMermaid` and `State.fromGraph` are also re-exported for round-trip workflows — load a Mermaid blob, get a `Graph` back, build a runnable machine from it. The round-trip is *behaviorally* lossless (same inputs produce same outputs) but not bytewise lossless because state IDs auto-reassign on each pass; see [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138)/[#139](https://github.com/mellonis/turing-machine-js/issues/139) for the cleaner-emit and regression-test follow-ups on the upstream side.
 
 ### Structural summary — `summarizePostMachine`
 
@@ -228,7 +375,9 @@ console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
 // 6 1 1 — subroutine: 2 more states; 1 composition edge from `call` (depth 1)
 ```
 
-Both programs do the same thing on the same input. The `withSubroutine` version pays for readability — factoring out the walk loop — with 50% more states and one composition edge. `summarizePostMachine` makes that cost measurable.
+Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverrodeHaltState` wrapper overhead per call (~2 states for the wrapper + routing intermediate) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
+
+What `summarizePostMachine` actually surfaces is the **structural trade-off**, not just state count: `compositionEdgeCount` and `maxCompositionDepth` go to zero in the inline version (everything is one flat graph) and become non-zero with subroutines (`call` creates a composition edge; nesting goes deeper). Use those fields to reason about the structure of reuse independently of raw size.
 
 `summarizePostMachine(machine)` is sugar for `summarize(machine.initialState, machine.tapeBlock)`. The bare `summarize` is also re-exported for callers who already hold a `(state, tapeBlock)` pair.
 
@@ -253,6 +402,14 @@ console.log(report.allAgree); // false
 Each case string is loaded onto a fresh clone of the originating PostMachine's tapeBlock per run (the wrapper handles the cloning — required because state-graph symbols are interned per-block). Cross-alphabet comparison and the `compareOutputs` / `compareSnapshots` options are passed through to upstream `equivalentOn`; see [equivalence specs](https://github.com/mellonis/turing-machine-js/blob/master/packages/machine/src/utilities/equivalence.spec.ts) for full option semantics.
 
 The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
+
+## Debugging
+
+`pm.run()` accepts an experimental `__onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached. The `__` prefix marks the surface unstable — a higher-level per-instruction breakpoint API is being designed (tracked in [#59](https://github.com/mellonis/post-machine-js/issues/59)) and may rename or restructure this parameter without another major bump.
+
+For the full debugger surface — per-state runtime-mutable breakpoints (`state.debug.before` / `state.debug.after` filters), the halt-pause (`haltState.debug.before`), and the `run({ debug: boolean })` master switch — operate against the upstream API directly. `machine.initialState` is the entry point: walk the graph from there to attach `state.debug` to specific reachable states. **PostMachine deliberately does not wrap any of this** — the planned breakpoint API will provide a higher-level surface once the design settles.
+
+See [Debugging breakpoints (v4+)](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints-v4) in the upstream README for the complete reference: filter shapes, ordering semantics (per-iter lifecycle is `before → step → after` on the same yield as of engine v6), and the `haltState.debug.after` rejection rule.
 
 ## Links
 

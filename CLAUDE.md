@@ -5,24 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - `npm run build` — TypeScript project-references build (`tsc --build tsconfig.build.json`) followed by `scripts/build-node-entries.mjs`, which uses Rollup to repackage `dist/index.js` into `index.mjs` (ESM) and `index.cjs` (CJS). The Rollup step marks `@turing-machine-js/machine` as `external`, so the upstream Turing-machine engine stays as a runtime dependency.
-- `npm test` — Jest across the root project + each package (configured via `projects` in `jest.config.mjs`). Tests are `*.spec.ts` colocated with sources or in `test/` directories.
-- `npm run test:coverage` — same, with coverage.
-- `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` and per-package `babel.config.js` are ignored.
-- Run a single test: `npx jest packages/machine/test/machine.spec.ts -t "name"`.
+- `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.ts`; tests are `test/**/*.spec.ts` (root README/example tests) plus `packages/*/test/**/*.spec.ts` (per-package). Vitest uses esbuild for TypeScript — no babel toolchain.
+- `npm run test:watch` — Vitest in watch mode (`vitest`).
+- `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.ts`: 95 / 90 / 95 / 95 (~5pt below current 100%).
+- `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` is ignored.
+- Run a single test: `npx vitest run packages/machine/test/machine.spec.ts -t "name"`.
 
-`npm` ≥ 7 is required (workspaces).
+`npm` ≥ 7 is required (workspaces). Node 24 is what CI uses.
 
 ## Architecture
 
 This is an npm-workspaces + Lerna monorepo with **one published package** so far:
 
-- **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. It depends on the Turing engine for `State`, `TapeBlock`, `TuringMachine`, `Tape`, and the supporting helpers (`haltState`, `ifOtherSymbol`, `Reference`, `movements`).
-
-### Relationship to `@turing-machine-js/machine`
-
-`@turing-machine-js/machine` is declared as a **peer dependency** (and a devDependency for the in-repo build). Importantly, it must be a peer because the upstream library has runtime singletons (`haltState` / `ifOtherSymbol` / `Symbol(...)` constants for `movements` and `symbolCommands`) — duplicate copies would fail `instanceof` checks and break sentinel identity.
-
-All imports use the bare specifier `'@turing-machine-js/machine'`. There is no `/src` deep-import; that pattern was an in-monorepo dev-time shim of the upstream library that has since been retired.
+- **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. The Turing engine is a **peer dependency** (see [Relationship to `@turing-machine-js/machine` v6.0.x](#relationship-to-turing-machine-jsmachine-v60x) below for the full version-relationship writeup). PostMachine pulls `State`, `TapeBlock`, `TuringMachine`, `Tape`, and several runtime singletons (`haltState`, `ifOtherSymbol`, the `movements` constants) from the engine.
 
 ### How `PostMachine` maps to the Turing engine
 
@@ -74,20 +69,29 @@ When adding or editing a README example, update the matching test in the same ch
 
 Non-README tests (sentinel-identity checks, internal plumbing) live in separately-named spec files (e.g. `v3.spec.ts`, `machine.spec.ts`), keeping the `examples.spec.ts` files purely doc-driven.
 
-## Relationship to `@turing-machine-js/machine` v4.0.x
+## Relationship to `@turing-machine-js/machine` v6.0.x
 
-The peer dependency is `^4.0.0`. **v3 is no longer supported** — a consumer still on v3 cannot install this package and must upgrade in lockstep.
+`@turing-machine-js/machine` is declared as a **peer dependency** (and a devDependency for the in-repo build). Importantly, it must be a peer because the upstream library exposes two kinds of identity-sensitive surface that duplicate copies would break:
 
-v4 of the upstream engine introduced async execution and a debugger primitive layer. The main breaking change for `@post-machine-js/machine` is that `run()` is now async:
+- **Sentinel singletons** keyed by `Symbol(...)` — `haltState`, `ifOtherSymbol`, the members of `movements`, the members of `symbolCommands`. Equality checks (`=== haltState`, etc.) require the same physical object.
+- **Classes** — `Reference`, `State`, `TapeBlock`, `TuringMachine`, `Tape`, `Alphabet`. `instanceof` checks require shared constructor identity.
 
-- **`pm.run()` is async.** v4 made `TuringMachine.run()` return `Promise<void>` to support awaitable hooks like `onDebugBreak`. `PostMachine.run()` overrides it to match: also async, returns `Promise<void>`. Callers must `await` it — code that called `machine.run()` without `await` will silently stop working correctly.
-- **`runStepByStep` is unchanged.** The `runStepByStep` override remains a synchronous `Generator<MachineState>` in v4 — the override at the top of `PostMachine.ts` reflects that asymmetry between the two execution modes.
-- **Experimental `__onDebugBreak` on `pm.run()`.** The `run()` override accepts an optional `__onDebugBreak?: (s: MachineState) => void | Promise<void>` parameter and forwards it as the upstream `onDebugBreak` hook. The `__` prefix marks this surface as unstable: a per-instruction breakpoint API on PostMachine is being designed (tracked in **#59**), and that design may rename or restructure it. The double-underscore is the contract that lets the future API land without another major bump.
-- **v4 debugger primitives reachable via peer-dep, not wrapped here.** `state.debug` (per-state runtime-mutable breakpoints) and `haltState.debug` (halt-pause) are available by introspecting `pm.initialState` and operating against the upstream API directly. PostMachine deliberately does not wrap them — the planned breakpoint API (#59) will provide a higher-level surface once the design settles.
-- **v3 utility additions persist.** `State.toGraph`, `State.fromGraph`, `State.inspect`, `toMermaid`/`fromMermaid`, `summarize`/`summarizeGraph`, `equivalentOn`, and the `MachineState` type are all still re-exported from `@post-machine-js/machine`. The v4 release added debugger primitives without removing any v3 utilities.
+The current peer range is `^6.0.0`. **v4 and v5 are no longer supported** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped a v5 of its own — v6.0.0 is the first post release that crosses to engine v5/v6.)
+
+The upstream v5/v6 changes that drove this release:
+
+- **`pm.run()` stays async.** Engine v4 introduced `Promise<void>` return; v5/v6 didn't change that. Callers must still `await` it.
+- **`runStepByStep` stays unchanged.** Still a synchronous `Generator<MachineState>` (engine v6 narrowed the parent's generator return type back to `Generator<MachineState>`, matching post's existing override).
+- **Experimental `__onPause` on `pm.run()`** (renamed from `__onDebugBreak` in this release). The `run()` override accepts `__onPause?: (s: MachineState) => void | Promise<void>` and forwards it as the upstream `onPause` hook (renamed from `onDebugBreak` in engine v5). The `__` prefix continues to mark the surface as unstable; the planned per-instruction breakpoint API ([#59](https://github.com/mellonis/post-machine-js/issues/59)) may restructure it. Migration: any consumer using `__onDebugBreak` must rename to `__onPause`.
+- **Debugger primitives reachable via peer-dep, not wrapped here.** `state.debug` (per-state runtime-mutable breakpoints, with v5/v6 lifecycle `before → step → after` on the same yield) and `haltState.debug.before` (halt-pause) are available by introspecting `pm.initialState` and operating against the upstream API directly. **Note:** `haltState.debug.after = …` is rejected at write-time in engine v5+ — don't set it. PostMachine deliberately does not wrap any of this — the planned breakpoint API (#59) will provide a higher-level surface once the design settles.
+- **`run({ debug: boolean })` master switch (engine v5/#106).** Reachable via the upstream API; not wrapped at the PostMachine level. Useful in tests to suppress all `onPause` dispatches without unsetting `state.debug` assignments.
+- **v3 utility additions persist.** `State.toGraph`, `State.fromGraph`, `State.inspect`, `toMermaid`/`fromMermaid`, `summarize`/`summarizeGraph`, `equivalentOn`, and the `MachineState` type are all still re-exported from `@post-machine-js/machine`. v5/v6 added/refined debugger primitives without removing any v3 utilities.
 - **Post-aware wrappers persist unchanged.** `summarizePostMachine(machine)` and `equivalentPostMachines(reference, candidate, cases, options?)` remain the recommended path for typical usage. The bare upstream functions stay re-exported for advanced cases (e.g., comparing a PostMachine against a hand-rolled TuringMachine via `equivalentOn`).
 - **`machine.initialState` getter persists.** It is still the entry point for the upstream graph utilities to act on a PostMachine instance — pass it to `summarize`, `toMermaid`, `equivalentOn`, or directly to the v4 debugger primitives.
 
-### Jest moduleNameMapper points at `dist/index.cjs`, not `dist/index.js`
+### Imports: bare specifiers everywhere
 
-`@turing-machine-js/machine` v4 ships only the bundled `.cjs`/`.mjs` builds — the unbundled tsc output (`dist/**/*.js`) is not included in the tarball. The Jest `moduleNameMapper` in both `jest.config.mjs` files therefore resolves `@turing-machine-js/machine` to the bundled `dist/index.cjs` so tests resolve through the bundle. Don't switch back to `dist/index.js`.
+Source and specs always import the bare package names — `from '@post-machine-js/machine'` and `from '@turing-machine-js/machine'`. Two distinct resolution stories sit behind those specifiers:
+
+- **`@post-machine-js/machine`** (our own package). Vitest's `resolve.alias` in the single root `vitest.config.ts` intercepts the bare specifier and routes it to TypeScript source (`packages/machine/src`), so a change in source is picked up by tests with no rebuild step. After publishing, Node resolves the same specifier to `dist/index.{mjs,cjs}` via the package's `exports` field.
+- **`@turing-machine-js/machine`** (the peer dep). No alias — vitest resolves the package's `exports` field correctly out of the installed `node_modules` copy. The upstream package ships only its bundled `dist/{index.mjs,index.cjs}`, so no `@turing-machine-js/machine/src/...` deep-import is possible (an old in-monorepo dev shim that pointed at the upstream's source has been retired). The previous Jest setup hand-mapped this specifier to `dist/index.cjs` because Jest's resolver was older; that hack was dropped during the v6 vitest migration.

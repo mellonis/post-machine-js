@@ -370,7 +370,7 @@ describe('run tests', () => {
       symbols: ['*', '*', '*', ' ', ' ', ' ', '*'],
     }));
 
-    const onStepMock = jest.fn();
+    const onStepMock = vi.fn();
 
     const exactStepCount = 49;
 
@@ -396,9 +396,9 @@ describe('run tests', () => {
           [ixList[2]]: stop,
         });
 
-        const onStepMock1 = jest.fn();
-        const onStepMock2 = jest.fn();
-        const onStepMock3 = jest.fn();
+        const onStepMock1 = vi.fn();
+        const onStepMock2 = vi.fn();
+        const onStepMock3 = vi.fn();
 
         await expect(machine1.run({ stepsLimit: 1, onStep: (stepData) => onStepMock1(stepData) })).resolves.toBeUndefined();
         await expect(machine2.run({ stepsLimit: 1, onStep: (stepData) => onStepMock2(stepData) })).resolves.toBeUndefined();
@@ -434,9 +434,9 @@ describe('run tests', () => {
         [ixList[2]]: stop,
       });
 
-      const onStepMock1 = jest.fn();
-      const onStepMock2 = jest.fn();
-      const onStepMock3 = jest.fn();
+      const onStepMock1 = vi.fn();
+      const onStepMock2 = vi.fn();
+      const onStepMock3 = vi.fn();
 
       await expect(machine1.run({
         stepsLimit: 3,
@@ -558,7 +558,7 @@ describe('run tests', () => {
       [ixList[1]]: call(subroutineNameList[0]),
     });
 
-    const onStepMock = jest.fn();
+    const onStepMock = vi.fn();
 
     await expect(machine.run({
       onStep: (...args) => onStepMock(...args),
@@ -589,8 +589,8 @@ describe('run tests', () => {
           [ix2]: noop,
           [ix3]: fn(ix2),
         });
-        const machine1OnStepMock = jest.fn();
-        const machine2OnStepMock = jest.fn();
+        const machine1OnStepMock = vi.fn();
+        const machine2OnStepMock = vi.fn();
 
         await expect(machine1.run({
           stepsLimit: 3,
@@ -634,8 +634,8 @@ describe('run tests', () => {
         [ix2]: noop,
         [ix3]: call(subroutineName, ix2),
       });
-      const machine1OnStepMock = jest.fn();
-      const machine2OnStepMock = jest.fn();
+      const machine1OnStepMock = vi.fn();
+      const machine2OnStepMock = vi.fn();
 
       await expect(machine1.run({
         stepsLimit: 10,
@@ -673,7 +673,7 @@ describe('run tests', () => {
         [ix3]: noop(ix2),
         [ix4]: noop(ix2),
       });
-      const machineOnStepMock = jest.fn();
+      const machineOnStepMock = vi.fn();
 
       await expect(machine.run({
         stepsLimit: 10,
