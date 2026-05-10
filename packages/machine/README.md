@@ -71,7 +71,19 @@ flowchart TD
   s3 -- "* → */S" --> s0
 ```
 
-Reading the engine output: states use auto-assigned IDs (`s0` is always `haltState`); double-circle nodes are halts, double-paren nodes are entry points, square nodes are intermediate states. Edge labels use the engine's compact `read → write/move` syntax: `\*` is the literal mark symbol, `-` is `ifOtherSymbol` (the catch-all for any symbol not explicitly enumerated), `·` is "keep" (no write), and `S`/`L`/`R` are stay/left/right.
+Reading the engine output:
+
+**Nodes.** Each `s\d+` is a Mermaid-internal node ID; the bracketed/parenthesized text is the state's display label. `s0` is always `haltState`. Node shapes:
+- `(((label)))` — halt state
+- `(("label"))` — entry state (the one passed as `initialState`)
+- `["label"]` — intermediate state
+
+The `id:N` labels (e.g. `id:1`, `id:2`) are the engine's auto-assigned state IDs (a global counter); they're independent of PostMachine instruction indices and shift between runs. Issue [#67](https://github.com/mellonis/post-machine-js/issues/67) tracks replacing them with instruction-derived names.
+
+**Edges.** Compact `read → write/move` syntax:
+- **Read side**: `\*` is the literal mark symbol; `-` is `ifOtherSymbol` (the catch-all when there are also explicit symbol edges from the same state); `*` (without backslash) is the sole-transition match-all — used when a state has only one outgoing edge that matches everything.
+- **Write side**: `·` is "keep" (no write); `*` is the literal mark symbol; ` ` (or whatever blank glyph the alphabet uses) is the literal blank.
+- **Move**: `S` = stay, `L` = left, `R` = right.
 
 </details>
 
