@@ -254,10 +254,12 @@ flowchart TD
 ```
 
 Reading the engine output:
-- `s5` is the top-level entry — the `id:1>id:4` label shows it's a `withOverrodeHaltState` wrapper: instruction 1 (`call`) with halt overridden to instruction 4 (the next top-level state after the subroutine returns).
+- The `id:N` labels are the engine's **auto-assigned state IDs** (a global counter), NOT PostMachine instruction indices. Issue [#67](https://github.com/mellonis/post-machine-js/issues/67) tracks replacing these with instruction-derived names so the labels become user-meaningful (e.g. `1`, `2`, `rightToBlank:2`); for now they're opaque numerics. The `s\d+` node IDs are likewise auto-generated; both kinds of numbers shift between runs.
+- `s5` is the top-level entry — the `id:1>id:4` label is the `withOverrodeHaltState` wrapper notation: state with auto-ID `1` (the underlying subroutine entry before wrapping), with halt overridden to point at state with auto-ID `4` (which is `s4` below).
 - `s2`/`s3` form the subroutine's internal cycle: `s2` is `right` (keep+R), `s3` is `check(1, 3)` (loops back on `*`, exits to halt on blank).
-- The dotted `onHalt` edge `s5 -.→ s4` is the override: when control flow reaches the subroutine's halt, the engine pops back to `s4` (the routing intermediate before `s6 = mark`).
-- `s6` is the `mark` instruction (writes `*`, transitions to halt).
+- The dotted `onHalt` edge `s5 -.→ s4` is the override in action: when control flow reaches the subroutine's halt, the engine pops back to `s4`.
+- `s4` is a routing intermediate; it falls through (keep+S) to `s6`.
+- `s6` is the `mark` instruction (writes `*`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
 
 </details>
 
