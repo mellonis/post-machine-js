@@ -375,7 +375,9 @@ console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
 // 6 1 1 — subroutine: 2 more states; 1 composition edge from `call` (depth 1)
 ```
 
-Both programs do the same thing on the same input. The `withSubroutine` version pays for readability — factoring out the walk loop — with 50% more states and one composition edge. `summarizePostMachine` makes that cost measurable.
+Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverrodeHaltState` wrapper overhead per call (~2 states for the wrapper + routing intermediate) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
+
+What `summarizePostMachine` actually surfaces is the **structural trade-off**, not just state count: `compositionEdgeCount` and `maxCompositionDepth` go to zero in the inline version (everything is one flat graph) and become non-zero with subroutines (`call` creates a composition edge; nesting goes deeper). Use those fields to reason about the structure of reuse independently of raw size.
 
 `summarizePostMachine(machine)` is sugar for `summarize(machine.initialState, machine.tapeBlock)`. The bare `summarize` is also re-exported for callers who already hold a `(state, tapeBlock)` pair.
 
