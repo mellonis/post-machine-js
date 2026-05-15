@@ -5,6 +5,23 @@
 
 A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction program model — built on top of [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js).
 
+<details>
+<summary>Table of contents</summary>
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Classes](#classes) — [`PostMachine`](#postmachine) · [`Tape`](#tape)
+- [Constants](#constants)
+- [Custom symbols](#custom-symbols)
+- [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
+- [Grouped instructions](#grouped-instructions)
+- [Subroutines](#subroutines)
+- [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
+- [Debugging](#debugging)
+- [Links](#links)
+
+</details>
+
 ## Install
 
 `@post-machine-js/machine` declares `@turing-machine-js/machine` as a **peer dependency**, so both share a single instance of the upstream engine. The upstream library has runtime singletons (`haltState`, `ifOtherSymbol`, and the `Symbol`-keyed `movements` constants) whose identity is checked at runtime; duplicate copies in the bundle would break those checks.
@@ -36,7 +53,7 @@ await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
-Each instruction is a *state-producer*: `mark`, `right`, `erase`, etc. used bare advance to the next-numbered instruction; called as `mark(20)` they jump to instruction `20`. `check(ix1, ix0)` branches — `ix1` if the current cell is marked, else `ix0`. `stop` halts.
+Each instruction is a command. Used bare (`mark`, `right`, `erase`), it falls through to the next numbered instruction; called with an index (`mark(20)`), it jumps to instruction `20`. `check(ix1, ix0)` branches — `ix1` if the current cell is marked, else `ix0`. `stop` halts.
 
 The state graph for the example above:
 
@@ -96,7 +113,7 @@ The runtime. Subclasses `TuringMachine` from `@turing-machine-js/machine`: the c
 **Constructor.** `new PostMachine(instructions, options?)` — `instructions` is the numbered-instruction map (with optional string-keyed subroutine groups); `options` is `{ blankSymbol?, markSymbol? }` (see [Custom symbols](#custom-symbols)).
 
 **Methods.**
-- `run({ stepsLimit?, onStep?, __onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(machineState)` fires once per applied transition; `__onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
+- `run({ stepsLimit?, onStep?, __onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(m: MachineState)` fires once per applied transition; `__onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
 - `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`.
 - `replaceTapeWith(newTape)` — swap the active tape. Build the new tape against `machine.tape.alphabet` so symbol identities match the machine's interned alphabet.
 
@@ -113,9 +130,11 @@ Always build initial tapes against `machine.tape.alphabet` so the symbol identit
 
 ## Constants
 
-* `alphabet` — the `Alphabet` instance for Post-machine tapes (` `, `*`).
-* `blankSymbol` — the blank symbol, ` ` (space).
-* `markSymbol` — the mark symbol, `*`.
+The default values used by new PostMachine instances. Custom-symbol machines (see [Custom symbols](#custom-symbols)) override them at the per-instance level — reach for `machine.tape.alphabet.blankSymbol` and friends when you need the *active* glyphs for a specific machine. The module-level exports are useful for code that wants the canonical defaults without instantiating.
+
+* `alphabet` — the default `Alphabet` instance for Post-machine tapes (` `, `*`).
+* `blankSymbol` — the default blank symbol, ` ` (space).
+* `markSymbol` — the default mark symbol, `*`.
 
 ## Custom symbols
 
@@ -409,7 +428,7 @@ The bare `equivalentOn` is also re-exported. Use it directly when you need a non
 
 For the full debugger surface — per-state runtime-mutable breakpoints (`state.debug.before` / `state.debug.after` filters), the halt-pause (`haltState.debug.before`), and the `run({ debug: boolean })` master switch — operate against the upstream API directly. `machine.initialState` is the entry point: walk the graph from there to attach `state.debug` to specific reachable states. **PostMachine deliberately does not wrap any of this** — the planned breakpoint API will provide a higher-level surface once the design settles.
 
-See [Debugging breakpoints (v4+)](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints-v4) in the upstream README for the complete reference: filter shapes, ordering semantics (per-iter lifecycle is `before → step → after` on the same yield as of engine v6), and the `haltState.debug.after` rejection rule.
+See [Debugging breakpoints](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints) in the upstream README for the complete reference: filter shapes, ordering semantics (per-iter lifecycle is `before → step → after` on the same yield as of engine v6), and the `haltState.debug.after` rejection rule.
 
 ## Links
 
