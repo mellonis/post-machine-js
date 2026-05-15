@@ -4,11 +4,11 @@
 [![Coverage Status](https://coveralls.io/repos/github/mellonis/post-machine-js/badge.svg?branch=master)](https://coveralls.io/github/mellonis/post-machine-js?branch=master)
 [![GitHub issues](https://img.shields.io/github/issues/mellonis/post-machine-js)](https://github.com/users/mellonis/projects/5)
 
-A convenient Post machine.
+A Post machine for JavaScript — a 2-symbol Turing-machine variant with a numbered-instruction program model, built on `@turing-machine-js/machine`.
 
-Under the hood, the `PostMachine` class builds some `State`s for `TuringMachine` from provided instructions. When you run it, it runs the built TuringMachine. 
+The `PostMachine` class translates a numbered instruction list into a state graph for the upstream `TuringMachine` and delegates execution to it.
 
-This repository contains following packages:
+This repository contains the following packages:
 * [@post-machine-js/machine](https://github.com/mellonis/post-machine-js/tree/master/packages/machine)
 
 ## Installation
@@ -21,9 +21,7 @@ npm install @turing-machine-js/machine @post-machine-js/machine
 
 # An example
 
-A tape contains two marked sections divided by the blank symbol(s). The issue is to move the first section close to the second. In other words, to remove blank symbols between these sections.
-
-This example demonstrates an issue solving. 
+A tape contains two marked sections divided by blank symbols. The task is to move the first section up against the second — i.e. remove the blanks between them.
 
 ```javascript
 import {
@@ -58,9 +56,9 @@ console.log(machine.tape.symbols.join('').trim()); // ****
 
 # An example with subroutines
 
-A tape contains a marked section. The issue is to duplicate it.
+A tape contains a marked section. The task is to duplicate it.
 
-This example demonstrates an issue solving with subroutines. A subroutine is a peace of code which can be reused multiple times. The issue could be solved without subroutines at all, but with them the algorithm looks more readable.
+This example uses subroutines. A subroutine is a piece of code that can be reused multiple times. The task could be solved without subroutines, but they make the algorithm easier to read.
 
 The example also uses **inline command groups** — `1: [mark, right, mark]` inside `markTwoCells` and `2: [right, erase]` at the top level — to bundle several commands under a single instruction number. See [Grouped instructions](packages/machine/README.md#grouped-instructions) in the package README for the syntax and the constraints (`check` and `stop` always throw in a group; indexed forms like `mark(20)` throw too, but bare forms — including bare `call('sub')` — are fine).
 
