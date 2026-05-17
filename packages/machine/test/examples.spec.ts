@@ -9,6 +9,10 @@ import {
   toMermaid,
   summarizePostMachine,
   equivalentPostMachines,
+  parsePath,
+  formatPath,
+  type MachineState,
+  type Path,
 } from '../src/index';
 
 describe('packages/machine/README.md', () => {
@@ -255,6 +259,37 @@ describe('packages/machine/README.md', () => {
 
       // m.initialState.name === "foo>10~30"
       expect(m.initialState.name).toBe('foo>10~30');
+    });
+  });
+
+  describe('MachineState shape (v6.2.0+)', () => {
+    test('onStep receives arrivalPath and candidatePaths for a simple machine', async () => {
+      const m = new PostMachine({
+        10: mark,
+        20: stop,
+      });
+
+      const steps: { arrivalPath: Path; candidatePaths: Path[] }[] = [];
+      await m.run({
+        onStep: (s: MachineState) => {
+          // console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
+          steps.push({ arrivalPath: s.arrivalPath, candidatePaths: s.candidatePaths });
+        },
+      });
+
+      // onStep fires once — for the `mark` transition at instruction 10.
+      expect(steps).toHaveLength(1);
+
+      // arrivalPath identifies instruction 10 (no scope, no group).
+      expect(steps[0].arrivalPath).toEqual({ instructionIndex: 10 });
+      // formatPath round-trips it to the string form used in the naming convention.
+      expect(formatPath(steps[0].arrivalPath)).toBe('10');
+      // parsePath round-trips the string back to Path.
+      expect(parsePath('10')).toEqual({ instructionIndex: 10 });
+
+      // candidatePaths: only one path shares this state (no hash-cache dedup here).
+      expect(steps[0].candidatePaths).toHaveLength(1);
+      expect(steps[0].candidatePaths[0]).toEqual({ instructionIndex: 10 });
     });
   });
 

@@ -1,5 +1,5 @@
 // PostMachine debugger surface — async run() semantics and the experimental
-// __onPause forwarding. Mirrors v3.spec.ts structure; both files
+// onPause forwarding. Mirrors v3.spec.ts structure; both files
 // stay non-README (README-driven tests live in examples.spec.ts).
 
 import {
@@ -68,8 +68,8 @@ describe('PostMachine — async run', () => {
   });
 });
 
-describe('PostMachine — __onPause forwarding', () => {
-  test('__onPause fires when state.debug is set on a reachable state', async () => {
+describe('PostMachine — onPause forwarding', () => {
+  test('onPause fires when state.debug is set on a reachable state', async () => {
     const machine = new PostMachine({
       10: check(20, 30),
       20: right(10),
@@ -89,14 +89,14 @@ describe('PostMachine — __onPause forwarding', () => {
 
     const seen: MachineState[] = [];
     await machine.run({
-      __onPause: (s) => { seen.push(s); },
+      onPause: (s) => { seen.push(s); },
     });
 
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0].debugBreak).toEqual({ before: true });
   });
 
-  test('run() awaits an async __onPause before resolving', async () => {
+  test('run() awaits an async onPause before resolving', async () => {
     const machine = new PostMachine({
       10: check(20, 30),
       20: right(10),
@@ -113,7 +113,7 @@ describe('PostMachine — __onPause forwarding', () => {
 
     let asyncCallbackResolved = false;
     await machine.run({
-      __onPause: async () => {
+      onPause: async () => {
         await new Promise((r) => setTimeout(r, 10));
         asyncCallbackResolved = true;
       },

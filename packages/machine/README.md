@@ -16,6 +16,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
+- [MachineState shape](#machinestate-shape-v620)
 - [Naming convention](#naming-convention)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
@@ -114,7 +115,7 @@ The runtime. Subclasses `TuringMachine` from `@turing-machine-js/machine`: the c
 **Constructor.** `new PostMachine(instructions, options?)` — `instructions` is the numbered-instruction map (with optional string-keyed subroutine groups); `options` is `{ blankSymbol?, markSymbol? }` (see [Custom symbols](#custom-symbols)).
 
 **Methods.**
-- `run({ stepsLimit?, onStep?, __onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(m: MachineState)` fires once per applied transition; `__onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
+- `run({ stepsLimit?, onStep?, onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(m: MachineState)` fires once per applied transition; `onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
 - `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`.
 - `replaceTapeWith(newTape)` — swap the active tape. Build the new tape against `machine.tape.alphabet` so symbol identities match the machine's interned alphabet.
 
@@ -332,6 +333,36 @@ The two helpers have the same shape — a `check`/move/loop pair — with mirror
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
 
+## MachineState shape (v6.2.0+)
+
+PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState` with two additional fields:
+
+| Field             | Type     | Meaning                                                                                  |
+|-------------------|----------|------------------------------------------------------------------------------------------|
+| `arrivalPath`     | `Path`   | The instruction path that just transitioned to the current state                          |
+| `candidatePaths`  | `Path[]` | All paths whose references resolve to the current state (informational; multiple for shared states) |
+
+These fields disambiguate state-sharing (the hash-cache dedup from v6.1.0). When two instructions produce structurally-identical transitions, they share a State; `arrivalPath` tells you which instruction the engine just transitioned through, while `candidatePaths` tells you the full sharing set.
+
+**Example.**
+
+```javascript
+import { PostMachine, mark, stop } from '@post-machine-js/machine';
+
+const m = new PostMachine({
+  10: mark,
+  20: stop,
+});
+
+await m.run({
+  onStep: (s) => {
+    console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
+  },
+});
+```
+
+The `Path` type and the `parsePath`/`formatPath` helpers are exported from `@post-machine-js/machine` — see the [Naming convention](#naming-convention) section for the path-string format.
+
 ## Naming convention
 
 PostMachine names every state it constructs by instruction index, so `toMermaid` output, `summarize` output, and `MachineState.name` carry user-meaningful information.
@@ -383,7 +414,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching. Issue [#70](https://github.com/mellonis/post-machine-js/issues/70) tracks surfacing a `candidateInstructions` field on the `MachineState` passed to `onStep` / `__onPause` so debuggers can disambiguate without reaching for internals.
+For programmatic lookup by instruction index, use `arrivalPath` and `candidatePaths` on the `MachineState` passed to `onStep` / `onPause` — added in v6.2.0 ([#70](https://github.com/mellonis/post-machine-js/issues/70)). See the [MachineState shape](#machinestate-shape-v620) section for details.
 
 ### Forward-compatibility with engine v7
 
@@ -482,7 +513,7 @@ The bare `equivalentOn` is also re-exported. Use it directly when you need a non
 
 ## Debugging
 
-`pm.run()` accepts an experimental `__onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached. The `__` prefix marks the surface unstable — a higher-level per-instruction breakpoint API is being designed (tracked in [#59](https://github.com/mellonis/post-machine-js/issues/59)) and may rename or restructure this parameter without another major bump.
+`pm.run()` accepts an `onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached.
 
 For the full debugger surface — per-state runtime-mutable breakpoints (`state.debug.before` / `state.debug.after` filters), the halt-pause (`haltState.debug.before`), and the `run({ debug: boolean })` master switch — operate against the upstream API directly. `machine.initialState` is the entry point: walk the graph from there to attach `state.debug` to specific reachable states. **PostMachine deliberately does not wrap any of this** — the planned breakpoint API will provide a higher-level surface once the design settles.
 

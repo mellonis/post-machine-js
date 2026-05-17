@@ -1,6 +1,6 @@
 import {
   Alphabet,
-  type MachineState,
+  type MachineState as EngineMachineState,
   Reference,
   State,
   Tape,
@@ -22,6 +22,8 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
+import { type Path, comparePathsCanonically } from '../path';
+import type { MachineState } from '../index';
 
 export type PostMachineOptions = {
   blankSymbol?: string;
@@ -32,6 +34,8 @@ export class PostMachine extends TuringMachine {
   #initialState: State;
   #blankSymbol: string;
   #markSymbol: string;
+  #stateToCandidatePaths: Map<State, Path[]> = new Map();
+  #referenceToPath: Map<Reference, Path> = new Map();
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
     const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
@@ -52,6 +56,11 @@ export class PostMachine extends TuringMachine {
     this.#initialState = this.#buildInitialState({
       instructions,
     });
+
+    // Sort each candidate-path list deterministically for stable test assertions.
+    for (const paths of this.#stateToCandidatePaths.values()) {
+      paths.sort(comparePathsCanonically);
+    }
   }
 
   get tapeBlock(): TapeBlock {
@@ -73,22 +82,99 @@ export class PostMachine extends TuringMachine {
   override async run({
     stepsLimit = 1e5,
     onStep,
-    __onPause,
+    onPause,
   }: {
     stepsLimit?: number;
     onStep?: (machineState: MachineState) => void;
-    __onPause?: (machineState: MachineState) => void | Promise<void>;
+    onPause?: (machineState: MachineState) => void | Promise<void>;
   } = {}): Promise<void> {
+    let prevState: State | null = null;
+    let prevJsSymbol: symbol | null = null;
+    const entryPath = this.#firstStepArrivalPath();
+
+    // KNOWN LIMITATION: when `state.debug` is set AND both `onStep` and `onPause`
+    // are provided, both callbacks fire on the same iteration. Each invocation advances
+    // `prevState` / `prevJsSymbol` via the tracking logic below. For the next iteration,
+    // arrival derivation in #wrapMachineState uses the "one step behind" tracking values.
+    // The second callback's advance overwrites the first with the same values, which is
+    // benign in the current engine v6 lifecycle, but the tracking is not correctly
+    // "one step behind" if the engine's callback dispatch order changes in a future
+    // engine release. Acceptable for now; revisit alongside the per-instruction
+    // breakpoint API (#59).
+    const advanceTracking = (raw: EngineMachineState): void => {
+      prevState = raw.state;
+      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
+    };
+
     await super.run({
       initialState: this.#initialState,
       stepsLimit,
-      onStep,
-      onPause: __onPause,
+      onStep: onStep ? (raw) => {
+        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        advanceTracking(raw);
+        onStep(wrapped);
+      } : undefined,
+      onPause: onPause ? async (raw) => {
+        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        advanceTracking(raw);
+        await onPause(wrapped);
+      } : undefined,
     });
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
-    yield* super.runStepByStep({ initialState: this.#initialState, stepsLimit });
+    let prevState: State | null = null;
+    let prevJsSymbol: symbol | null = null;
+    const entryPath = this.#firstStepArrivalPath();
+
+    for (const raw of super.runStepByStep({ initialState: this.#initialState, stepsLimit })) {
+      const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+      prevState = raw.state;
+      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
+      yield wrapped;
+    }
+  }
+
+  #firstStepArrivalPath(): Path {
+    // Construction guarantees the initial state is recorded in #stateToCandidatePaths
+    // with at least one entry.
+    return this.#stateToCandidatePaths.get(this.#initialState)![0];
+  }
+
+  #wrapMachineState(
+    raw: EngineMachineState,
+    prevState: State | null,
+    prevJsSymbol: symbol | null,
+    entryPath: Path,
+  ): MachineState {
+    let arrivalPath: Path;
+    if (prevState === null || prevJsSymbol === null) {
+      arrivalPath = entryPath;
+    } else {
+      // Some intermediate engine states (call wrappers, continuation states, subroutine
+      // entry dispatchers) only register an ifOtherSymbol transition. Try the specific
+      // symbol first; fall back to ifOtherSymbol. Engine guarantees: a state we just
+      // arrived at must have had a matching transition, so one of the two succeeds.
+      let followed: State | Reference;
+      try {
+        followed = prevState.getNextState(prevJsSymbol);
+      } catch {
+        followed = prevState.getNextState(ifOtherSymbol);
+      }
+
+      if (followed instanceof Reference) {
+        // Either the followed Reference is recorded (instruction reference) → use its Path.
+        // Or it's a subroutine-entry hopper reference (untracked) → raw.state is the
+        // subroutine body's first instruction, which IS recorded.
+        arrivalPath = this.#referenceToPath.get(followed) ?? this.#stateToCandidatePaths.get(raw.state)![0];
+      } else {
+        // followed is a State (haltState or inline continuation): raw.state may not
+        // be recorded (continuation states aren't), so fall back to entryPath.
+        arrivalPath = this.#stateToCandidatePaths.get(raw.state)?.[0] ?? entryPath;
+      }
+    }
+    const candidatePaths = this.#stateToCandidatePaths.get(raw.state) ?? [];
+    return { ...raw, arrivalPath, candidatePaths } as MachineState;
   }
 
   #buildInitialState({
@@ -97,12 +183,16 @@ export class PostMachine extends TuringMachine {
     subroutineInitialStatesFromUpperScope = {},
     calledFromGroup = false,
     instructionPrefix = '',
+    scope = [],
+    groupOuterInstructionIndex,
   }: {
     instructions: Instructions;
     subroutinesDataFromUpperScope?: Record<string, { reference: Reference; instructions: Instructions }>;
     subroutineInitialStatesFromUpperScope?: Record<string, State>;
     calledFromGroup?: boolean;
     instructionPrefix?: string;
+    scope?: string[];
+    groupOuterInstructionIndex?: number;
   }): State {
     const instructionsCopy = { ...instructions };
 
@@ -158,6 +248,7 @@ export class PostMachine extends TuringMachine {
         subroutinesDataFromUpperScope: subroutinesData,
         subroutineInitialStatesFromUpperScope: subroutineInitialStates,
         instructionPrefix: `${instructionPrefix}${subroutineName}::`,
+        scope: [...scope, subroutineName],
       }));
     });
 
@@ -171,6 +262,20 @@ export class PostMachine extends TuringMachine {
       ...result,
       [instructionIndex]: new Reference(),
     }), {});
+
+    for (const indexKey of instructionIndexList) {
+      const path: Path = groupOuterInstructionIndex !== undefined
+        ? {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: groupOuterInstructionIndex,
+            groupInstructionIndex: Number(indexKey),
+          }
+        : {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: Number(indexKey),
+          };
+      this.#referenceToPath.set(references[indexKey], path);
+    }
 
     const states = new Map<string, State>();
     const list = instructionIndexList.map(Number);
@@ -237,6 +342,8 @@ export class PostMachine extends TuringMachine {
           subroutineInitialStatesFromUpperScope: subroutineInitialStates,
           calledFromGroup: true,
           instructionPrefix: `${instructionPrefix}${instructionIndex}.`,
+          scope,
+          groupOuterInstructionIndex: instructionIndex,
         });
 
         let nextState: State | Reference;
@@ -263,10 +370,32 @@ export class PostMachine extends TuringMachine {
       }
     });
 
-    builtStates.forEach((state, instructionIndex) => {
-      references[instructionIndex].bind(state);
+    builtStates.forEach((state, instructionIndexStr) => {
+      references[instructionIndexStr].bind(state);
+
+      const path: Path = groupOuterInstructionIndex !== undefined
+        ? {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: groupOuterInstructionIndex,
+            groupInstructionIndex: Number(instructionIndexStr),
+          }
+        : {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: Number(instructionIndexStr),
+          };
+
+      this.#recordPath(state, path);
     });
 
     return references[instructionIndexList[0]].ref;
+  }
+
+  #recordPath(state: State, path: Path): void {
+    const existing = this.#stateToCandidatePaths.get(state);
+    if (existing) {
+      existing.push(path);
+    } else {
+      this.#stateToCandidatePaths.set(state, [path]);
+    }
   }
 }
