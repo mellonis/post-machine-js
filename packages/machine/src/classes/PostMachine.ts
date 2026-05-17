@@ -22,7 +22,7 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
-import { type Path, comparePathsCanonically } from '../path';
+import { type Path, comparePathsCanonically, formatPath } from '../path';
 import type { MachineState } from '../index';
 
 export type PostMachineOptions = {
@@ -35,6 +35,7 @@ export class PostMachine extends TuringMachine {
   #blankSymbol: string;
   #markSymbol: string;
   #stateToCandidatePaths: Map<State, Path[]> = new Map();
+  #pathToState: Map<string, State> = new Map();
   #referenceToPath: Map<Reference, Path> = new Map();
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
@@ -397,5 +398,6 @@ export class PostMachine extends TuringMachine {
     } else {
       this.#stateToCandidatePaths.set(state, [path]);
     }
+    this.#pathToState.set(formatPath(path), state);
   }
 }
