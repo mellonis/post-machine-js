@@ -346,7 +346,7 @@ PostMachine names every state it constructs by instruction index, so `toMermaid`
 | Continuation: from `X` to `Y`                   | `"X~Y"`                      | `"foo::X~foo::Y"`            |
 | Continuation: tail-position                     | `"X~halt"`                   | `"foo::X~halt"`              |
 | Call wrapper composite (engine auto-emits `>`)  | `"sub>X~Y"` / `"sub>X~halt"` | `"foo::sub>foo::X~foo::Y"`   |
-| Group wrapper composite                         | `"O.1>O~Y"` / `"O.1>O~halt"` | `"foo::O.1>foo::O~foo::Y"` |
+| Group wrapper composite                         | `"O.1>O~Y"` / `"O.1>O~halt"` | `"foo::O.1>foo::O~foo::Y"`   |
 
 **Separators in user-meaningful labels:**
 - `::` — subroutine scope (lexical nesting), like C++/Rust's scope-resolution operator. `foo::bar::1` reads as "instruction 1 inside subroutine `bar`, which is defined inside subroutine `foo`".
