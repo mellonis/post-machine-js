@@ -503,8 +503,7 @@ export class PostMachine extends TuringMachine {
     let hadHalt = false;
     for (const bp of this.#breakpoints) {
       if (bp.kind === 'instruction') {
-        const s = this.#pathToState.get(formatPath(bp.path));
-        if (s) instructionStates.add(s);
+        instructionStates.add(this.#pathToState.get(formatPath(bp.path))!);
       } else {
         hadHalt = true;
       }

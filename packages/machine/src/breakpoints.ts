@@ -2,8 +2,8 @@ import type { State } from '@turing-machine-js/machine';
 import type { Path } from './path';
 
 export type BreakpointFilter = {
-  before?: boolean | string | string[];
-  after?: boolean | string | string[];
+  before?: true | string | string[];
+  after?: true | string | string[];
 };
 
 export type BreakpointTarget = Path | string | State;
@@ -21,15 +21,15 @@ export function validateBreakpointFilter(filter: BreakpointFilter): void {
 }
 
 function mergeOnePhase(
-  values: ReadonlyArray<boolean | string | string[] | undefined>,
-): boolean | string | string[] | undefined {
-  const present = values.filter((v) => v !== undefined) as Array<boolean | string | string[]>;
+  values: ReadonlyArray<true | string | string[] | undefined>,
+): true | string | string[] | undefined {
+  const present = values.filter((v) => v !== undefined) as Array<true | string | string[]>;
   if (present.length === 0) return undefined;
   if (present.some((v) => v === true)) return true;
   const symbols = new Set<string>();
-  for (const v of present) {
+  for (const v of present as Array<string | string[]>) {
     if (Array.isArray(v)) v.forEach((s) => symbols.add(s));
-    else if (typeof v === 'string') symbols.add(v);
+    else symbols.add(v);
   }
   if (symbols.size === 1) return [...symbols][0];
   return [...symbols];
