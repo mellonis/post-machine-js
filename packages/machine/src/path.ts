@@ -91,3 +91,13 @@ export function formatPath(p: Path): string {
   const groupSuffix = p.groupInstructionIndex !== undefined ? `.${p.groupInstructionIndex}` : '';
   return `${scopeStr}${p.instructionIndex}${groupSuffix}`;
 }
+
+export function comparePathsCanonically(a: Path, b: Path): number {
+  const aScope = normalizeScope(a.scope).join('::');
+  const bScope = normalizeScope(b.scope).join('::');
+  if (aScope !== bScope) return aScope < bScope ? -1 : 1;
+  if (a.instructionIndex !== b.instructionIndex) return a.instructionIndex - b.instructionIndex;
+  const aGroup = a.groupInstructionIndex ?? -1;
+  const bGroup = b.groupInstructionIndex ?? -1;
+  return aGroup - bGroup;
+}

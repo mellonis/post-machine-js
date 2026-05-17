@@ -22,6 +22,7 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
+import { type Path, comparePathsCanonically } from '../path';
 
 export type PostMachineOptions = {
   blankSymbol?: string;
@@ -32,6 +33,7 @@ export class PostMachine extends TuringMachine {
   #initialState: State;
   #blankSymbol: string;
   #markSymbol: string;
+  #stateToCandidatePaths: Map<State, Path[]> = new Map();
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
     const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
@@ -52,6 +54,11 @@ export class PostMachine extends TuringMachine {
     this.#initialState = this.#buildInitialState({
       instructions,
     });
+
+    // Sort each candidate-path list deterministically for stable test assertions.
+    for (const paths of this.#stateToCandidatePaths.values()) {
+      paths.sort(comparePathsCanonically);
+    }
   }
 
   get tapeBlock(): TapeBlock {
@@ -97,12 +104,16 @@ export class PostMachine extends TuringMachine {
     subroutineInitialStatesFromUpperScope = {},
     calledFromGroup = false,
     instructionPrefix = '',
+    scope = [],
+    groupOuterInstructionIndex,
   }: {
     instructions: Instructions;
     subroutinesDataFromUpperScope?: Record<string, { reference: Reference; instructions: Instructions }>;
     subroutineInitialStatesFromUpperScope?: Record<string, State>;
     calledFromGroup?: boolean;
     instructionPrefix?: string;
+    scope?: string[];
+    groupOuterInstructionIndex?: number;
   }): State {
     const instructionsCopy = { ...instructions };
 
@@ -158,6 +169,7 @@ export class PostMachine extends TuringMachine {
         subroutinesDataFromUpperScope: subroutinesData,
         subroutineInitialStatesFromUpperScope: subroutineInitialStates,
         instructionPrefix: `${instructionPrefix}${subroutineName}::`,
+        scope: [...scope, subroutineName],
       }));
     });
 
@@ -237,6 +249,8 @@ export class PostMachine extends TuringMachine {
           subroutineInitialStatesFromUpperScope: subroutineInitialStates,
           calledFromGroup: true,
           instructionPrefix: `${instructionPrefix}${instructionIndex}.`,
+          scope,
+          groupOuterInstructionIndex: instructionIndex,
         });
 
         let nextState: State | Reference;
@@ -263,10 +277,32 @@ export class PostMachine extends TuringMachine {
       }
     });
 
-    builtStates.forEach((state, instructionIndex) => {
-      references[instructionIndex].bind(state);
+    builtStates.forEach((state, instructionIndexStr) => {
+      references[instructionIndexStr].bind(state);
+
+      const path: Path = groupOuterInstructionIndex !== undefined
+        ? {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: groupOuterInstructionIndex,
+            groupInstructionIndex: Number(instructionIndexStr),
+          }
+        : {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: Number(instructionIndexStr),
+          };
+
+      this.#recordPath(state, path);
     });
 
     return references[instructionIndexList[0]].ref;
+  }
+
+  #recordPath(state: State, path: Path): void {
+    const existing = this.#stateToCandidatePaths.get(state);
+    if (existing) {
+      existing.push(path);
+    } else {
+      this.#stateToCandidatePaths.set(state, [path]);
+    }
   }
 }
