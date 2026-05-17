@@ -255,7 +255,9 @@ Two-layer Proxy mechanism:
 
 2. **DebugConfig Proxy.** The State Proxy's `get` trap intercepts reads of the `debug` key. Instead of returning the engine's raw `DebugConfig` instance, it returns a `Proxy<DebugConfig>` whose `set` trap throws on `before`/`after`/any field assignment with the same instructional message. Reads forward to the underlying DebugConfig (so consumers can introspect "what filter is set?"). This catches the chained `state.debug.before = true` pattern.
 
-Cache: PostMachine maintains a `Map<State, Proxy<State>>` (and an inner `Map<DebugConfig, Proxy<DebugConfig>>` lazily). Cache key is the underlying engine object, so identity holds:
+Cache: **per-PostMachine-instance**, not module-level — with one exception (haltState). Each `PostMachine` maintains its own `Map<State, Proxy<State>>` (and an inner `Map<DebugConfig, Proxy<DebugConfig>>` lazily). Cache key is the underlying engine object, so identity holds within an instance. GC follows the PostMachine lifecycle. Rationale: each PostMachine constructs its own state graph; scoping the cache to that instance matches lifetime expectations and avoids unbounded module-level growth across many machines.
+
+**Exception — the `haltState` re-export wrap is module-level.** `haltState` is the engine's singleton (shared across all PostMachine instances by definition); the wrapped Proxy is created once at module load (`packages/machine/src/index.ts`) and reused everywhere. `pm.setBreakpoint(haltState, ...)` accepts either the module-level wrap or the bare upstream singleton — PostMachine resolves both to the engine's bare haltState before recording in its per-instance registry, and sets `debug` on the bare singleton.
 
 ```ts
 pm.stateAt('10') === pm.stateAt('20')   // true when 10 and 20 share a State (cache returns same Proxy)
@@ -374,7 +376,7 @@ Land in dependency order:
    - #59: new breakpoint registry + filter aggregation + arrival-match logic inside the existing `onPause` callback wrapper. No new callback added — `onPause` gains registry-aware semantics on top of the rename from `__onPause`.
    - #63: new `stateAt`, `hasState`, `candidatesFor` methods.
    - These don't conflict structurally and can land as separate PRs.
-   - Suggested version: **v6.3.0** (single bundle) or **v6.3.0 + v6.4.0** (two separate releases — easier to revert if needed).
+   - Bundled as a single **v6.3.0** release. Rationale: the Proxy mechanism's error message points at `setBreakpoint`, so the two issues need to ship together for the lockdown story to be coherent. Splitting them would mean touching `index.ts`, `PostMachine.ts`, and the shared helper module twice for no consumer benefit.
 
 3. **README "Naming convention" section** updated to reference the new API: the "State sharing" subsection's last sentence ("use the engine's Reference resolution") gets replaced with concrete references to `candidatesFor` and `arrivalPath`.
 
