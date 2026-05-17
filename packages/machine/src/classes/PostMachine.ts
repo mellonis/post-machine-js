@@ -1,6 +1,6 @@
 import {
   Alphabet,
-  type MachineState,
+  type MachineState as EngineMachineState,
   Reference,
   State,
   Tape,
@@ -23,6 +23,7 @@ import {
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
 import { type Path, comparePathsCanonically } from '../path';
+import type { MachineState } from '../index';
 
 export type PostMachineOptions = {
   blankSymbol?: string;
@@ -87,16 +88,91 @@ export class PostMachine extends TuringMachine {
     onStep?: (machineState: MachineState) => void;
     __onPause?: (machineState: MachineState) => void | Promise<void>;
   } = {}): Promise<void> {
+    let prevState: State | null = null;
+    let prevJsSymbol: symbol | null = null;
+    const entryPath = this.#firstStepArrivalPath();
+
+    const advanceTracking = (raw: EngineMachineState): void => {
+      prevState = raw.state;
+      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
+    };
+
     await super.run({
       initialState: this.#initialState,
       stepsLimit,
-      onStep,
-      onPause: __onPause,
+      onStep: onStep ? (raw) => {
+        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        advanceTracking(raw);
+        onStep(wrapped);
+      } : undefined,
+      onPause: __onPause ? async (raw) => {
+        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        advanceTracking(raw);
+        await __onPause(wrapped);
+      } : undefined,
     });
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
-    yield* super.runStepByStep({ initialState: this.#initialState, stepsLimit });
+    let prevState: State | null = null;
+    let prevJsSymbol: symbol | null = null;
+    const entryPath = this.#firstStepArrivalPath();
+
+    for (const raw of super.runStepByStep({ initialState: this.#initialState, stepsLimit })) {
+      const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+      prevState = raw.state;
+      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
+      yield wrapped;
+    }
+  }
+
+  #firstStepArrivalPath(): Path {
+    const candidates = this.#stateToCandidatePaths.get(this.#initialState);
+    if (!candidates || candidates.length === 0) {
+      throw new Error('PostMachine internal: initial state has no candidate paths');
+    }
+    return candidates[0];
+  }
+
+  #wrapMachineState(
+    raw: EngineMachineState,
+    prevState: State | null,
+    prevJsSymbol: symbol | null,
+    entryPath: Path,
+  ): MachineState {
+    let arrivalPath: Path;
+    if (prevState === null || prevJsSymbol === null) {
+      arrivalPath = entryPath;
+    } else {
+      // Some intermediate engine states (call wrappers, continuation states, subroutine
+      // entry dispatchers) only register an ifOtherSymbol transition. Try the specific
+      // symbol first; fall back to ifOtherSymbol; fall back to candidatePaths[0].
+      let followed: State | Reference | undefined;
+      try {
+        followed = prevState.getNextState(prevJsSymbol);
+      } catch {
+        try {
+          followed = prevState.getNextState(ifOtherSymbol);
+        } catch {
+          followed = undefined;
+        }
+      }
+
+      if (followed instanceof Reference) {
+        const fromRef = this.#referenceToPath.get(followed);
+        if (fromRef) {
+          arrivalPath = fromRef;
+        } else {
+          const candidates = this.#stateToCandidatePaths.get(raw.state);
+          arrivalPath = candidates && candidates.length > 0 ? candidates[0] : entryPath;
+        }
+      } else {
+        const candidates = this.#stateToCandidatePaths.get(raw.state);
+        arrivalPath = candidates && candidates.length > 0 ? candidates[0] : entryPath;
+      }
+    }
+    const candidatePaths = this.#stateToCandidatePaths.get(raw.state) ?? [];
+    return { ...raw, arrivalPath, candidatePaths } as MachineState;
   }
 
   #buildInitialState({
