@@ -142,10 +142,12 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry-state with composite name (id:N>id:M shape — the
-      // withOverrodeHaltState wrapper for the top-level `call`).
+      // Halt + the entry-state with composite name. The wrapper at top-level instruction 1
+      // is `call('rightToBlank')`, so the composite reads as `<hopper>><continuation>` —
+      // here `"rightToBlank>1~2"` (subroutine hopper named after the subroutine, continuation
+      // forwards from instr 1 to instr 2).
       expect(mermaid).toContain('(((halt)))');
-      expect(mermaid).toMatch(/s\d+\(\("id:\d+>id:\d+"\)\)/);
+      expect(mermaid).toContain('(("rightToBlank>1~2"))');
 
       // The dotted onHalt edge — the override path back from the subroutine.
       expect(mermaid).toMatch(/s\d+ -\. onHalt \.-> s\d+/);
@@ -262,12 +264,9 @@ describe('packages/machine/README.md', () => {
           .toBe('flowchart TD');
       });
 
-      // Pins the README's <details> engine-source block. State IDs (s0, s1,
-      // ..., and the "id:N" labels) are global counters and shift depending
-      // on which other tests ran before this one — so we pin the *shape*
-      // (regex on node syntax + edge labels) instead of literal IDs. The
-      // README's <details> block shows the in-isolation IDs (id:1/2/3) for
-      // pedagogical clarity.
+      // Pins the README's <details> engine-source block. State names are now deterministic
+      // (instruction-derived); node IDs (s\d+) are still auto-generated and shift between
+      // runs, so we pin the labels via `toContain(...)`.
       test('Quick Start engine output matches README <details> block', () => {
         const machine = buildQuickStart();
         const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
@@ -279,10 +278,11 @@ describe('packages/machine/README.md', () => {
         // Halt node (always literal "halt").
         expect(mermaid).toContain('(((halt)))');
 
-        // Initial state — double-paren entry shape with auto-numbered ID label.
-        expect(mermaid).toMatch(/s\d+\(\("id:\d+"\)\)/);
-        // Two intermediate states — square-bracket node shape.
-        expect(mermaid).toMatch(/s\d+\["id:\d+"\]/);
+        // Initial state — double-paren entry shape with instruction-derived name.
+        expect(mermaid).toContain('(("10"))');
+        // Two intermediate states — square-bracket node shape with instruction-derived names.
+        expect(mermaid).toContain('["20"]');
+        expect(mermaid).toContain('["30"]');
 
         // Each of the 4 transitions described in the README's reading guide.
         // Edge labels are exact as emitted; node IDs (s\d+) are not pinned.
