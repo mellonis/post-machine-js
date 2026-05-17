@@ -80,4 +80,13 @@ describe('PostMachine — wrapped MachineState', () => {
     );
     expect(groupInner).toBeDefined();
   });
+
+  test('runStepByStep yields arrivalPath and candidatePaths', () => {
+    const m = new PostMachine({ 10: mark, 20: stop });
+    const steps = [...m.runStepByStep()];
+    expect(steps.length).toBeGreaterThan(0);
+    expect(steps[0].arrivalPath).toEqual(parsePath('10'));
+    expect(Array.isArray(steps[0].candidatePaths)).toBe(true);
+    expect(steps[0].candidatePaths).toEqual([parsePath('10')]);
+  });
 });
