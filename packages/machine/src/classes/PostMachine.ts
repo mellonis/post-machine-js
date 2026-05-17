@@ -163,16 +163,14 @@ export class PostMachine extends TuringMachine {
       }
 
       if (followed instanceof Reference) {
-        const fromRef = this.#referenceToPath.get(followed);
-        if (fromRef) {
-          arrivalPath = fromRef;
-        } else {
-          const candidates = this.#stateToCandidatePaths.get(raw.state);
-          arrivalPath = candidates && candidates.length > 0 ? candidates[0] : entryPath;
-        }
+        // Either the followed Reference is recorded (instruction reference) → use its Path.
+        // Or it's a subroutine-entry hopper reference (untracked) → raw.state is the
+        // subroutine body's first instruction, which IS recorded.
+        arrivalPath = this.#referenceToPath.get(followed) ?? this.#stateToCandidatePaths.get(raw.state)![0];
       } else {
-        const candidates = this.#stateToCandidatePaths.get(raw.state);
-        arrivalPath = candidates && candidates.length > 0 ? candidates[0] : entryPath;
+        // followed is a State (haltState or inline continuation): raw.state may not
+        // be recorded (continuation states aren't), so fall back to entryPath.
+        arrivalPath = this.#stateToCandidatePaths.get(raw.state)?.[0] ?? entryPath;
       }
     }
     const candidatePaths = this.#stateToCandidatePaths.get(raw.state) ?? [];

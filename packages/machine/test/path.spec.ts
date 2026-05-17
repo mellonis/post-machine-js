@@ -138,4 +138,11 @@ describe('comparePathsCanonically', () => {
     expect(comparePathsCanonically(b, a)).toBeLessThan(0);
     expect(comparePathsCanonically(a, a)).toBe(0);
   });
+
+  test('sorts undefined groupInstructionIndex before any number', () => {
+    const a = { instructionIndex: 10 };
+    const b = { instructionIndex: 10, groupInstructionIndex: 1 };
+    expect(comparePathsCanonically(a, b)).toBeLessThan(0);
+    expect(comparePathsCanonically(b, a)).toBeGreaterThan(0);
+  });
 });
