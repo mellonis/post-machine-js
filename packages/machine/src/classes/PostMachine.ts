@@ -34,6 +34,7 @@ export class PostMachine extends TuringMachine {
   #blankSymbol: string;
   #markSymbol: string;
   #stateToCandidatePaths: Map<State, Path[]> = new Map();
+  #referenceToPath: Map<Reference, Path> = new Map();
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
     const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
@@ -183,6 +184,20 @@ export class PostMachine extends TuringMachine {
       ...result,
       [instructionIndex]: new Reference(),
     }), {});
+
+    for (const indexKey of instructionIndexList) {
+      const path: Path = groupOuterInstructionIndex !== undefined
+        ? {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: groupOuterInstructionIndex,
+            groupInstructionIndex: Number(indexKey),
+          }
+        : {
+            ...(scope.length > 0 ? { scope: [...scope] } : {}),
+            instructionIndex: Number(indexKey),
+          };
+      this.#referenceToPath.set(references[indexKey], path);
+    }
 
     const states = new Map<string, State>();
     const list = instructionIndexList.map(Number);
