@@ -154,13 +154,14 @@ type BreakpointFilter = {
   after?: boolean | string | string[];    // pause after iteration; symbol filter optional
 };
 
-type Breakpoint = {
-  path: Path;
-  filter: BreakpointFilter;
-};
+type BreakpointTarget = Path | string | State;   // State accepted only for haltState
 
-pm.setBreakpoint(path: Path | string, filter: BreakpointFilter): void;
-pm.clearBreakpoint(path: Path | string): void;
+type Breakpoint =
+  | { kind: 'instruction'; path: Path; filter: BreakpointFilter }
+  | { kind: 'halt'; filter: BreakpointFilter };
+
+pm.setBreakpoint(target: BreakpointTarget, filter: BreakpointFilter): void;
+pm.clearBreakpoint(target: BreakpointTarget): void;
 pm.clearBreakpoints(): void;
 pm.listBreakpoints(): Breakpoint[];
 
@@ -175,6 +176,18 @@ Two callbacks, two concepts:
 
 - `onStep` — fires every step (existing behavior).
 - `onPause(machineState)` — fires when the engine pauses. PostMachine's wrapper applies registry-aware filtering before dispatching (see "Pause-wrapper semantics" below).
+
+### Breakpoint targets — paths and haltState
+
+`setBreakpoint` accepts three forms of target:
+
+- **Path string** (e.g., `'foo::10.2'`) — parsed via `parsePath` to an instruction path.
+- **Path object** (e.g., `{ scope: 'foo', instructionIndex: 10, groupInstructionIndex: 2 }`) — validated as an instruction path.
+- **`haltState` singleton** — either the wrapped re-export from `@post-machine-js/machine` or the bare engine singleton from `@turing-machine-js/machine`. Either form resolves to the same underlying engine haltState; PostMachine sets `haltState.debug` on the engine's singleton.
+
+For the haltState case, `listBreakpoints` returns entries with `kind: 'halt'`. For instruction targets, entries have `kind: 'instruction'` plus the canonical `Path`. The `arrivalPath` field of `MachineState` is the instruction path that just transitioned; for a halt-pause it's the path of the instruction whose transition led to halt (the last user-meaningful path before the engine's halt entry).
+
+`setBreakpoint(haltState, filter)` is the structured channel for the `haltState.debug.before = true` pattern. Direct `haltState.debug` mutation on the wrapped re-export throws with an instructional error pointing at `setBreakpoint`; direct mutation on the bare engine singleton (imported from `@turing-machine-js/machine`) is a documented escape — see "Lockdown scope and residual escape hatches" below.
 
 ### Filter aggregation on the engine
 
@@ -216,9 +229,15 @@ The same `onPause` callback serves both contracts. From the consumer's perspecti
 
 ### Channeling debug config through `setBreakpoint`
 
-`pm.stateAt(path)` returns a `Proxy<State>` that blocks all `debug`-related mutations. This funnels every construction-time debug-config request through `setBreakpoint`, which keeps the registry as the authoritative source of state-sharing-aware filtering.
+Every State PostMachine exposes through its public surface is wrapped in a `Proxy<State>` that blocks `debug`-related mutations. This funnels all construction-time debug-config requests through `setBreakpoint`, which keeps the registry as the authoritative source of state-sharing-aware filtering.
 
-Two-layer Proxy:
+Surfaces that return wrapped States:
+
+- `pm.stateAt(path)`.
+- `pm.initialState` getter.
+- The `haltState` re-export from `@post-machine-js/machine` (wrapped at module load).
+
+Two-layer Proxy mechanism:
 
 1. **State Proxy.** The outer Proxy wraps the engine's `State` object. All reads forward to the underlying State via `Reflect.get`. The `set` trap throws on the `debug` key with an instructional message:
 
@@ -226,15 +245,15 @@ Two-layer Proxy:
     set(target, prop, value) {
       if (prop === 'debug') {
         throw new Error(
-          'Use pm.setBreakpoint(path, filter) to enable breakpoints. '
-          + 'Direct state.debug assignment is disabled on objects returned by pm.stateAt().'
+          'Use pm.setBreakpoint(target, filter) to enable breakpoints. '
+          + 'Direct state.debug assignment is disabled on objects returned by PostMachine.'
         );
       }
       return Reflect.set(target, prop, value);
     }
     ```
 
-2. **DebugConfig Proxy.** The State Proxy's `get` trap intercepts reads of the `debug` key. Instead of returning the engine's raw `DebugConfig` instance, it returns a `Proxy<DebugConfig>` whose `set` trap throws on `before`/`after`/any field assignment with the same instructional message. Reads forward to the underlying DebugConfig (so consumers can introspect "what filter is set?"). This catches the chained `pm.stateAt(path).debug.before = true` pattern.
+2. **DebugConfig Proxy.** The State Proxy's `get` trap intercepts reads of the `debug` key. Instead of returning the engine's raw `DebugConfig` instance, it returns a `Proxy<DebugConfig>` whose `set` trap throws on `before`/`after`/any field assignment with the same instructional message. Reads forward to the underlying DebugConfig (so consumers can introspect "what filter is set?"). This catches the chained `state.debug.before = true` pattern.
 
 Cache: PostMachine maintains a `Map<State, Proxy<State>>` (and an inner `Map<DebugConfig, Proxy<DebugConfig>>` lazily). Cache key is the underlying engine object, so identity holds:
 
@@ -242,12 +261,34 @@ Cache: PostMachine maintains a `Map<State, Proxy<State>>` (and an inner `Map<Deb
 pm.stateAt('10') === pm.stateAt('20')   // true when 10 and 20 share a State (cache returns same Proxy)
 pm.stateAt('10') instanceof State        // true (Proxy preserves prototype chain)
 State.toGraph(pm.stateAt('10'), pm.tapeBlock)  // works (engine sees a State-shaped object)
+pm.initialState === pm.stateAt(<entry-instruction-path>)  // true (both routes hit the cache)
 ```
 
-What's **not** caught by the Proxy:
+The `haltState` re-export from `@post-machine-js/machine` is its own special-case wrap built at module load:
 
-- `machineState.state.debug = ...` inside `onStep`/`onPause` callbacks. The `machineState.state` field is the bare engine State, not a Proxy. This is the intentional runtime-escape-hatch path discussed in the Pause-wrapper semantics section above.
-- Direct engine access via `pm.initialState.debug = ...` or walking the State graph through `nextState` fields. These bypass `stateAt` entirely. They were already escape hatches before this design and remain so — `pm.stateAt` is the path the design supports; raw access stays raw.
+```ts
+// In packages/machine/src/index.ts
+import { haltState as engineHaltState } from '@turing-machine-js/machine';
+export const haltState = wrapStateForLockdown(engineHaltState);   // Proxy<State>
+```
+
+The wrapped `haltState` has the same protections; `pm.setBreakpoint` accepts either the wrapped or the bare engine singleton (both resolve to `engineHaltState` internally — see "Breakpoint targets" section).
+
+### Lockdown scope and residual escape hatches
+
+The Proxy wrapping covers PostMachine's *managed* surface for construction-time debug-config. Three escape hatches remain documented and accessible:
+
+| Hatch                                                                  | What it does                                          | Why it's not locked                                                            |
+|------------------------------------------------------------------------|-------------------------------------------------------|--------------------------------------------------------------------------------|
+| `machineState.state.debug = ...` inside `onStep`/`onPause` callbacks   | Runtime mutation of debug-config on a live state      | Intentional runtime channel — advanced use cases (conditional enable mid-run) need it; locking would over-reach. |
+| `import { haltState } from '@turing-machine-js/machine'` (bare upstream) | Bypass the wrapped post-machine-js re-export        | We can't lock another package's export. Documented; structurally identical to the wrapped one for identity-sensitive checks (`State.isHalt` uses ID, not identity). |
+| Graph-walking via `someState.getNextStateForSymbol(...)`, `someState.symbolToDataMap` introspection | Reach transition-target States that aren't Proxied | Recursive Proxy wrapping (every method that returns a State returns another Proxy) is achievable but adds significant runtime overhead and edge-case complexity. Deferred. v6.2/v6.3 documents this as an explicit raw channel. |
+
+**Identity break for `haltState`.** Because the wrapped re-export is a Proxy, `haltState` (from `@post-machine-js/machine`) is **not** `===` to `haltState` (from `@turing-machine-js/machine`). Identity-sensitive code that imports from both packages and expects them to be the same singleton will break. Mitigations:
+
+- Most identity checks in user code should use `State.isHalt` (which reads `.id === 0`) — works through the Proxy because reads pass through to the underlying.
+- `pm.setBreakpoint(haltState, ...)` accepts *either* the wrapped or the bare singleton — PostMachine resolves both to the underlying engine haltState internally before setting `.debug`.
+- Documentation note: "prefer importing `haltState` from `@post-machine-js/machine` when using PostMachine; the wrapped re-export is the supported singleton".
 
 ## #63: Static path resolver
 
@@ -283,8 +324,11 @@ pm.candidatesFor(path: Path | string): Path[];      // throws if path is invalid
 | `setBreakpoint('10')` AND `setBreakpoint('20')` both       | Same as above (filter union; no new `state.debug` toggle) | `onPause` fires on both arrivals; consumer reads `m.arrivalPath` to discriminate |
 | `pm.stateAt('20').debug = { before: true }` (caller error) | (never reaches engine — blocked at Proxy)               | Throws with instructional error pointing at `pm.setBreakpoint`                    |
 | `pm.stateAt('20').debug.before = true` (caller error)      | (never reaches engine — blocked at DebugConfig Proxy)   | Throws with instructional error pointing at `pm.setBreakpoint`                    |
+| `pm.initialState.debug = { before: true }` (caller error)  | (never reaches engine — blocked at Proxy)               | Throws with instructional error pointing at `pm.setBreakpoint`                    |
+| `haltState.debug = { before: true }` where `haltState` is from `@post-machine-js/machine` | (never reaches engine — blocked at Proxy)               | Throws with instructional error pointing at `pm.setBreakpoint(haltState, ...)`    |
+| `pm.setBreakpoint(haltState, { before: true })` (either wrapped or bare singleton) | `haltState.debug.before = true` set on the engine singleton | Registered halt breakpoint; `onPause` fires on engine's halt entry              |
 | Inside `onPause`: `machineState.state.debug = { before: true }` (runtime channel) | Engine pauses on every subsequent visit | State not in registry → raw passthrough; `onPause` fires unfiltered for those visits |
-| `pm.stateAt('10') === pm.stateAt('20')`                    | `true` (same physical State)                            | (irrelevant — `stateAt` is the State-graph escape hatch)                          |
+| `pm.stateAt('10') === pm.stateAt('20')`                    | `true` (same physical State)                            | (Proxy cache returns the same wrapped object)                                     |
 | `MachineState.arrivalPath`                          | (engine doesn't track this)                             | Always the just-followed reference's path                                         |
 | `MachineState.candidatePaths`                       | (engine doesn't track this)                             | `['10', '20']` for shared, `['30']` for un-shared                                 |
 
@@ -295,14 +339,16 @@ New / modified exports from `@post-machine-js/machine`:
 - Type `Path` (new).
 - Type `MachineState` (modified — re-export now resolves to the engine's `MachineState` extended with `arrivalPath` + `candidatePaths`).
 - Type `BreakpointFilter` (new).
-- Type `Breakpoint` (new).
+- Type `BreakpointTarget` (new — `Path | string | State` where `State` is accepted only for the haltState singleton).
+- Type `Breakpoint` (new — discriminated union: `{ kind: 'instruction'; path; filter }` or `{ kind: 'halt'; filter }`).
 - Function `parsePath(s: string): Path` (new).
 - Function `formatPath(p: Path): string` (new).
+- `haltState` (modified — re-export now resolves to a `Proxy<State>` that blocks `debug`-related mutations; identity-breaks from the bare upstream import — see "Lockdown scope" section).
 
 New methods on `PostMachine`:
 
-- `setBreakpoint(path, filter)`.
-- `clearBreakpoint(path)`.
+- `setBreakpoint(target, filter)` — `target` is `Path | string | State` (the State form accepted only for `haltState`).
+- `clearBreakpoint(target)`.
 - `clearBreakpoints()`.
 - `listBreakpoints()`.
 - `stateAt(path)`.
@@ -313,6 +359,7 @@ Modified methods on `PostMachine`:
 
 - `run(opts)` — callback signatures receive `MachineState`; rename `__onPause` → `onPause` (drop experimental prefix). Semantics extend the existing `__onPause` with registry-aware filtering: pauses on registered States are filtered by arrival match; pauses on non-registered States (raw `state.debug`) pass through unchanged. Existing `__onPause` consumers see no behavior change after the rename — their states aren't in any registry.
 - `runStepByStep(opts)` — yields `MachineState`.
+- `initialState` getter (modified — now returns a `Proxy<State>` from the lockdown cache; `pm.initialState === pm.stateAt(<entry-instruction-path>)` after this change).
 
 ## Release shape
 
