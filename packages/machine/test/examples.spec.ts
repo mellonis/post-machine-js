@@ -262,7 +262,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('MachineState shape (v6.2.0+)', () => {
+  describe('MachineState shape (v6.1.0+)', () => {
     test('onStep receives arrivalPath and candidatePaths for a simple machine', async () => {
       const m = new PostMachine({
         10: mark,
@@ -394,7 +394,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Path-based resolver (v6.3.0+)', () => {
+  describe('Path-based resolver (v6.1.0+)', () => {
     test('top-level instruction is reachable by string and object path', () => {
       const pm = new PostMachine({ 10: mark, 20: stop });
 
@@ -417,7 +417,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Breakpoints (v6.3.0+)', () => {
+  describe('Breakpoints (v6.1.0+)', () => {
     test('registered breakpoint fires onPause with arrivalPath', async () => {
       const pm = new PostMachine({
         10: check(20, 30),
@@ -455,7 +455,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Lockdown semantics (v6.3.0+)', () => {
+  describe('Lockdown semantics (v6.1.0+)', () => {
     test('direct write on un-shared State redirects to setBreakpoint', () => {
       const pm = new PostMachine({ 10: mark, 20: stop });
 
