@@ -18,6 +18,7 @@ export type CommandContext = {
   calledFromGroup: boolean;
   blankSymbol: string;
   markSymbol: string;
+  instructionPrefix: string;
 };
 
 // A bound state-producer — what each command function returns when called.

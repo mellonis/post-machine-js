@@ -96,11 +96,13 @@ export class PostMachine extends TuringMachine {
     subroutinesDataFromUpperScope = {},
     subroutineInitialStatesFromUpperScope = {},
     calledFromGroup = false,
+    instructionPrefix = '',
   }: {
     instructions: Instructions;
     subroutinesDataFromUpperScope?: Record<string, { reference: Reference; instructions: Instructions }>;
     subroutineInitialStatesFromUpperScope?: Record<string, State>;
     calledFromGroup?: boolean;
+    instructionPrefix?: string;
   }): State {
     const instructionsCopy = { ...instructions };
 
@@ -210,6 +212,7 @@ export class PostMachine extends TuringMachine {
           calledFromGroup,
           blankSymbol: this.#blankSymbol,
           markSymbol: this.#markSymbol,
+          instructionPrefix,
         };
         builtStates.set(String(instructionIndex), (instruction as (context: CommandContext) => State)(context));
       } else if (Array.isArray(instruction)) {
