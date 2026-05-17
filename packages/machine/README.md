@@ -16,6 +16,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
+- [Naming convention](#naming-convention)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
 - [Links](#links)
@@ -330,6 +331,57 @@ console.log(extend.tape.symbols.join('')); // ***
 The two helpers have the same shape — a `check`/move/loop pair — with mirrored direction commands. Without subroutines, that loop body appears twice in the top-level program with `right` and `left` swapped; the structural cost is real and `summarize` makes it visible (see [Structural summary](#structural-summary--summarize)).
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
+
+## Naming convention
+
+PostMachine names every state it constructs by instruction index, so `toMermaid` output, `summarize` output, and `MachineState.name` carry user-meaningful information.
+
+**Rules** — given a state's place in the instruction tree, its name is:
+
+| Construct                                       | Top-level                    | Inside subroutine `foo`      |
+|-------------------------------------------------|------------------------------|------------------------------|
+| Atomic instruction at index `N`                 | `"N"`                        | `"foo::N"`                   |
+| Subroutine hopper (entry forwarder)             | `"sub"`                      | `"foo::sub"`                 |
+| Group at instr `O`, inner index `I`             | `"O.I"`                      | `"foo::O.I"`                 |
+| Continuation: from `X` to `Y`                   | `"X~Y"`                      | `"foo::X~foo::Y"`            |
+| Continuation: tail-position                     | `"X~halt"`                   | `"foo::X~halt"`              |
+| Call wrapper composite (engine auto-emits `>`)  | `"sub>X~Y"` / `"sub>X~halt"` | `"foo::sub>foo::X~foo::Y"`   |
+| Group wrapper composite                         | `"O.1>O~Y"` / `"O.1>O~halt"` | `"foo::O.1>foo::O~foo::Y"` |
+
+**Separators in user-meaningful labels:**
+- `::` — subroutine scope (lexical nesting), like C++/Rust's scope-resolution operator. `foo::bar::1` reads as "instruction 1 inside subroutine `bar`, which is defined inside subroutine `foo`".
+- `.` — group inner-step ordinal. `50.1`, `50.2`, etc. are the sequential commands inside a group at instruction `50`.
+- `~` — continuation. `10~30` reads as "after the wrapper at instruction 10 finishes, forward to instruction 30". Tail-position uses `~halt`.
+- `>` — engine-internal `withOverrodeHaltState` composition (outer state + override target). The engine auto-builds wrapper composites in this shape; user code never writes `>` directly.
+
+User-provided subroutine names are constrained to identifier characters (`/^[A-Z$_][A-Z0-9$_]*$/i`), so none of these separators can collide with user input.
+
+**Reading a wrapper composite.** Example: `"foo>10~40"`.
+
+- Split at `>`: outer = `"foo"` (the subroutine hopper), override = `"10~40"` (the continuation state).
+- Split the override at `~`: caller = `"10"` (the call-site instruction), target = `"40"` (where control resumes).
+
+So `"foo>10~40"` describes: "a wrapper around the `foo` subroutine entry, which on halt forwards from instruction 10 to instruction 40."
+
+For a more complex example, `"outer::inner::deepest>outer::inner::1~halt"`:
+- Outer = `"outer::inner::deepest"` — a deeply-nested subroutine hopper (three levels of lexical nesting).
+- Override = `"outer::inner::1~halt"` — the call site at `outer::inner::1`, tail-position (forwards to halt).
+
+**Quick example.**
+
+```javascript
+const m = new PostMachine({
+  10: call('foo', 30),
+  20: stop,
+  30: stop,
+  foo: { 1: stop },
+});
+// m.initialState.name === "foo>10~30"
+```
+
+### Forward-compatibility with engine v7
+
+Engine v7 (upstream `@turing-machine-js/machine`) plans to change the wrapper composite shape from `A>B` to `A(B)` (paren-based), and will likely forbid `(`, `)`, and `>` in user-provided state names. PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) are reserved by v7, so when the peer-dep bump lands, only the *wrapper composite emit* changes (e.g., `"foo>10~40"` becomes `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — remain unchanged.
 
 ## Introspection and equivalence
 
