@@ -136,12 +136,9 @@ export class PostMachine extends TuringMachine {
   }
 
   #firstStepArrivalPath(): Path {
-    const candidates = this.#stateToCandidatePaths.get(this.#initialState);
-    /* c8 ignore next 3 */
-    if (!candidates || candidates.length === 0) {
-      throw new Error('PostMachine internal: initial state has no candidate paths');
-    }
-    return candidates[0];
+    // Construction guarantees the initial state is recorded in #stateToCandidatePaths
+    // with at least one entry.
+    return this.#stateToCandidatePaths.get(this.#initialState)![0];
   }
 
   #wrapMachineState(
@@ -156,16 +153,13 @@ export class PostMachine extends TuringMachine {
     } else {
       // Some intermediate engine states (call wrappers, continuation states, subroutine
       // entry dispatchers) only register an ifOtherSymbol transition. Try the specific
-      // symbol first; fall back to ifOtherSymbol; fall back to candidatePaths[0].
-      let followed: State | Reference | undefined;
+      // symbol first; fall back to ifOtherSymbol. Engine guarantees: a state we just
+      // arrived at must have had a matching transition, so one of the two succeeds.
+      let followed: State | Reference;
       try {
         followed = prevState.getNextState(prevJsSymbol);
       } catch {
-        try {
-          followed = prevState.getNextState(ifOtherSymbol);
-        } catch /* c8 ignore next */ {
-          followed = undefined;
-        }
+        followed = prevState.getNextState(ifOtherSymbol);
       }
 
       if (followed instanceof Reference) {
