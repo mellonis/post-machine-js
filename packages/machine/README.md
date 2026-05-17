@@ -16,6 +16,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
+- [MachineState shape](#machinestate-shape-v620)
 - [Naming convention](#naming-convention)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
@@ -332,6 +333,36 @@ The two helpers have the same shape — a `check`/move/loop pair — with mirror
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
 
+## MachineState shape (v6.2.0+)
+
+PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState` with two additional fields:
+
+| Field             | Type     | Meaning                                                                                  |
+|-------------------|----------|------------------------------------------------------------------------------------------|
+| `arrivalPath`     | `Path`   | The instruction path that just transitioned to the current state                          |
+| `candidatePaths`  | `Path[]` | All paths whose references resolve to the current state (informational; multiple for shared states) |
+
+These fields disambiguate state-sharing (the hash-cache dedup from v6.1.0). When two instructions produce structurally-identical transitions, they share a State; `arrivalPath` tells you which instruction the engine just transitioned through, while `candidatePaths` tells you the full sharing set.
+
+**Example.**
+
+```javascript
+import { PostMachine, mark, stop } from '@post-machine-js/machine';
+
+const m = new PostMachine({
+  10: mark,
+  20: stop,
+});
+
+await m.run({
+  onStep: (s) => {
+    console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
+  },
+});
+```
+
+The `Path` type and the `parsePath`/`formatPath` helpers are exported from `@post-machine-js/machine` — see the [Naming convention](#naming-convention) section for the path-string format.
+
 ## Naming convention
 
 PostMachine names every state it constructs by instruction index, so `toMermaid` output, `summarize` output, and `MachineState.name` carry user-meaningful information.
@@ -383,7 +414,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching. Issue [#70](https://github.com/mellonis/post-machine-js/issues/70) tracks surfacing a `candidateInstructions` field on the `MachineState` passed to `onStep` / `onPause` so debuggers can disambiguate without reaching for internals.
+For programmatic lookup by instruction index, use `arrivalPath` and `candidatePaths` on the `MachineState` passed to `onStep` / `onPause` — added in v6.2.0 ([#70](https://github.com/mellonis/post-machine-js/issues/70)). See the [MachineState shape](#machinestate-shape-v620) section for details.
 
 ### Forward-compatibility with engine v7
 

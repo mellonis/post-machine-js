@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2026-MM-DD
+
+Foundation for #59 (per-instruction breakpoints) and #63 (state-by-instruction-label lookup). Extends the runtime callback shape with instruction-level context derived from the v6.1.0 naming convention.
+
+### Added
+
+- `MachineState` (re-exported from `@post-machine-js/machine`) now resolves to the engine's `MachineState` extended with two PostMachine-flavored fields: `arrivalPath: Path` and `candidatePaths: Path[]`. The `onStep` and `onPause` callbacks for `pm.run()` and `pm.runStepByStep()` receive the extended shape. (#70)
+- New exports: type `Path`, function `parsePath(s: string): Path`, function `formatPath(p: Path): string`. The path-string format mirrors the naming convention from v6.1.0 — `'10'`, `'foo::1'`, `'50.2'`, `'outer::inner::10.2'`, etc.
+- `arrivalPath` disambiguates the state-sharing UX gap noted in v6.1.0's "State sharing across structurally-identical instructions" section. When two instructions share a State, `arrivalPath` reports the specific instruction the engine just transitioned through (not the canonical first-named one).
+- `candidatePaths` exposes the full set of paths sharing the current State, sorted deterministically (scope lex, then instruction index, then group inner index).
+
+### Changed
+
+- **BREAKING (experimental → stable)** — `__onPause` callback on `pm.run()` renamed to `onPause`. The `__` prefix was the contract that this surface might restructure without warning; #59 (the structured breakpoint API) doesn't restructure `onPause`'s shape, so the prefix is dropped. Migration: simple find/replace.
+
+### Notes
+
+- No engine peer-dep bump — this release ships against `@turing-machine-js/machine ^6.0.0` (unchanged).
+- The `Path` type uses a `scope?: string | string[]` union so consumers can write either `{ scope: 'foo::bar', ... }` (dotted-string form) or `{ scope: ['foo', 'bar'], ... }` (array form). `parsePath` returns the array form (canonical); both are accepted by every API that takes a Path.
+- For state-sharing: the canonical `candidatePaths[0]` is the canonical Path (first by scope, then instruction index); `arrivalPath` may differ when the engine arrived via a non-canonical reference.
+
+### Migration
+
+```diff
+- await pm.run({ __onPause: handler });
++ await pm.run({ onPause: handler });
+```
+
+No other call-site changes required. Consumers reading `state`, `tape`, etc. on `MachineState` are unaffected — the new fields are additive.
+
 ## [6.1.0] - 2026-MM-DD
 
 Instruction-derived state names for everything PostMachine constructs. Foundation for #59 (per-instruction breakpoint API) and #63 (state-by-instruction-label lookup) — both unblocked by this change.
