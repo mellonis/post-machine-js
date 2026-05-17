@@ -22,7 +22,8 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
-import { type Path, comparePathsCanonically, formatPath } from '../path';
+import { wrapStateForLockdown } from '../lockdown';
+import { type Path, comparePathsCanonically, formatPath, parsePath } from '../path';
 import type { MachineState } from '../index';
 
 export type PostMachineOptions = {
@@ -37,6 +38,7 @@ export class PostMachine extends TuringMachine {
   #stateToCandidatePaths: Map<State, Path[]> = new Map();
   #pathToState: Map<string, State> = new Map();
   #referenceToPath: Map<Reference, Path> = new Map();
+  #stateProxyCache: Map<State, State> = new Map();
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
     const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
@@ -389,6 +391,45 @@ export class PostMachine extends TuringMachine {
     });
 
     return references[instructionIndexList[0]].ref;
+  }
+
+  #resolveToState(target: Path | string): { path: Path; state: State } {
+    const parsed: Path = typeof target === 'string'
+      ? parsePath(target)
+      : this.#validatePathObject(target);
+    const key = formatPath(parsed);
+    const state = this.#pathToState.get(key);
+    if (!state) {
+      throw new Error(`path '${key}' does not resolve in this machine`);
+    }
+    return { path: parsed, state };
+  }
+
+  #validatePathObject(p: Path): Path {
+    if (!Number.isInteger(p.instructionIndex) || p.instructionIndex < 1) {
+      throw new Error(`invalid path: instructionIndex must be a positive integer, got ${p.instructionIndex}`);
+    }
+    if (p.groupInstructionIndex !== undefined
+      && (!Number.isInteger(p.groupInstructionIndex) || p.groupInstructionIndex < 1)) {
+      throw new Error(`invalid path: groupInstructionIndex must be a positive integer, got ${p.groupInstructionIndex}`);
+    }
+    if (p.scope !== undefined) {
+      const segs = typeof p.scope === 'string' ? p.scope.split('::') : p.scope;
+      for (const s of segs) {
+        if (!subroutineNameValidator(s)) {
+          throw new Error(`invalid path: scope segment '${s}' is not a valid subroutine name`);
+        }
+      }
+    }
+    // Canonicalize so the registry/listBreakpoints output is shape-stable
+    // regardless of whether the caller passed a string or an object form,
+    // and regardless of whether scope was 'foo::bar' or ['foo', 'bar'].
+    return parsePath(formatPath(p));
+  }
+
+  stateAt(target: Path | string): State {
+    const { state } = this.#resolveToState(target);
+    return wrapStateForLockdown(state, this.#stateProxyCache);
   }
 
   #recordPath(state: State, path: Path): void {
