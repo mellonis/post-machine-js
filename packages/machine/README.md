@@ -16,6 +16,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
+- [Naming convention](#naming-convention)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
 - [Links](#links)
@@ -79,9 +80,9 @@ The `40: stop` instruction is elided in the graph — `stop` halts the machine, 
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1(("id:1"))
-  s2["id:2"]
-  s3["id:3"]
+  s1(("10"))
+  s2["20"]
+  s3["30"]
   s1 -- "\* → ·/S" --> s2
   s1 -- "- → ·/S" --> s3
   s2 -- "* → ·/R" --> s1
@@ -95,7 +96,7 @@ Reading the engine output:
 - `(("label"))` — entry state (the one passed as `initialState`)
 - `["label"]` — intermediate state
 
-The `id:N` labels (e.g. `id:1`, `id:2`) are the engine's auto-assigned state IDs (a global counter); they're independent of PostMachine instruction indices and shift between runs. Issue [#67](https://github.com/mellonis/post-machine-js/issues/67) tracks replacing them with instruction-derived names.
+The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>><continuation>"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that.
 
 **Edges.** Compact `read → write/move` syntax:
 - **Read side**: `\*` is the literal mark symbol; `-` is `ifOtherSymbol` (the catch-all when there are also explicit symbol edges from the same state); `*` (without backslash) is the sole-transition match-all — used when a state has only one outgoing edge that matches everything.
@@ -270,27 +271,27 @@ The `call('rightToBlank')` step at instruction 1 is built using the engine's `wi
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s2["id:2"]
-  s3["id:3"]
-  s4["id:4"]
-  s5(("id:1>id:4"))
-  s6["id:6"]
-  s2 -- "* → ·/R" --> s3
-  s3 -- "\* → ·/S" --> s2
-  s3 -- "- → ·/S" --> s0
-  s4 -- "* → ·/S" --> s6
-  s5 -- "* → ·/S" --> s2
-  s5 -. onHalt .-> s4
-  s6 -- "* → */S" --> s0
+  s5["rightToBlank::1"]
+  s6["rightToBlank::2"]
+  s7["1~2"]
+  s8(("rightToBlank>1~2"))
+  s9["2"]
+  s5 -- "* → ·/R" --> s6
+  s6 -- "\* → ·/S" --> s5
+  s6 -- "- → ·/S" --> s0
+  s7 -- "* → ·/S" --> s9
+  s8 -- "* → ·/S" --> s5
+  s8 -. onHalt .-> s7
+  s9 -- "* → */S" --> s0
 ```
 
 Reading the engine output:
-- The `id:N` labels are the engine's **auto-assigned state IDs** (a global counter), NOT PostMachine instruction indices. Issue [#67](https://github.com/mellonis/post-machine-js/issues/67) tracks replacing these with instruction-derived names so the labels become user-meaningful (e.g. `1`, `2`, `rightToBlank:2`); for now they're opaque numerics. The `s\d+` node IDs are likewise auto-generated; both kinds of numbers shift between runs.
-- `s5` is the top-level entry — the `id:1>id:4` label is the `withOverrodeHaltState` wrapper notation: state with auto-ID `1` (the underlying subroutine entry before wrapping), with halt overridden to point at state with auto-ID `4` (which is `s4` below).
-- `s2`/`s3` form the subroutine's internal cycle: `s2` is `right` (keep+R), `s3` is `check(1, 3)` (loops back on `*`, exits to halt on blank).
-- The dotted `onHalt` edge `s5 -.→ s4` is the override in action: when control flow reaches the subroutine's halt, the engine pops back to `s4`.
-- `s4` is a routing intermediate; it falls through (keep+S) to `s6`.
-- `s6` is the `mark` instruction (writes `*`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the composite `"rightToBlank>1~2"` for the wrapper at top-level instruction 1. The `s\d+` node IDs are still auto-generated and shift between runs.
+- `s8` is the top-level entry — `"rightToBlank>1~2"` is the `withOverrodeHaltState` wrapper notation: the subroutine entry hopper (named `"rightToBlank"`), with halt overridden to point at the continuation `"1~2"` (which forwards control from instruction 1 to instruction 2).
+- `s5`/`s6` form the subroutine's internal cycle: `s5` is `right` (keep+R), `s6` is `check(1, 3)` (loops back on `*`, exits to halt on blank).
+- The dotted `onHalt` edge `s8 -.→ s7` is the override in action: when control flow reaches the subroutine's halt, the engine pops back to `s7` (the continuation named `"1~2"`).
+- `s7` is the continuation; it falls through (keep+S) to `s9`.
+- `s9` is the `mark` instruction at top-level 2 (writes `*`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
 
 </details>
 
@@ -330,6 +331,63 @@ console.log(extend.tape.symbols.join('')); // ***
 The two helpers have the same shape — a `check`/move/loop pair — with mirrored direction commands. Without subroutines, that loop body appears twice in the top-level program with `right` and `left` swapped; the structural cost is real and `summarize` makes it visible (see [Structural summary](#structural-summary--summarize)).
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
+
+## Naming convention
+
+PostMachine names every state it constructs by instruction index, so `toMermaid` output, `summarize` output, and `MachineState.name` carry user-meaningful information.
+
+**Rules** — given a state's place in the instruction tree, its name is:
+
+| Construct                                       | Top-level                    | Inside subroutine `foo`      |
+|-------------------------------------------------|------------------------------|------------------------------|
+| Atomic instruction at index `N`                 | `"N"`                        | `"foo::N"`                   |
+| Subroutine hopper (entry forwarder)             | `"sub"`                      | `"foo::sub"`                 |
+| Group at instr `O`, inner index `I`             | `"O.I"`                      | `"foo::O.I"`                 |
+| Continuation: from `X` to `Y`                   | `"X~Y"`                      | `"foo::X~foo::Y"`            |
+| Continuation: tail-position                     | `"X~halt"`                   | `"foo::X~halt"`              |
+| Call wrapper composite (engine auto-emits `>`)  | `"sub>X~Y"` / `"sub>X~halt"` | `"foo::sub>foo::X~foo::Y"`   |
+| Group wrapper composite                         | `"O.1>O~Y"` / `"O.1>O~halt"` | `"foo::O.1>foo::O~foo::Y"`   |
+
+**Separators in user-meaningful labels:**
+- `::` — subroutine scope (lexical nesting), like C++/Rust's scope-resolution operator. `foo::bar::1` reads as "instruction 1 inside subroutine `bar`, which is defined inside subroutine `foo`".
+- `.` — group inner-step ordinal. `50.1`, `50.2`, etc. are the sequential commands inside a group at instruction `50`.
+- `~` — continuation. `10~30` reads as "after the wrapper at instruction 10 finishes, forward to instruction 30". Tail-position uses `~halt`.
+- `>` — engine-internal `withOverrodeHaltState` composition (outer state + override target). The engine auto-builds wrapper composites in this shape; user code never writes `>` directly.
+
+User-provided subroutine names are constrained to identifier characters (`/^[A-Z$_][A-Z0-9$_]*$/i`), so none of these separators can collide with user input.
+
+**Reading a wrapper composite.** Example: `"foo>10~40"`.
+
+- Split at `>`: outer = `"foo"` (the subroutine hopper), override = `"10~40"` (the continuation state).
+- Split the override at `~`: caller = `"10"` (the call-site instruction), target = `"40"` (where control resumes).
+
+So `"foo>10~40"` describes: "a wrapper around the `foo` subroutine entry, which on halt forwards from instruction 10 to instruction 40."
+
+For a more complex example, `"outer::inner::deepest>outer::inner::1~halt"`:
+- Outer = `"outer::inner::deepest"` — a deeply-nested subroutine hopper (three levels of lexical nesting).
+- Override = `"outer::inner::1~halt"` — the call site at `outer::inner::1`, tail-position (forwards to halt).
+
+**Quick example.**
+
+```javascript
+const m = new PostMachine({
+  10: call('foo', 30),
+  20: stop,
+  30: stop,
+  foo: { 1: stop },
+});
+// m.initialState.name === "foo>10~30"
+```
+
+### State sharing across structurally-identical instructions
+
+PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
+
+For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching. Issue [#70](https://github.com/mellonis/post-machine-js/issues/70) tracks surfacing a `candidateInstructions` field on the `MachineState` passed to `onStep` / `__onPause` so debuggers can disambiguate without reaching for internals.
+
+### Forward-compatibility with engine v7
+
+Engine v7 (upstream `@turing-machine-js/machine`) plans to change the wrapper composite shape from `A>B` to `A(B)` (paren-based), and will likely forbid `(`, `)`, and `>` in user-provided state names. PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) are reserved by v7, so when the peer-dep bump lands, only the *wrapper composite emit* changes (e.g., `"foo>10~40"` becomes `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — remain unchanged.
 
 ## Introspection and equivalence
 

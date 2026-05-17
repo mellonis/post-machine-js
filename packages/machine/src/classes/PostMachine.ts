@@ -96,11 +96,13 @@ export class PostMachine extends TuringMachine {
     subroutinesDataFromUpperScope = {},
     subroutineInitialStatesFromUpperScope = {},
     calledFromGroup = false,
+    instructionPrefix = '',
   }: {
     instructions: Instructions;
     subroutinesDataFromUpperScope?: Record<string, { reference: Reference; instructions: Instructions }>;
     subroutineInitialStatesFromUpperScope?: Record<string, State>;
     calledFromGroup?: boolean;
+    instructionPrefix?: string;
   }): State {
     const instructionsCopy = { ...instructions };
 
@@ -141,7 +143,7 @@ export class PostMachine extends TuringMachine {
           [ifOtherSymbol]: {
             nextState: localSubroutinesData[subroutineName].reference,
           },
-        }),
+        }, `${instructionPrefix}${subroutineName}`),
       }), {}),
     };
 
@@ -155,6 +157,7 @@ export class PostMachine extends TuringMachine {
         instructions: subroutineInstructions,
         subroutinesDataFromUpperScope: subroutinesData,
         subroutineInitialStatesFromUpperScope: subroutineInitialStates,
+        instructionPrefix: `${instructionPrefix}${subroutineName}::`,
       }));
     });
 
@@ -210,6 +213,7 @@ export class PostMachine extends TuringMachine {
           calledFromGroup,
           blankSymbol: this.#blankSymbol,
           markSymbol: this.#markSymbol,
+          instructionPrefix,
         };
         builtStates.set(String(instructionIndex), (instruction as (context: CommandContext) => State)(context));
       } else if (Array.isArray(instruction)) {
@@ -232,6 +236,7 @@ export class PostMachine extends TuringMachine {
           subroutinesDataFromUpperScope: subroutinesData,
           subroutineInitialStatesFromUpperScope: subroutineInitialStates,
           calledFromGroup: true,
+          instructionPrefix: `${instructionPrefix}${instructionIndex}.`,
         });
 
         let nextState: State | Reference;
@@ -242,11 +247,17 @@ export class PostMachine extends TuringMachine {
           nextState = references[String(list[ix + 1])];
         }
 
+        const callerName = `${instructionPrefix}${instructionIndex}`;
+        const targetName = nextState === haltState
+          ? 'halt'
+          : `${instructionPrefix}${list[ix + 1]}`;
+        const continuationName = `${callerName}~${targetName}`;
+
         builtStates.set(String(instructionIndex), groupState.withOverrodeHaltState(new State({
           [ifOtherSymbol]: {
             nextState,
           },
-        })));
+        }, continuationName)));
       } else {
         throw new Error('invalid instruction');
       }

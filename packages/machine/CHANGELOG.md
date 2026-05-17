@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] - 2026-MM-DD
+
+Instruction-derived state names for everything PostMachine constructs. Foundation for #59 (per-instruction breakpoint API) and #63 (state-by-instruction-label lookup) — both unblocked by this change.
+
+### Added
+
+- All states constructed inside `PostMachine#buildInitialState` now carry an instruction-derived `name`. Previously every state was labeled `id:N` (engine-default auto-counter); now top-level instructions are labeled `"N"`, subroutine body instructions `"<sub>::N"`, group inners `"<outer>.<inner>"`, continuation states `"<caller>~<target>"`, and `withOverrodeHaltState` wrappers compose to e.g. `"foo>10~30"`. (#67)
+- This makes `toMermaid` output, `summarize` output, and `MachineState.name` readable without an external translation step. See the README's "[Naming convention](#naming-convention)" section for the full reference.
+
+### Changed
+
+- Doc-tests in `packages/machine/test/examples.spec.ts` previously used regex shape-pinning (`s\d+\("id:\d+"\)`) because state IDs were a global counter and shifted between test runs. Now that names are deterministic, those assertions pin literal labels (`"rightToBlank>1~2"`, `"10"`, `"20"`, etc.).
+- README's two `<details>` Mermaid blocks (Quick Start example and Subroutine example) updated to show the new instruction-derived labels instead of `id:N` placeholders. Reading-guide bullets updated accordingly.
+
+### Notes
+
+- No engine peer-dep bump — this release ships against `@turing-machine-js/machine ^6.0.0` (unchanged).
+- The `id:N` → instruction-derived naming changes Mermaid output string shapes. Consumers parsing names literally (e.g., `state.name === "some>composite"`) need to update their expectations.
+- Forward-compatibility with engine v7: PostMachine's chosen separators (`::`, `.`, `~`) survive engine v7's planned paren-based wrapper composite ([turing-machine-js#148](https://github.com/mellonis/turing-machine-js/issues/148)) and the likely ban on `(`, `)`, `>` in user-provided names. When the v7 peer-dep bump lands, only the engine-emitted wrapper composite changes shape (`"foo>10~40"` → `"foo(10~40)"`); PostMachine's internally-constructed names stay the same.
+- Round-trip name accumulation through `State.fromGraph` (upstream [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138) / [#139](https://github.com/mellonis/turing-machine-js/issues/139)) is more visible now because composite names are user-meaningful (`"foo>10~20"` accumulating into `"foo>10~20>20"` after a graph round-trip reads as a real bug rather than `id:N` noise). The upstream fix lands in engine v7.
+
+### Migration
+
+No call-site changes required. State names are labels, not load-bearing for execution. Consumers parsing names literally need to update their expectations to the new shapes — see the README's "[Naming convention](#naming-convention)" section.
+
 ## [6.0.0] - 2026-05-10
 
 Lockstep release with `@turing-machine-js/machine` v6 (post-machine-js skipped v5 of its own — this is the first release that crosses to engine v5/v6).

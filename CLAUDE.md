@@ -52,7 +52,7 @@ Key files:
 
 4. **Forward references**: PostMachine uses `Reference` (from the upstream library) so an instruction at index 10 can target index 20 even if 20's state isn't built yet. References are bound after the full instruction list is processed.
 
-5. **Group commands**: some producers throw if called from inside a "group" (`calledFromGroup` flag in `CommandContext`). This relates to PostMachine's grouping feature where multiple commands can be bundled into one logical instruction — see how `check`/`call`/`stop` reject group context.
+5. **Group commands**: some producers throw if called from inside a "group" (`calledFromGroup` flag in `CommandContext`). This relates to PostMachine's grouping feature where multiple commands can be bundled into one logical instruction. Two distinct rules: `check`/`call`/`stop` reject group context unconditionally (regardless of form); the unary commands (`mark`/`erase`/`left`/`right`/`noop`) only reject the *indexed* form (`mark(20)` etc.) inside a group, because the explicit jump conflicts with the group's sequential fall-through semantics.
 
 ## Doc examples must be tested
 
