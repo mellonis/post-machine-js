@@ -199,24 +199,55 @@ PostMachine tracks `registeredStates: Set<State>` — the States that currently 
 
 | Case                                                                  | PostMachine wrapper behavior              |
 |-----------------------------------------------------------------------|-------------------------------------------|
-| `S ∈ registeredStates` AND a registered breakpoint matches `arrivalPath` (and the filter accepts the current symbol/phase) | Fire `onPause(wrappedMachineState)`        |
+| `S ∈ registeredStates` AND a registered breakpoint matches `arrivalPath` (and the filter accepts the current symbol/phase) | Fire `onPause(machineState)`               |
 | `S ∈ registeredStates` AND no registered breakpoint matches arrival   | Silent resume — engine paused due to a sibling instruction's breakpoint sharing this state; this arrival isn't the one the user asked for |
-| `S ∉ registeredStates` (raw `state.debug` set manually via `stateAt`) | Fire `onPause` (raw passthrough — PostMachine's filter is per-state and doesn't apply outside the registry) |
+| `S ∉ registeredStates` (runtime channel: user mutated `state.debug` via `machineState.state` inside `onStep`/`onPause`) | Fire `onPause` (raw passthrough — runtime mutation is an intentional escape hatch, not blocked by the registry) |
 
-This preserves two contracts simultaneously:
+`pm.stateAt` is **not** a source of `state.debug` mutation — it returns a Proxy that blocks the setter (see "Channeling debug config through `setBreakpoint`" below). Only the runtime channel (`machineState.state` inside callbacks) exposes the raw setter; reaching for it is an explicit opt-out of the registry-aware path, intentionally available for advanced runtime introspection.
 
-- **Structured contract:** `setBreakpoint(path)` means "pause on arrival at this path" — even when the underlying state is shared. State-sharing is hidden behind the registry's arrival-aware filter.
-- **Raw contract:** the engine's `state.debug = ...` mutation still works. Consumers who reach for `pm.stateAt(path).debug = ...` directly get every pause forwarded; PostMachine's per-state filter doesn't apply outside the registry.
+The contract is single-channeled for **construction-time** management (`setBreakpoint` only) and dual-channeled for **runtime** dispatch:
 
-The same `onPause` callback serves both contracts. From the consumer's perspective, the callback fires when the engine pauses and reports the arrival via `MachineState`; how they got there is composable in user code (`if (registeredBreakpoints.match(m.arrivalPath)) { ... } else { /* raw pause */ }`).
+- **Construction-time contract:** `setBreakpoint(path)` is the only way to enable `state.debug` for a given State. Returns from `pm.stateAt(path)` are read-only with respect to `debug`. State-sharing is hidden behind the registry's arrival-aware filter.
+- **Runtime contract:** code inside `onStep`/`onPause` can mutate `machineState.state.debug` directly (e.g., "after I see the third mark, enable break"). Pauses on such runtime-enabled States fire `onPause` unfiltered, because no registry entry exists for them.
+
+The same `onPause` callback serves both contracts. From the consumer's perspective, the callback fires when the engine pauses and reports the arrival via `MachineState`; how they got there is composable in user code (`if (registeredBreakpoints.match(m.arrivalPath)) { ... } else { /* runtime-enabled pause */ }`).
 
 `onPause` is awaited; PostMachine's wrapper awaits the user callback before returning control to the engine.
 
-### Interaction with manual `state.debug`
+### Channeling debug config through `setBreakpoint`
 
-If a user gets a State via `pm.stateAt(path)` and sets `state.debug` directly, they bypass PostMachine's breakpoint registry. The State isn't in `registeredStates`, so the wrapper forwards pauses unchanged. `arrivalPath` is still populated correctly. This is the "raw passthrough" row in the table above.
+`pm.stateAt(path)` returns a `Proxy<State>` that blocks all `debug`-related mutations. This funnels every construction-time debug-config request through `setBreakpoint`, which keeps the registry as the authoritative source of state-sharing-aware filtering.
 
-If a user mixes both modes (some breakpoints via `setBreakpoint`, some manual `state.debug` on different states), each state's behavior is determined independently by whether it's in `registeredStates`. The states with registry entries get arrival-aware filtering; the manual ones don't. No mode flag, no global toggle — per-state.
+Two-layer Proxy:
+
+1. **State Proxy.** The outer Proxy wraps the engine's `State` object. All reads forward to the underlying State via `Reflect.get`. The `set` trap throws on the `debug` key with an instructional message:
+
+    ```ts
+    set(target, prop, value) {
+      if (prop === 'debug') {
+        throw new Error(
+          'Use pm.setBreakpoint(path, filter) to enable breakpoints. '
+          + 'Direct state.debug assignment is disabled on objects returned by pm.stateAt().'
+        );
+      }
+      return Reflect.set(target, prop, value);
+    }
+    ```
+
+2. **DebugConfig Proxy.** The State Proxy's `get` trap intercepts reads of the `debug` key. Instead of returning the engine's raw `DebugConfig` instance, it returns a `Proxy<DebugConfig>` whose `set` trap throws on `before`/`after`/any field assignment with the same instructional message. Reads forward to the underlying DebugConfig (so consumers can introspect "what filter is set?"). This catches the chained `pm.stateAt(path).debug.before = true` pattern.
+
+Cache: PostMachine maintains a `Map<State, Proxy<State>>` (and an inner `Map<DebugConfig, Proxy<DebugConfig>>` lazily). Cache key is the underlying engine object, so identity holds:
+
+```ts
+pm.stateAt('10') === pm.stateAt('20')   // true when 10 and 20 share a State (cache returns same Proxy)
+pm.stateAt('10') instanceof State        // true (Proxy preserves prototype chain)
+State.toGraph(pm.stateAt('10'), pm.tapeBlock)  // works (engine sees a State-shaped object)
+```
+
+What's **not** caught by the Proxy:
+
+- `machineState.state.debug = ...` inside `onStep`/`onPause` callbacks. The `machineState.state` field is the bare engine State, not a Proxy. This is the intentional runtime-escape-hatch path discussed in the Pause-wrapper semantics section above.
+- Direct engine access via `pm.initialState.debug = ...` or walking the State graph through `nextState` fields. These bypass `stateAt` entirely. They were already escape hatches before this design and remain so — `pm.stateAt` is the path the design supports; raw access stays raw.
 
 ## #63: Static path resolver
 
@@ -225,12 +256,12 @@ Pure construction-time path-to-State lookup. Independent of runtime behavior.
 ### API
 
 ```ts
-pm.stateAt(path: Path | string): State;            // throws if path is invalid OR doesn't resolve
+pm.stateAt(path: Path | string): State;            // throws if path is invalid OR doesn't resolve; returned object is a Proxy<State>
 pm.hasState(path: Path | string): boolean;          // existence probe, never throws
 pm.candidatesFor(path: Path | string): Path[];      // throws if path is invalid OR doesn't resolve
 ```
 
-- **`stateAt('10')`** returns the `State` object that `references[10]` is bound to (which may be shared with other instructions). Throws for malformed paths AND for well-formed-but-unresolved paths (e.g., `'999'` when no such instruction). Matches PostMachine's idiom: the engine itself throws `'invalid next instruction index'`, `'undefined subroutine'`, etc., on construction-time misuse — `stateAt` follows the same pattern for query-time misuse.
+- **`stateAt('10')`** returns a `Proxy<State>` wrapping the underlying engine State (which may be shared with other instructions via the hash dedup). The Proxy delegates all reads but blocks `debug`-related writes — see the "Channeling debug config through `setBreakpoint`" section in #59 for the two-layer Proxy mechanism. From the consumer's perspective the returned object satisfies `instanceof State` and is usable with `State.toGraph` and other engine utilities; only the `state.debug = ...` (and `state.debug.before = ...`) write paths are blocked, with an error pointing at `pm.setBreakpoint`. Throws for malformed paths AND for well-formed-but-unresolved paths (e.g., `'999'` when no such instruction). Matches PostMachine's idiom: the engine itself throws `'invalid next instruction index'`, `'undefined subroutine'`, etc., on construction-time misuse — `stateAt` follows the same pattern for query-time misuse.
 - **`hasState('10')`** is the existence probe. Returns `true` if the path resolves; `false` for everything else (malformed paths, well-formed-but-unresolved paths, anything that would make `stateAt` throw). Implementation is a trivial try/catch wrapper on `stateAt`. Use this when validating user input in a debugger UI without exception handling.
 - **`candidatesFor('10')`** returns all paths whose references resolve to the same State. For un-shared states: `['10']` (single-element). For shared states: e.g., `['10', '20', '30']`. Same shape as `MachineState.candidatePaths` but computed statically from a Path input. Throws on invalid/unresolved paths (same as `stateAt`).
 
@@ -250,7 +281,9 @@ pm.candidatesFor(path: Path | string): Path[];      // throws if path is invalid
 |------------------------------------------------------------|---------------------------------------------------------|-----------------------------------------------------------------------------------|
 | `setBreakpoint('20')` on State shared with 10              | `state.debug` enabled on shared State; engine pauses on every visit | `onPause` fires only when `arrivalPath = '20'`; silent resume for arrival 10 |
 | `setBreakpoint('10')` AND `setBreakpoint('20')` both       | Same as above (filter union; no new `state.debug` toggle) | `onPause` fires on both arrivals; consumer reads `m.arrivalPath` to discriminate |
-| Manual `pm.stateAt('20').debug = { before: true }`         | Engine pauses on every visit                            | State not in registry → raw passthrough; `onPause` fires for every visit         |
+| `pm.stateAt('20').debug = { before: true }` (caller error) | (never reaches engine — blocked at Proxy)               | Throws with instructional error pointing at `pm.setBreakpoint`                    |
+| `pm.stateAt('20').debug.before = true` (caller error)      | (never reaches engine — blocked at DebugConfig Proxy)   | Throws with instructional error pointing at `pm.setBreakpoint`                    |
+| Inside `onPause`: `machineState.state.debug = { before: true }` (runtime channel) | Engine pauses on every subsequent visit | State not in registry → raw passthrough; `onPause` fires unfiltered for those visits |
 | `pm.stateAt('10') === pm.stateAt('20')`                    | `true` (same physical State)                            | (irrelevant — `stateAt` is the State-graph escape hatch)                          |
 | `MachineState.arrivalPath`                          | (engine doesn't track this)                             | Always the just-followed reference's path                                         |
 | `MachineState.candidatePaths`                       | (engine doesn't track this)                             | `['10', '20']` for shared, `['30']` for un-shared                                 |
