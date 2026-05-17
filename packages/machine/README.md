@@ -383,7 +383,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching.
+For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching. Issue [#70](https://github.com/mellonis/post-machine-js/issues/70) tracks surfacing a `candidateInstructions` field on the `MachineState` passed to `onStep` / `__onPause` so debuggers can disambiguate without reaching for internals.
 
 ### Forward-compatibility with engine v7
 
