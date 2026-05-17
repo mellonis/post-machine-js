@@ -71,6 +71,50 @@ function collectNames(machine: PostMachine): Set<string> {
   return names;
 }
 
+describe('PostMachine — group states and wrapper composite', () => {
+  test('group inner states use "<outer>.<inner>" naming', () => {
+    const machine = new PostMachine({
+      50: [right, mark, erase],
+      60: stop,
+    });
+    // The initialState is the group wrapper at instr 50.
+    // Composite: "50.1>50~60" (first inner of group ">" continuation from 50 to 60).
+    expect(machine.initialState.name).toBe('50.1>50~60');
+
+    const names = collectNames(machine);
+    // '50.1' is subsumed into the composite wrapper name '50.1>50~60' and
+    // does not appear as a separate graph node.
+    expect(names.has('50.1>50~60')).toBe(true);
+    expect(names.has('50.2')).toBe(true);
+    expect(names.has('50.3')).toBe(true);
+    // 'stop' maps to haltState singleton — no separate named node for instruction 60.
+    expect(names.has('50~60')).toBe(true);
+  });
+
+  test('tail-position group wrapper uses "halt" continuation target', () => {
+    const machine = new PostMachine({
+      50: [right, mark],
+    });
+    expect(machine.initialState.name).toBe('50.1>50~halt');
+  });
+
+  test('group inside a subroutine uses fully-qualified prefix', () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      foo: {
+        1: [right, mark],
+        2: mark,   // use mark (not stop) — stop is haltState singleton, doesn't create a named state
+      },
+    });
+    const names = collectNames(machine);
+    // 'foo::1.1' is subsumed into the composite wrapper name — not a separate node.
+    expect(names.has('foo::1.1>foo::1~foo::2')).toBe(true);  // group wrapper composite
+    expect(names.has('foo::1.2')).toBe(true);
+    expect(names.has('foo::2')).toBe(true);
+    expect(names.has('foo::1~foo::2')).toBe(true);  // continuation
+  });
+});
+
 describe('PostMachine — subroutine body and hopper names', () => {
   test('subroutine inner states use fully-qualified names', () => {
     // Use mark/right/mark so all three instructions produce real (non-halt) states.
