@@ -414,7 +414,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use `arrivalPath` and `candidatePaths` on the `MachineState` passed to `onStep` / `onPause` — added in v6.2.0 ([#70](https://github.com/mellonis/post-machine-js/issues/70)). See the [MachineState shape](#machinestate-shape-v620) section for details.
+For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from an `onStep` / `onPause` callback (runtime). See [Path-based resolver](#path-based-resolver-v630) and [MachineState shape](#machinestate-shape-v620).
 
 ### Forward-compatibility with engine v7
 
@@ -511,13 +511,105 @@ Each case string is loaded onto a fresh clone of the originating PostMachine's t
 
 The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
 
-## Debugging
+## Path-based resolver (v6.3.0+)
 
-`pm.run()` accepts an `onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached.
+`PostMachine` exposes three construction-time queries for addressing states by instruction path.
 
-For the full debugger surface — per-state runtime-mutable breakpoints (`state.debug.before` / `state.debug.after` filters), the halt-pause (`haltState.debug.before`), and the `run({ debug: boolean })` master switch — operate against the upstream API directly. `machine.initialState` is the entry point: walk the graph from there to attach `state.debug` to specific reachable states. **PostMachine deliberately does not wrap any of this** — the planned breakpoint API will provide a higher-level surface once the design settles.
+```javascript
+import { PostMachine, mark, stop } from '@post-machine-js/machine';
 
-See [Debugging breakpoints](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints) in the upstream README for the complete reference: filter shapes, ordering semantics (per-iter lifecycle is `before → step → after` on the same yield as of engine v6), and the `haltState.debug.after` rejection rule.
+const pm = new PostMachine({ 10: mark, 20: stop });
+
+pm.stateAt('10');               // the State for instruction 10
+pm.hasState('10');              // true
+pm.hasState('999');             // false (never throws)
+pm.candidatesFor('10');         // [{ instructionIndex: 10 }]
+```
+
+Both string and object forms work for paths:
+
+```javascript
+pm.stateAt({ instructionIndex: 10 });
+pm.stateAt({ scope: 'sub', instructionIndex: 1 });
+pm.stateAt({ scope: ['outer', 'inner'], instructionIndex: 1, groupInstructionIndex: 2 });
+```
+
+Returned States are the real engine States — `instanceof State`, usable with `State.toGraph`, `summarize`, and other engine utilities — but with `state.debug` set/get installed by PostMachine (see [Breakpoints](#breakpoints-v630) below).
+
+## Breakpoints (v6.3.0+)
+
+Register pauses by instruction path or by `haltState`:
+
+```javascript
+import { PostMachine, Tape, haltState, mark, right, check, stop } from '@post-machine-js/machine';
+
+const pm = new PostMachine({
+  10: check(20, 30),
+  20: right(10),
+  30: mark,
+  40: stop,
+});
+
+pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
+
+pm.setBreakpoint('30', { before: true });
+
+await pm.run({
+  onPause: (m) => {
+    // m.arrivalPath === { instructionIndex: 30 }
+  },
+});
+```
+
+Filters mirror the engine's `DebugConfig`:
+
+```javascript
+pm.setBreakpoint('10', { before: true });           // pause before every iteration
+pm.setBreakpoint('10', { before: '*' });            // pause only on read '*'
+pm.setBreakpoint('10', { before: ['*', ' '] });     // pause on either symbol
+pm.setBreakpoint('10', { before: true, after: '*' });
+```
+
+Halt breakpoints:
+
+```javascript
+pm.setBreakpoint(haltState, { before: true });       // pause at halt entry
+```
+
+Management:
+
+```javascript
+pm.listBreakpoints();      // returns Breakpoint[]
+pm.clearBreakpoint('10');  // remove a single registration
+pm.clearBreakpoints();     // remove all
+```
+
+**State sharing.** When two instructions share an underlying State (hash dedup), setting a breakpoint on instruction 30 enables `state.debug` on the shared State — meaning the engine pauses on every visit. PostMachine's `onPause` wrapper consults the registry and *only* surfaces the pause when `m.arrivalPath` matches a registered path. Sibling-instruction visits silently resume.
+
+### Lockdown semantics
+
+`pm.setBreakpoint` is the structured channel. Direct `state.debug = X` writes are intercepted: on an un-shared State the assignment redirects to `setBreakpoint` (or `clearBreakpoint` if the value is `null`); on a shared State it throws with the candidate-path list, since the assignment is ambiguous:
+
+```javascript
+const pm = new PostMachine({ 10: mark, 20: stop });
+
+pm.stateAt('10').debug = { before: true };
+// equivalent to pm.setBreakpoint('10', { before: true })
+
+pm.stateAt('10').debug = null;
+// equivalent to pm.clearBreakpoint('10')
+```
+
+Direct writes on `haltState` throw (no PostMachine context for a redirect):
+
+```javascript
+haltState.debug = { before: true };
+// throws — use pm.setBreakpoint(haltState, ...)
+```
+
+This single-channel model preserves a global invariant: `pm.listBreakpoints()` is the source of truth for what will fire `onPause`.
+
+For the underlying engine reference — filter shapes, ordering (`before → step → after` on the same yield as of engine v6), the `haltState.debug.after` rejection — see [Debugging breakpoints](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints) in the upstream README.
 
 ## Links
 

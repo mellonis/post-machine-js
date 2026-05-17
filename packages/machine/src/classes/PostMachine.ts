@@ -22,7 +22,15 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
-import { type Path, comparePathsCanonically } from '../path';
+import { installStateLockdown, withLockdownEscape } from '../lockdown';
+import {
+  type Breakpoint,
+  type BreakpointFilter,
+  type BreakpointTarget,
+  mergeBreakpointFilters,
+  validateBreakpointFilter,
+} from '../breakpoints';
+import { type Path, comparePathsCanonically, formatPath, parsePath } from '../path';
 import type { MachineState } from '../index';
 
 export type PostMachineOptions = {
@@ -35,7 +43,9 @@ export class PostMachine extends TuringMachine {
   #blankSymbol: string;
   #markSymbol: string;
   #stateToCandidatePaths: Map<State, Path[]> = new Map();
+  #pathToState: Map<string, State> = new Map();
   #referenceToPath: Map<Reference, Path> = new Map();
+  #breakpoints: Breakpoint[] = [];
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
     const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
@@ -60,6 +70,17 @@ export class PostMachine extends TuringMachine {
     // Sort each candidate-path list deterministically for stable test assertions.
     for (const paths of this.#stateToCandidatePaths.values()) {
       paths.sort(comparePathsCanonically);
+    }
+
+    // Install the lockdown on every constructed State (except haltState, which is
+    // locked module-globally with halt-specific semantics — it's shared across
+    // PostMachine instances, so per-instance lockdown would clobber across runs).
+    // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
+    // when the State has exactly one candidate path; ambiguous shared States throw.
+    // Iterate over the unique-state keyspace so shared States aren't re-installed.
+    for (const state of this.#stateToCandidatePaths.keys()) {
+      if (state.isHalt) continue;
+      installStateLockdown(state, (value) => this.#onUserDebugWrite(state, value));
     }
   }
 
@@ -92,15 +113,9 @@ export class PostMachine extends TuringMachine {
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
-    // KNOWN LIMITATION: when `state.debug` is set AND both `onStep` and `onPause`
-    // are provided, both callbacks fire on the same iteration. Each invocation advances
-    // `prevState` / `prevJsSymbol` via the tracking logic below. For the next iteration,
-    // arrival derivation in #wrapMachineState uses the "one step behind" tracking values.
-    // The second callback's advance overwrites the first with the same values, which is
-    // benign in the current engine v6 lifecycle, but the tracking is not correctly
-    // "one step behind" if the engine's callback dispatch order changes in a future
-    // engine release. Acceptable for now; revisit alongside the per-instruction
-    // breakpoint API (#59).
+    // Tracking is owned by the always-active internal onStep wrapper (registered
+    // unconditionally even if the user passed only onPause), so prevState advances
+    // every iteration regardless of whether the user's callbacks are invoked.
     const advanceTracking = (raw: EngineMachineState): void => {
       prevState = raw.state;
       prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
@@ -109,17 +124,31 @@ export class PostMachine extends TuringMachine {
     await super.run({
       initialState: this.#initialState,
       stepsLimit,
-      onStep: onStep ? (raw) => {
+      onStep: (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        if (onStep) onStep(wrapped);
         advanceTracking(raw);
-        onStep(wrapped);
-      } : undefined,
+      },
       onPause: onPause ? async (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        advanceTracking(raw);
-        await onPause(wrapped);
+        if (this.#shouldFireOnPause(raw, wrapped)) {
+          await onPause(wrapped);
+        }
       } : undefined,
     });
+  }
+
+  #shouldFireOnPause(raw: EngineMachineState, wrapped: MachineState): boolean {
+    // Halt-arrival: engine pauses on the iteration whose nextState is halt,
+    // when haltState.debug is set. Yielded raw.state is the *previous* user
+    // instruction (e.g., 30 in `30: mark; 40: stop`), never haltState itself.
+    const nextIsHalt = raw.nextState instanceof State && raw.nextState.isHalt;
+    if (nextIsHalt && this.#breakpoints.some((bp) => bp.kind === 'halt')) {
+      return true;
+    }
+    const arrivalKey = formatPath(wrapped.arrivalPath);
+    return this.#breakpoints.some((bp) =>
+      bp.kind === 'instruction' && formatPath(bp.path) === arrivalKey);
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
@@ -390,6 +419,163 @@ export class PostMachine extends TuringMachine {
     return references[instructionIndexList[0]].ref;
   }
 
+  #resolveToState(target: Path | string): { path: Path; state: State } {
+    const parsed: Path = typeof target === 'string'
+      ? parsePath(target)
+      : this.#validatePathObject(target);
+    const key = formatPath(parsed);
+    const state = this.#pathToState.get(key);
+    if (!state) {
+      throw new Error(`path '${key}' does not resolve in this machine`);
+    }
+    return { path: parsed, state };
+  }
+
+  #validatePathObject(p: Path): Path {
+    if (!Number.isInteger(p.instructionIndex) || p.instructionIndex < 1) {
+      throw new Error(`invalid path: instructionIndex must be a positive integer, got ${p.instructionIndex}`);
+    }
+    if (p.groupInstructionIndex !== undefined
+      && (!Number.isInteger(p.groupInstructionIndex) || p.groupInstructionIndex < 1)) {
+      throw new Error(`invalid path: groupInstructionIndex must be a positive integer, got ${p.groupInstructionIndex}`);
+    }
+    if (p.scope !== undefined) {
+      const segs = typeof p.scope === 'string' ? p.scope.split('::') : p.scope;
+      for (const s of segs) {
+        if (!subroutineNameValidator(s)) {
+          throw new Error(`invalid path: scope segment '${s}' is not a valid subroutine name`);
+        }
+      }
+    }
+    // Canonicalize so the registry/listBreakpoints output is shape-stable
+    // regardless of whether the caller passed a string or an object form,
+    // and regardless of whether scope was 'foo::bar' or ['foo', 'bar'].
+    return parsePath(formatPath(p));
+  }
+
+  stateAt(target: Path | string): State {
+    const { state } = this.#resolveToState(target);
+    return state;
+  }
+
+  hasState(target: Path | string): boolean {
+    try {
+      this.#resolveToState(target);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  candidatesFor(target: Path | string): Path[] {
+    const { state } = this.#resolveToState(target);
+    return this.#stateToCandidatePaths.get(state)!;
+  }
+
+  setBreakpoint(target: BreakpointTarget, filter: BreakpointFilter): void {
+    validateBreakpointFilter(filter);
+    const resolved = this.#resolveBreakpointTarget(target);
+    if (resolved.kind === 'instruction') {
+      this.#breakpoints.push({ kind: 'instruction', path: resolved.path, filter });
+      this.#refreshStateDebug(resolved.state);
+    } else {
+      this.#breakpoints.push({ kind: 'halt', filter });
+      this.#refreshHaltDebug();
+    }
+  }
+
+  clearBreakpoint(target: BreakpointTarget): void {
+    const resolved = this.#resolveBreakpointTarget(target);
+    if (resolved.kind === 'instruction') {
+      const key = formatPath(resolved.path);
+      this.#breakpoints = this.#breakpoints.filter(
+        (bp) => !(bp.kind === 'instruction' && formatPath(bp.path) === key),
+      );
+      this.#refreshStateDebug(resolved.state);
+    } else {
+      this.#breakpoints = this.#breakpoints.filter((bp) => bp.kind !== 'halt');
+      this.#refreshHaltDebug();
+    }
+  }
+
+  clearBreakpoints(): void {
+    const instructionStates = new Set<State>();
+    let hadHalt = false;
+    for (const bp of this.#breakpoints) {
+      if (bp.kind === 'instruction') {
+        instructionStates.add(this.#pathToState.get(formatPath(bp.path))!);
+      } else {
+        hadHalt = true;
+      }
+    }
+    this.#breakpoints = [];
+    for (const s of instructionStates) this.#refreshStateDebug(s);
+    if (hadHalt) this.#refreshHaltDebug();
+  }
+
+  listBreakpoints(): Breakpoint[] {
+    return this.#breakpoints.map((bp) => (bp.kind === 'instruction'
+      ? { kind: 'instruction', path: { ...bp.path }, filter: { ...bp.filter } }
+      : { kind: 'halt', filter: { ...bp.filter } }));
+  }
+
+  #resolveBreakpointTarget(target: BreakpointTarget):
+    | { kind: 'instruction'; path: Path; state: State }
+    | { kind: 'halt' }
+  {
+    if (target instanceof State) {
+      if (target.isHalt) {
+        return { kind: 'halt' };
+      }
+      throw new Error(
+        'setBreakpoint accepts a State only for the haltState singleton. '
+        + 'Use a Path or path string for instruction breakpoints.',
+      );
+    }
+    const { path, state } = this.#resolveToState(target);
+    // A path that resolves to haltState (e.g., a `stop` instruction) is treated as
+    // a halt breakpoint — halt is singular, no per-path discrimination.
+    if (state.isHalt) {
+      return { kind: 'halt' };
+    }
+    return { kind: 'instruction', path, state };
+  }
+
+  #refreshStateDebug(state: State): void {
+    const filters = this.#breakpoints
+      .filter((bp): bp is Extract<Breakpoint, { kind: 'instruction' }> =>
+        bp.kind === 'instruction' && this.#pathToState.get(formatPath(bp.path)) === state)
+      .map((bp) => bp.filter);
+    withLockdownEscape(() => {
+      state.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
+    });
+  }
+
+  #refreshHaltDebug(): void {
+    const filters = this.#breakpoints
+      .filter((bp): bp is Extract<Breakpoint, { kind: 'halt' }> => bp.kind === 'halt')
+      .map((bp) => bp.filter);
+    withLockdownEscape(() => {
+      haltState.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
+    });
+  }
+
+  #onUserDebugWrite(state: State, value: unknown): void {
+    const paths = this.#stateToCandidatePaths.get(state)!;
+    if (paths.length > 1) {
+      throw new Error(
+        `Direct state.debug assignment is ambiguous for a State shared by `
+        + `multiple instructions (${paths.map((p) => `'${formatPath(p)}'`).join(', ')}). `
+        + `Use pm.setBreakpoint(<path>, filter) to target a specific instruction.`,
+      );
+    }
+    if (value === null) {
+      this.clearBreakpoint(paths[0]);
+    } else {
+      this.setBreakpoint(paths[0], value as BreakpointFilter);
+    }
+  }
+
   #recordPath(state: State, path: Path): void {
     const existing = this.#stateToCandidatePaths.get(state);
     if (existing) {
@@ -397,5 +583,6 @@ export class PostMachine extends TuringMachine {
     } else {
       this.#stateToCandidatePaths.set(state, [path]);
     }
+    this.#pathToState.set(formatPath(path), state);
   }
 }

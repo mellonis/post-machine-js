@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-MM-DD
+
+Per-instruction breakpoints ([#59](https://github.com/mellonis/post-machine-js/issues/59)) and path-based State resolver ([#63](https://github.com/mellonis/post-machine-js/issues/63)), with a per-State lockdown that funnels every direct `state.debug = X` write through the new registry.
+
+### Added
+
+- **Path-based State resolver:** `pm.stateAt(path)`, `pm.hasState(path)`, `pm.candidatesFor(path)`. Accepts both path strings (`'foo::10.2'`) and object form (`{ scope, instructionIndex, groupInstructionIndex }`). (#63)
+- **Per-instruction breakpoint registry:** `pm.setBreakpoint(target, filter)`, `pm.clearBreakpoint(target)`, `pm.clearBreakpoints()`, `pm.listBreakpoints()`. `target` is `Path | string | State` (the State form is accepted only for `haltState`). Filters mirror the engine's `DebugConfig` shape. (#59)
+- **Construction-time lockdown:** `state.debug = X` on a State returned by `pm.stateAt(...)` or `pm.initialState` is intercepted. For un-shared States (one candidate path), the write transparently redirects to `pm.setBreakpoint(thatPath, X)` (or `pm.clearBreakpoint` when X is `null`). For shared States (multiple candidate paths), the write throws with the candidate-path list, since the assignment is ambiguous.
+- **`haltState` lockdown:** direct `haltState.debug = X` throws — `pm.setBreakpoint(haltState, ...)` is the only channel. The lockdown is installed at module load on the engine's `haltState` singleton.
+- New types exported: `Breakpoint`, `BreakpointFilter`, `BreakpointTarget`.
+- `haltState` is now an explicit named export from `@post-machine-js/machine` (re-exported from the engine).
+
+### Changed
+
+- **Runtime channel collapsed.** The v6.2.0 spec's two-channel model (registry-aware `setBreakpoint` vs. raw `state.debug =` runtime channel inside callbacks) is replaced with a single channel: every `state.debug = X` write, including from inside `onStep`/`onPause`, redirects through the registry. `pm.listBreakpoints()` is the sole source of truth for what will fire `onPause`.
+- **Arrival-aware `onPause` filtering.** When two instructions share an underlying State (hash dedup), the engine pauses on every visit; PostMachine's wrapper only surfaces the pause when `m.arrivalPath` matches a registered breakpoint. Sibling-instruction visits silently resume.
+- **`pm.run()` internal `onStep` is always registered with the engine.** The arrival-tracking state advances every iteration regardless of whether the user provided `onStep`. (Fixes a stale-arrival bug for runs with only `onPause`.)
+
+### Notes
+
+- The lockdown uses `Object.defineProperty` on each constructed State (and on `haltState` once at module load), not a `Proxy`. This was chosen over the originally-specified Proxy approach because engine utilities like `State.toGraph(state, ...)` read TS-downleveled private fields directly off their argument via `__classPrivateFieldGet`, which fails on a Proxy. The defineProperty approach leaves States bare so engine utilities continue to work.
+- Each State knows its PostMachine context via the redirect closure; multiple PostMachine instances each install their own lockdown on their States. `haltState` is shared across instances and is locked module-globally.
+- The graph-walk escape (`pm.stateAt('10').getNextStateForSymbol(...)` reaches an un-locked downstream State) remains, tracked in [#72](https://github.com/mellonis/post-machine-js/issues/72) (v7 territory alongside the engine peer-bump).
+
+### Migration
+
+- Direct `machine.initialState.debug = { before: true }` now redirects to `pm.setBreakpoint(<entry-path>, { before: true })` automatically. Existing code keeps working; the registry just becomes visible to `pm.listBreakpoints()`.
+- For shared-State direct writes, switch to `pm.setBreakpoint(<specific-path>, ...)` — the redirect throws with the candidate-path list to surface the ambiguity.
+- `haltState.debug = X` no longer works as a direct setter; use `pm.setBreakpoint(haltState, X)`.
+
 ## [6.2.0] - 2026-MM-DD
 
 Foundation for #59 (per-instruction breakpoints) and #63 (state-by-instruction-label lookup). Extends the runtime callback shape with instruction-level context derived from the v6.1.0 naming convention.
