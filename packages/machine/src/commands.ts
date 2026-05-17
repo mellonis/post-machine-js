@@ -49,6 +49,7 @@ function callCommandStateProducer(this: { subroutineName: string; nextInstructio
   states,
   subroutineInitialStates,
   calledFromGroup,
+  instructionPrefix,
 }: CommandContext): State {
   const { subroutineName } = this;
 
@@ -97,11 +98,17 @@ function callCommandStateProducer(this: { subroutineName: string; nextInstructio
     return states.get(hash)!;
   }
 
+  const callerName = `${instructionPrefix}${instructionIndex}`;
+  const targetName = nextState === haltState
+    ? 'halt'
+    : `${instructionPrefix}${boundNextInstructionIndex}`;
+  const continuationName = `${callerName}~${targetName}`;
+
   const state = subroutineInitialStates[subroutineName].withOverrodeHaltState(new State({
     [ifOtherSymbol]: {
       nextState,
     },
-  }));
+  }, continuationName));
 
   states.set(hash, state);
 

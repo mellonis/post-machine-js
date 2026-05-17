@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   PostMachine,
-  check, erase, left, mark, noop, right, stop,
+  call, check, erase, left, mark, noop, right, stop,
 } from '../src/index';
 
 describe('PostMachine — top-level atomic-command names', () => {
@@ -29,5 +29,37 @@ describe('PostMachine — top-level atomic-command names', () => {
       60: stop,
     });
     expect(machine.initialState.name).toBe('10');
+  });
+});
+
+describe('PostMachine — top-level call wrapper names (continuation only)', () => {
+  test('call wrapper composite contains the continuation "10~30"', () => {
+    const machine = new PostMachine({
+      10: call('foo', 30),
+      20: stop,
+      30: stop,
+      foo: { 1: stop },
+    });
+    // After Task 3 (this task), the continuation is named "10~30" but the
+    // hopper is still "id:N" (Task 4 names the hopper). So the wrapper composite
+    // is `${hopperName}>10~30` — we only assert the continuation part is present.
+    expect(machine.initialState.name).toMatch(/^id:\d+>10~30$/);
+  });
+
+  test('tail-position call wrapper composite contains "10~halt"', () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      foo: { 1: stop },
+    });
+    expect(machine.initialState.name).toMatch(/^id:\d+>10~halt$/);
+  });
+
+  test('call falling through to the next sequential instruction', () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      20: stop,
+      foo: { 1: stop },
+    });
+    expect(machine.initialState.name).toMatch(/^id:\d+>10~20$/);
   });
 });
