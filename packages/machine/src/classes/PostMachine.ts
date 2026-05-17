@@ -22,7 +22,14 @@ import {
   call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
-import { wrapStateForLockdown } from '../lockdown';
+import { installStateLockdown, withLockdownEscape } from '../lockdown';
+import {
+  type Breakpoint,
+  type BreakpointFilter,
+  type BreakpointTarget,
+  mergeBreakpointFilters,
+  validateBreakpointFilter,
+} from '../breakpoints';
 import { type Path, comparePathsCanonically, formatPath, parsePath } from '../path';
 import type { MachineState } from '../index';
 
@@ -38,7 +45,7 @@ export class PostMachine extends TuringMachine {
   #stateToCandidatePaths: Map<State, Path[]> = new Map();
   #pathToState: Map<string, State> = new Map();
   #referenceToPath: Map<Reference, Path> = new Map();
-  #stateProxyCache: Map<State, State> = new Map();
+  #breakpoints: Breakpoint[] = [];
 
   constructor(instructions: Instructions = {}, options: PostMachineOptions = {}) {
     const blankSymbol = options.blankSymbol ?? defaultBlankSymbol;
@@ -63,6 +70,17 @@ export class PostMachine extends TuringMachine {
     // Sort each candidate-path list deterministically for stable test assertions.
     for (const paths of this.#stateToCandidatePaths.values()) {
       paths.sort(comparePathsCanonically);
+    }
+
+    // Install the lockdown on every constructed State (except haltState, which is
+    // locked module-globally with halt-specific semantics — it's shared across
+    // PostMachine instances, so per-instance lockdown would clobber across runs).
+    // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
+    // when the State has exactly one candidate path; ambiguous shared States throw.
+    // Iterate over the unique-state keyspace so shared States aren't re-installed.
+    for (const state of this.#stateToCandidatePaths.keys()) {
+      if (state.isHalt) continue;
+      installStateLockdown(state, (value) => this.#onUserDebugWrite(state, value));
     }
   }
 
@@ -429,7 +447,7 @@ export class PostMachine extends TuringMachine {
 
   stateAt(target: Path | string): State {
     const { state } = this.#resolveToState(target);
-    return wrapStateForLockdown(state, this.#stateProxyCache);
+    return state;
   }
 
   hasState(target: Path | string): boolean {
@@ -444,6 +462,111 @@ export class PostMachine extends TuringMachine {
   candidatesFor(target: Path | string): Path[] {
     const { state } = this.#resolveToState(target);
     return this.#stateToCandidatePaths.get(state)!;
+  }
+
+  setBreakpoint(target: BreakpointTarget, filter: BreakpointFilter): void {
+    validateBreakpointFilter(filter);
+    const resolved = this.#resolveBreakpointTarget(target);
+    if (resolved.kind === 'instruction') {
+      this.#breakpoints.push({ kind: 'instruction', path: resolved.path, filter });
+      this.#refreshStateDebug(resolved.state);
+    } else {
+      this.#breakpoints.push({ kind: 'halt', filter });
+      this.#refreshHaltDebug();
+    }
+  }
+
+  clearBreakpoint(target: BreakpointTarget): void {
+    const resolved = this.#resolveBreakpointTarget(target);
+    if (resolved.kind === 'instruction') {
+      const key = formatPath(resolved.path);
+      this.#breakpoints = this.#breakpoints.filter(
+        (bp) => !(bp.kind === 'instruction' && formatPath(bp.path) === key),
+      );
+      this.#refreshStateDebug(resolved.state);
+    } else {
+      this.#breakpoints = this.#breakpoints.filter((bp) => bp.kind !== 'halt');
+      this.#refreshHaltDebug();
+    }
+  }
+
+  clearBreakpoints(): void {
+    const instructionStates = new Set<State>();
+    let hadHalt = false;
+    for (const bp of this.#breakpoints) {
+      if (bp.kind === 'instruction') {
+        const s = this.#pathToState.get(formatPath(bp.path));
+        if (s) instructionStates.add(s);
+      } else {
+        hadHalt = true;
+      }
+    }
+    this.#breakpoints = [];
+    for (const s of instructionStates) this.#refreshStateDebug(s);
+    if (hadHalt) this.#refreshHaltDebug();
+  }
+
+  listBreakpoints(): Breakpoint[] {
+    return this.#breakpoints.map((bp) => (bp.kind === 'instruction'
+      ? { kind: 'instruction', path: { ...bp.path }, filter: { ...bp.filter } }
+      : { kind: 'halt', filter: { ...bp.filter } }));
+  }
+
+  #resolveBreakpointTarget(target: BreakpointTarget):
+    | { kind: 'instruction'; path: Path; state: State }
+    | { kind: 'halt' }
+  {
+    if (target instanceof State) {
+      if (target.isHalt) {
+        return { kind: 'halt' };
+      }
+      throw new Error(
+        'setBreakpoint accepts a State only for the haltState singleton. '
+        + 'Use a Path or path string for instruction breakpoints.',
+      );
+    }
+    const { path, state } = this.#resolveToState(target);
+    // A path that resolves to haltState (e.g., a `stop` instruction) is treated as
+    // a halt breakpoint — halt is singular, no per-path discrimination.
+    if (state.isHalt) {
+      return { kind: 'halt' };
+    }
+    return { kind: 'instruction', path, state };
+  }
+
+  #refreshStateDebug(state: State): void {
+    const filters = this.#breakpoints
+      .filter((bp): bp is Extract<Breakpoint, { kind: 'instruction' }> =>
+        bp.kind === 'instruction' && this.#pathToState.get(formatPath(bp.path)) === state)
+      .map((bp) => bp.filter);
+    withLockdownEscape(() => {
+      state.debug = filters.length > 0 ? mergeBreakpointFilters(filters) : null;
+    });
+  }
+
+  #refreshHaltDebug(): void {
+    const filters = this.#breakpoints
+      .filter((bp): bp is Extract<Breakpoint, { kind: 'halt' }> => bp.kind === 'halt')
+      .map((bp) => bp.filter);
+    withLockdownEscape(() => {
+      haltState.debug = filters.length > 0 ? mergeBreakpointFilters(filters) : null;
+    });
+  }
+
+  #onUserDebugWrite(state: State, value: unknown): void {
+    const paths = this.#stateToCandidatePaths.get(state)!;
+    if (paths.length > 1) {
+      throw new Error(
+        `Direct state.debug assignment is ambiguous for a State shared by `
+        + `multiple instructions (${paths.map((p) => `'${formatPath(p)}'`).join(', ')}). `
+        + `Use pm.setBreakpoint(<path>, filter) to target a specific instruction.`,
+      );
+    }
+    if (value === null) {
+      this.clearBreakpoint(paths[0]);
+    } else {
+      this.setBreakpoint(paths[0], value as BreakpointFilter);
+    }
   }
 
   #recordPath(state: State, path: Path): void {

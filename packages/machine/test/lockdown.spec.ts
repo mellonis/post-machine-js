@@ -1,84 +1,107 @@
 import { describe, expect, test } from 'vitest';
 import { State, ifOtherSymbol, haltState } from '@turing-machine-js/machine';
-import { wrapStateForLockdown } from '../src/lockdown';
+import {
+  installStateLockdown,
+  installHaltLockdown,
+  withLockdownEscape,
+} from '../src/lockdown';
 
-describe('wrapStateForLockdown', () => {
+describe('installStateLockdown', () => {
   function makeState(): State {
     return new State({ [ifOtherSymbol]: { nextState: haltState } }, 'test-state');
   }
 
-  test('reads pass through to the underlying State', () => {
+  test('blocks direct writes outside the escape, invoking the redirect handler', () => {
     const s = makeState();
-    const cache = new Map<State, State>();
-    const wrapped = wrapStateForLockdown(s, cache);
-    expect(wrapped.name).toBe('test-state');
-    expect(wrapped.id).toBe(s.id);
-  });
-
-  test('preserves instanceof State', () => {
-    const s = makeState();
-    const wrapped = wrapStateForLockdown(s, new Map());
-    expect(wrapped).toBeInstanceOf(State);
-  });
-
-  test('cache returns the same Proxy for the same underlying State', () => {
-    const s = makeState();
-    const cache = new Map<State, State>();
-    const w1 = wrapStateForLockdown(s, cache);
-    const w2 = wrapStateForLockdown(s, cache);
-    expect(w1).toBe(w2);
-  });
-
-  test('setting .debug throws with instructional error', () => {
-    const wrapped = wrapStateForLockdown(makeState(), new Map());
-    expect(() => {
-      (wrapped as unknown as { debug: unknown }).debug = { before: true };
-    }).toThrow(/setBreakpoint/);
-  });
-
-  test('setting .debug.before throws with instructional error', () => {
-    const s = makeState();
+    let received: unknown = undefined;
+    installStateLockdown(s, (v) => { received = v; });
     s.debug = { before: true };
-    const wrapped = wrapStateForLockdown(s, new Map());
+    expect(received).toEqual({ before: true });
+  });
+
+  test('redirect handler receives null on clear', () => {
+    const s = makeState();
+    let received: unknown = 'unset';
+    installStateLockdown(s, (v) => { received = v; });
+    s.debug = null;
+    expect(received).toBeNull();
+  });
+
+  test('redirect handler can throw to reject ambiguous shared-state writes', () => {
+    const s = makeState();
+    installStateLockdown(s, () => {
+      throw new Error('ambiguous');
+    });
     expect(() => {
-      (wrapped.debug as unknown as { before: boolean }).before = false;
-    }).toThrow(/setBreakpoint/);
+      s.debug = { before: true };
+    }).toThrow(/ambiguous/);
   });
 
-  test('setting .debug.after throws with instructional error', () => {
+  test('writes inside withLockdownEscape delegate to the engine setter', () => {
     const s = makeState();
-    s.debug = { after: true };
-    const wrapped = wrapStateForLockdown(s, new Map());
+    installStateLockdown(s, () => {
+      throw new Error('should not be called');
+    });
+    withLockdownEscape(() => {
+      s.debug = { before: true };
+    });
+    expect(s.debug?.before).toBe(true);
+  });
+
+  test('reads always pass through to the engine', () => {
+    const s = makeState();
+    installStateLockdown(s, () => undefined);
+    withLockdownEscape(() => {
+      s.debug = { before: true };
+    });
+    expect(s.debug?.before).toBe(true);
+  });
+
+  test('non-debug fields are unaffected', () => {
+    const s = makeState();
+    installStateLockdown(s, () => undefined);
+    expect(s.name).toBe('test-state');
+    expect(typeof s.id).toBe('number');
+    expect(s).toBeInstanceOf(State);
+  });
+
+  test('escape nests correctly', () => {
+    const s = makeState();
+    installStateLockdown(s, () => {
+      throw new Error('should not be called');
+    });
+    withLockdownEscape(() => {
+      withLockdownEscape(() => {
+        s.debug = { before: true };
+      });
+      // After the inner escape ends, the outer is still active.
+      s.debug = null;
+    });
+    expect(s.debug).toBeNull();
+  });
+});
+
+describe('installHaltLockdown', () => {
+  test('user writes throw a halt-specific error', () => {
+    // Note: installHaltLockdown mutates the engine's haltState singleton. We install
+    // once here; later imports of haltState see the locked-down accessor. Tests in
+    // this file run in sequence within one Vitest worker, so the installation
+    // persists across tests in the same file but does not leak across spec files
+    // (each file gets its own module graph).
+    installHaltLockdown(haltState);
     expect(() => {
-      (wrapped.debug as unknown as { after: boolean }).after = false;
-    }).toThrow(/setBreakpoint/);
+      haltState.debug = { before: true };
+    }).toThrow(/setBreakpoint\(haltState/);
   });
 
-  test('reading .debug returns a Proxy that allows reads', () => {
-    const s = makeState();
-    s.debug = { before: true };
-    const wrapped = wrapStateForLockdown(s, new Map());
-    expect(wrapped.debug?.before).toBe(true);
-  });
-
-  test('reading .debug twice returns the same DebugConfig Proxy', () => {
-    const s = makeState();
-    s.debug = { before: true };
-    const wrapped = wrapStateForLockdown(s, new Map());
-    expect(wrapped.debug).toBe(wrapped.debug);
-  });
-
-  test('reading .debug returns null when underlying debug is null', () => {
-    // Covers the falsy branch of the get trap's `value && typeof value === 'object'` guard,
-    // which the breakpoints suite exercises only indirectly.
-    const wrapped = wrapStateForLockdown(makeState(), new Map());
-    expect(wrapped.debug).toBeNull();
-  });
-
-  test('writes to non-debug fields forward to the underlying State', () => {
-    const s = makeState();
-    const wrapped = wrapStateForLockdown(s, new Map());
-    (wrapped as unknown as Record<string, unknown>)['custom'] = 42;
-    expect((s as unknown as Record<string, unknown>)['custom']).toBe(42);
+  test('escape allows internal writes to haltState', () => {
+    withLockdownEscape(() => {
+      haltState.debug = { before: true };
+    });
+    expect(haltState.debug?.before).toBe(true);
+    // Clear so other tests in this file/run aren't affected.
+    withLockdownEscape(() => {
+      haltState.debug = null;
+    });
   });
 });

@@ -55,20 +55,34 @@ describe('pm.stateAt — wrapped Proxy semantics', () => {
     expect(pm.stateAt('10')).toBeInstanceOf(State);
   });
 
-  test('debug write throws with instructional error', () => {
+  test('debug write on an un-shared State redirects to setBreakpoint', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
-    expect(() => {
-      pm.stateAt('10').debug = { before: true };
-    }).toThrow(/setBreakpoint/);
+    pm.stateAt('10').debug = { before: true };
+    expect(pm.listBreakpoints()).toEqual([
+      { kind: 'instruction', path: { instructionIndex: 10 }, filter: { before: true } },
+    ]);
   });
 
-  test('cache returns same Proxy across calls', () => {
+  test('debug write of null clears the registered breakpoint', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    pm.setBreakpoint('10', { before: true });
+    pm.stateAt('10').debug = null;
+    expect(pm.listBreakpoints()).toEqual([]);
+  });
+
+  test('debug write on a shared State throws with the candidate list', () => {
+    const pm = new PostMachine({ 10: mark(40), 20: stop, 30: mark(40), 40: stop });
+    expect(() => {
+      pm.stateAt('10').debug = { before: true };
+    }).toThrow(/ambiguous.*'10'.*'30'/);
+  });
+
+  test('repeated stateAt returns the same bare State', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
     expect(pm.stateAt('10')).toBe(pm.stateAt('10'));
   });
 
-  test('shared-state paths return same Proxy', () => {
-    // 10 and 30 share a State via hash dedup (both are `mark` with the same next).
+  test('shared-state paths return the same bare State', () => {
     const pm = new PostMachine({ 10: mark(40), 20: stop, 30: mark(40), 40: stop });
     expect(pm.stateAt('10')).toBe(pm.stateAt('30'));
   });
@@ -160,3 +174,4 @@ describe('pm.candidatesFor', () => {
     expect(() => pm.candidatesFor('999')).toThrow();
   });
 });
+
