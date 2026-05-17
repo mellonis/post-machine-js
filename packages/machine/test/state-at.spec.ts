@@ -104,4 +104,59 @@ describe('pm.stateAt — rejections', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
     expect(() => pm.stateAt({ instructionIndex: 0 })).toThrow(/positive integer/i);
   });
+
+  test('zero groupInstructionIndex on object form is rejected', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(() => pm.stateAt({ instructionIndex: 10, groupInstructionIndex: 0 }))
+      .toThrow(/groupInstructionIndex must be a positive integer/i);
+  });
+
+  test('invalid scope segment on object form is rejected', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(() => pm.stateAt({ scope: '1invalid', instructionIndex: 1 }))
+      .toThrow(/not a valid subroutine name/i);
+  });
+});
+
+describe('pm.hasState', () => {
+  test('returns true for a resolved path', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(pm.hasState('10')).toBe(true);
+  });
+
+  test('returns false for an unresolved well-formed path', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(pm.hasState('999')).toBe(false);
+  });
+
+  test('returns false for a malformed string', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(pm.hasState('halt')).toBe(false);
+  });
+
+  test('returns false for an unknown subroutine path', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(pm.hasState('foo::1')).toBe(false);
+  });
+});
+
+describe('pm.candidatesFor', () => {
+  test('un-shared state returns a single-element list', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(pm.candidatesFor('10')).toEqual([{ instructionIndex: 10 }]);
+  });
+
+  test('shared state returns all candidates in canonical order', () => {
+    const pm = new PostMachine({ 10: mark(40), 20: stop, 30: mark(40), 40: stop });
+    expect(pm.candidatesFor('10')).toEqual([
+      { instructionIndex: 10 },
+      { instructionIndex: 30 },
+    ]);
+    expect(pm.candidatesFor('30')).toEqual(pm.candidatesFor('10'));
+  });
+
+  test('throws on unresolved path', () => {
+    const pm = new PostMachine({ 10: mark, 20: stop });
+    expect(() => pm.candidatesFor('999')).toThrow();
+  });
 });

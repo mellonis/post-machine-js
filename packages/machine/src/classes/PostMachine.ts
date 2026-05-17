@@ -432,6 +432,20 @@ export class PostMachine extends TuringMachine {
     return wrapStateForLockdown(state, this.#stateProxyCache);
   }
 
+  hasState(target: Path | string): boolean {
+    try {
+      this.#resolveToState(target);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  candidatesFor(target: Path | string): Path[] {
+    const { state } = this.#resolveToState(target);
+    return this.#stateToCandidatePaths.get(state)!;
+  }
+
   #recordPath(state: State, path: Path): void {
     const existing = this.#stateToCandidatePaths.get(state);
     if (existing) {
