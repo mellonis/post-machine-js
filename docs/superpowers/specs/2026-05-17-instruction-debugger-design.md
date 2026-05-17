@@ -89,17 +89,35 @@ Object-form Path validation at API entry points (e.g., `pm.stateAt`, `pm.setBrea
 
 Malformed objects/strings throw at the API entry. Well-formed paths that don't resolve in the current machine (e.g., `pm.stateAt({ instructionIndex: 999 })` when no such instruction exists) also throw — see the `#63` section's edge-case table for the full list. For exception-free probing, use the paired `hasState(path)` query.
 
-## #70: WrappedMachineState (primitive)
+## #70: MachineState extension (primitive)
 
-PostMachine's `run`/`runStepByStep` wrap the upstream `MachineState` to add instruction-level context.
+The `MachineState` type re-exported from `@post-machine-js/machine` is extended with two PostMachine-flavored fields. The engine's `MachineState` continues to be re-exported under the same name, but with the extension applied. Consumers importing `MachineState` from `@post-machine-js/machine` get the extended shape; those importing from `@turing-machine-js/machine` directly get the bare engine shape.
 
 ### Type
 
 ```ts
-type WrappedMachineState = MachineState & {
+// In packages/machine/src/index.ts
+import type { MachineState as EngineMachineState } from '@turing-machine-js/machine';
+
+export type MachineState = EngineMachineState & {
   arrivalPath: Path;       // canonical: the just-traversed reference's instruction path
   candidatePaths: Path[];  // informational: all paths whose reference points at this State
 };
+```
+
+Consumer usage:
+
+```ts
+// Get the extended type via the post-machine-js re-export:
+import { MachineState, PostMachine, parsePath } from '@post-machine-js/machine';
+
+const m: MachineState = /* from onStep/onPause */;
+m.arrivalPath;       // available
+m.candidatePaths;    // available
+m.state;             // also available (inherited from EngineMachineState)
+
+// If a consumer also needs the bare engine type alongside, they alias one of the imports:
+import type { MachineState as EngineMachineState } from '@turing-machine-js/machine';
 ```
 
 - **`arrivalPath`** disambiguates state sharing at runtime. When two instructions share a State via hash dedup, the engine's State is the same object — but the *reference* the engine just followed identifies which instruction the user logically arrived at. `arrivalPath` is built from that reference's instruction index.
@@ -113,14 +131,14 @@ PostMachine maintains a `state → Path[]` reverse map built at construction tim
 
 At runtime, PostMachine wraps the engine's callbacks:
 
-- `onStep(upstreamMachineState)` is intercepted. PostMachine tracks the previous State (the one whose outgoing edge brought control here). The reference that was followed determines `arrivalPath`. The reverse-map lookup yields `candidatePaths`. The wrapper constructs `WrappedMachineState` and forwards to the user's callback.
+- `onStep(upstreamMachineState)` is intercepted. PostMachine tracks the previous State (the one whose outgoing edge brought control here). The reference that was followed determines `arrivalPath`. The reverse-map lookup yields `candidatePaths`. The wrapper constructs `MachineState` and forwards to the user's callback.
 - `onPause` likewise wrapped.
 
 **Tracking the previous State:** PostMachine's wrapper keeps a single mutable reference (the "last seen State") between callback invocations. The engine guarantees `onStep` is called once per applied transition; the wrapper records the State at each fire, so at fire N+1 it knows the State at fire N. The "edge followed" is derived from the predecessor's `#symbolToDataMap` lookup of the symbol that matched (already available in the engine's internal step). For the *first* step, `arrivalPath` follows the first-step convention defined above (the path of the entry instruction whose reference is bound to `initialState`).
 
 ### Runtime API change
 
-`pm.run()` and `pm.runStepByStep()` callback signatures change to receive `WrappedMachineState` instead of bare `MachineState`. This is a breaking change to the experimental `__onPause` and to `onStep` shape, but the additional fields are non-removing — existing consumers reading `state`, `tape`, etc. are unaffected.
+`pm.run()` and `pm.runStepByStep()` callback signatures continue to advertise `MachineState`, but the type now resolves to the extended shape (because PostMachine's re-export overrides the engine's). Existing consumers reading `state`, `tape`, etc. are unaffected — the new fields are additive. Consumers who explicitly imported `MachineState` from `@turing-machine-js/machine` will now see a type mismatch at the boundary and should switch to the `@post-machine-js/machine` re-export (or alias the engine import).
 
 ## #59: Per-instruction breakpoints
 
@@ -147,8 +165,8 @@ pm.clearBreakpoints(): void;
 pm.listBreakpoints(): Breakpoint[];
 
 pm.run({
-  onStep?: (machineState: WrappedMachineState) => void;
-  onPause?: (machineState: WrappedMachineState) => void | Promise<void>;
+  onStep?: (machineState: MachineState) => void;
+  onPause?: (machineState: MachineState) => void | Promise<void>;
   stepsLimit?: number;
 });
 ```
@@ -190,7 +208,7 @@ This preserves two contracts simultaneously:
 - **Structured contract:** `setBreakpoint(path)` means "pause on arrival at this path" — even when the underlying state is shared. State-sharing is hidden behind the registry's arrival-aware filter.
 - **Raw contract:** the engine's `state.debug = ...` mutation still works. Consumers who reach for `pm.stateAt(path).debug = ...` directly get every pause forwarded; PostMachine's per-state filter doesn't apply outside the registry.
 
-The same `onPause` callback serves both contracts. From the consumer's perspective, the callback fires when the engine pauses and reports the arrival via `WrappedMachineState`; how they got there is composable in user code (`if (registeredBreakpoints.match(m.arrivalPath)) { ... } else { /* raw pause */ }`).
+The same `onPause` callback serves both contracts. From the consumer's perspective, the callback fires when the engine pauses and reports the arrival via `MachineState`; how they got there is composable in user code (`if (registeredBreakpoints.match(m.arrivalPath)) { ... } else { /* raw pause */ }`).
 
 `onPause` is awaited; PostMachine's wrapper awaits the user callback before returning control to the engine.
 
@@ -214,7 +232,7 @@ pm.candidatesFor(path: Path | string): Path[];      // throws if path is invalid
 
 - **`stateAt('10')`** returns the `State` object that `references[10]` is bound to (which may be shared with other instructions). Throws for malformed paths AND for well-formed-but-unresolved paths (e.g., `'999'` when no such instruction). Matches PostMachine's idiom: the engine itself throws `'invalid next instruction index'`, `'undefined subroutine'`, etc., on construction-time misuse — `stateAt` follows the same pattern for query-time misuse.
 - **`hasState('10')`** is the existence probe. Returns `true` if the path resolves; `false` for everything else (malformed paths, well-formed-but-unresolved paths, anything that would make `stateAt` throw). Implementation is a trivial try/catch wrapper on `stateAt`. Use this when validating user input in a debugger UI without exception handling.
-- **`candidatesFor('10')`** returns all paths whose references resolve to the same State. For un-shared states: `['10']` (single-element). For shared states: e.g., `['10', '20', '30']`. Same shape as `WrappedMachineState.candidatePaths` but computed statically from a Path input. Throws on invalid/unresolved paths (same as `stateAt`).
+- **`candidatesFor('10')`** returns all paths whose references resolve to the same State. For un-shared states: `['10']` (single-element). For shared states: e.g., `['10', '20', '30']`. Same shape as `MachineState.candidatePaths` but computed statically from a Path input. Throws on invalid/unresolved paths (same as `stateAt`).
 
 ### Edge cases
 
@@ -234,19 +252,19 @@ pm.candidatesFor(path: Path | string): Path[];      // throws if path is invalid
 | `setBreakpoint('10')` AND `setBreakpoint('20')` both       | Same as above (filter union; no new `state.debug` toggle) | `onPause` fires on both arrivals; consumer reads `m.arrivalPath` to discriminate |
 | Manual `pm.stateAt('20').debug = { before: true }`         | Engine pauses on every visit                            | State not in registry → raw passthrough; `onPause` fires for every visit         |
 | `pm.stateAt('10') === pm.stateAt('20')`                    | `true` (same physical State)                            | (irrelevant — `stateAt` is the State-graph escape hatch)                          |
-| `WrappedMachineState.arrivalPath`                          | (engine doesn't track this)                             | Always the just-followed reference's path                                         |
-| `WrappedMachineState.candidatePaths`                       | (engine doesn't track this)                             | `['10', '20']` for shared, `['30']` for un-shared                                 |
+| `MachineState.arrivalPath`                          | (engine doesn't track this)                             | Always the just-followed reference's path                                         |
+| `MachineState.candidatePaths`                       | (engine doesn't track this)                             | `['10', '20']` for shared, `['30']` for un-shared                                 |
 
 ## Public API summary
 
-New exports from `@post-machine-js/machine`:
+New / modified exports from `@post-machine-js/machine`:
 
-- Type `Path`.
-- Type `WrappedMachineState`.
-- Type `BreakpointFilter`.
-- Type `Breakpoint`.
-- Function `parsePath(s: string): Path`.
-- Function `formatPath(p: Path): string`.
+- Type `Path` (new).
+- Type `MachineState` (modified — re-export now resolves to the engine's `MachineState` extended with `arrivalPath` + `candidatePaths`).
+- Type `BreakpointFilter` (new).
+- Type `Breakpoint` (new).
+- Function `parsePath(s: string): Path` (new).
+- Function `formatPath(p: Path): string` (new).
 
 New methods on `PostMachine`:
 
@@ -260,15 +278,15 @@ New methods on `PostMachine`:
 
 Modified methods on `PostMachine`:
 
-- `run(opts)` — callback signatures receive `WrappedMachineState`; rename `__onPause` → `onPause` (drop experimental prefix). Semantics extend the existing `__onPause` with registry-aware filtering: pauses on registered States are filtered by arrival match; pauses on non-registered States (raw `state.debug`) pass through unchanged. Existing `__onPause` consumers see no behavior change after the rename — their states aren't in any registry.
-- `runStepByStep(opts)` — yields `WrappedMachineState`.
+- `run(opts)` — callback signatures receive `MachineState`; rename `__onPause` → `onPause` (drop experimental prefix). Semantics extend the existing `__onPause` with registry-aware filtering: pauses on registered States are filtered by arrival match; pauses on non-registered States (raw `state.debug`) pass through unchanged. Existing `__onPause` consumers see no behavior change after the rename — their states aren't in any registry.
+- `runStepByStep(opts)` — yields `MachineState`.
 
 ## Release shape
 
 Land in dependency order:
 
 1. **#70 first** — primitive layer. Smaller change. Enables #59 and (informationally) #63's `candidatesFor`.
-   - Breaking: callback signatures yield `WrappedMachineState`. Existing readers of `state`/`tape` unaffected; only the field-added shape changes.
+   - Breaking: callback signatures yield `MachineState`. Existing readers of `state`/`tape` unaffected; only the field-added shape changes.
    - Rename `__onPause` → `onPause` (drop experimental prefix). Migration: simple find/replace.
    - Suggested version: **v6.2.0** (minor — additive on a runtime-visible callback shape).
 
@@ -286,7 +304,7 @@ Land in dependency order:
 
 - Conditional breakpoints with predicates. The arrival-match design supports this as a future extension. Concrete v8 shape sketch:
   - Simplify `before`/`after` from `boolean | string | string[]` to just `boolean` (drop the symbol-filter union).
-  - Add a general `when: (machineState: WrappedMachineState) => boolean` predicate that subsumes symbol filtering and adds arbitrary conditions (tape position, iteration count, head value, anything else `machineState` exposes).
+  - Add a general `when: (machineState: MachineState) => boolean` predicate that subsumes symbol filtering and adds arbitrary conditions (tape position, iteration count, head value, anything else `machineState` exposes).
   - PostMachine's `BreakpointFilter` shape can diverge from the engine's `DebugConfig` shape at that point — the engine still needs `before`/`after` as `boolean | string | string[]` for its low-level interface, but PostMachine wraps it. The pause-wrapper layer evaluates `when` against the wrapped state; the engine layer keeps its current shape.
   - This is a v8 (post-machine-js) breaking change. v6.2/v6.3 ships the mirrored shape as-is for compatibility; v8 reshapes the predicate API once PostMachine's surface has earned independence from the engine's.
 - Step-into / step-over / step-out (turing-machine-js#102). Adjacent design space; the `arrivalPath` primitive here is useful infrastructure for that work, but the step-debugger surface itself is an engine concern, not a PostMachine concern.
@@ -297,4 +315,4 @@ Land in dependency order:
 
 - **#59** acceptance — `pm.setBreakpoint(20, { before: true })`, `pm.setBreakpoint('rightToBlank', 2, { after: '*' })`, `pm.clearBreakpoints()`: Covered. `setBreakpoint('20', { before: true })` for top-level instructions; `setBreakpoint('rightToBlank::2', { after: '*' })` for subroutine instructions; `clearBreakpoints()` for batch clear.
 - **#63** acceptance — path-based `machine.stateAt({ ... })`: Covered. Both string and object forms accepted via the union-typed Path.
-- **#70** acceptance — `MachineState` carries instruction context: Covered via `WrappedMachineState.arrivalPath` (canonical) + `candidatePaths` (informational). The `candidateInstructions: number[]` sketch in #70's body is generalized to `candidatePaths: Path[]` to handle subroutines and groups uniformly.
+- **#70** acceptance — `MachineState` carries instruction context: Covered via `MachineState.arrivalPath` (canonical) + `candidatePaths` (informational). The `candidateInstructions: number[]` sketch in #70's body is generalized to `candidatePaths: Path[]` to handle subroutines and groups uniformly.
