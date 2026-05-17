@@ -35,3 +35,4 @@ export {
   summarizePostMachine,
   equivalentPostMachines,
 } from './wrappers';
+export { parsePath, formatPath, type Path } from './path';
