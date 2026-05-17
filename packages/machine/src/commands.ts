@@ -112,7 +112,7 @@ function checkCommandStateProducer(this: {
   nextInstructionIndexIfMarked: number;
   nextInstructionIndexOtherwise: number;
 }, {
-  instructionIndex, references, states, tapeBlock, calledFromGroup, blankSymbol, markSymbol,
+  instructionIndex, references, states, tapeBlock, calledFromGroup, blankSymbol, markSymbol, instructionPrefix,
 }: CommandContext): State {
   if (calledFromGroup) {
     throw new Error('the \'check\' command cannot be used in a group');
@@ -152,7 +152,7 @@ function checkCommandStateProducer(this: {
     [tapeBlock.symbol([blankSymbol])]: {
       nextState: references[String(nextInstructionIndexOtherwise)],
     },
-  });
+  }, `${instructionPrefix}${instructionIndex}`);
 
   states.set(hash, state);
 
@@ -174,7 +174,7 @@ function makeUnaryCommandProducer(
 ): (this: { nextInstructionIndex?: number | symbol }, ctx: CommandContext) => State {
   return function unaryCommandStateProducer(this: { nextInstructionIndex?: number | symbol }, ctx: CommandContext): State {
     const {
-      instructionIndex, nextInstructionIndex, references, states, calledFromGroup,
+      instructionIndex, nextInstructionIndex, references, states, calledFromGroup, instructionPrefix,
     } = ctx;
     let { nextInstructionIndex: boundNextInstructionIndex } = this;
 
@@ -213,7 +213,7 @@ function makeUnaryCommandProducer(
     }
 
     const transition = buildCommand === null ? { nextState } : { command: [buildCommand(ctx)], nextState };
-    const state = new State({ [ifOtherSymbol]: transition });
+    const state = new State({ [ifOtherSymbol]: transition }, `${instructionPrefix}${instructionIndex}`);
 
     states.set(hash, state);
 
