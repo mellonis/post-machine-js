@@ -160,3 +160,74 @@ describe('PostMachine — subroutine body and hopper names', () => {
     expect(names.has('outer::inner::1')).toBe(true);
   });
 });
+
+describe('PostMachine — combined naming scenarios', () => {
+  test('call inside subroutine — both call site and target are fq-prefixed', () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      foo: {
+        1: call('bar'),
+        2: mark,
+        bar: { 1: mark },
+      },
+    });
+    const names = collectNames(machine);
+    // The wrapper inside foo for call('bar') has composite "foo::bar>foo::1~foo::2".
+    // This proves: foo::bar is the hopper name (fq-prefixed nested hopper),
+    // and the continuation foo::1~foo::2 uses foo's prefix for both caller and target.
+    expect(names.has('foo::bar>foo::1~foo::2')).toBe(true);
+    expect(names.has('foo::1~foo::2')).toBe(true);
+    expect(names.has('foo::2')).toBe(true);
+    expect(names.has('foo::bar::1')).toBe(true);
+  });
+
+  test('group inside subroutine — inner indices namespaced', () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      foo: {
+        1: [right, mark],
+        2: mark,
+      },
+    });
+    const names = collectNames(machine);
+    // Group wrapper at foo::1: composite "foo::1.1>foo::1~foo::2".
+    expect(names.has('foo::1.1>foo::1~foo::2')).toBe(true);
+    expect(names.has('foo::1.2')).toBe(true);    // non-first inner — standalone
+    expect(names.has('foo::1~foo::2')).toBe(true); // continuation
+    expect(names.has('foo::2')).toBe(true);      // next instruction in subroutine
+  });
+
+  test('tail call inside subroutine — continuation forwards to halt', () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      foo: {
+        1: call('bar'),
+        bar: { 1: mark },
+      },
+    });
+    const names = collectNames(machine);
+    // Wrapper at foo::1: "foo::bar>foo::1~halt" (tail position inside foo).
+    expect(names.has('foo::bar>foo::1~halt')).toBe(true);
+    expect(names.has('foo::1~halt')).toBe(true);
+    expect(names.has('foo::bar::1')).toBe(true);
+  });
+
+  test('deep nesting: subroutine inside subroutine, fully-qualified names accumulate', () => {
+    const machine = new PostMachine({
+      10: call('outer'),
+      outer: {
+        1: call('inner'),
+        2: mark,
+        inner: {
+          1: call('deepest'),
+          deepest: { 1: mark },
+        },
+      },
+    });
+    const names = collectNames(machine);
+    // Each scope hops accumulate in the prefix.
+    expect(names.has('outer::inner::deepest::1')).toBe(true);
+    // Body inner at outer::inner::1 calls deepest; the call composite there:
+    expect(names.has('outer::inner::deepest>outer::inner::1~halt')).toBe(true);
+  });
+});
