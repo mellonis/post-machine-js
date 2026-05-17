@@ -87,7 +87,7 @@ Object-form Path validation at API entry points (e.g., `pm.stateAt`, `pm.setBrea
 - `groupInstructionIndex`, if present, must be a positive integer.
 - `scope` segments, if present, must each pass the existing `subroutineNameValidator` (the `/^[A-Z$_][A-Z0-9$_]*$/i` regex already used by PostMachine internals).
 
-Malformed objects/strings throw at the API entry. Well-formed paths that don't resolve in the current machine (e.g., `pm.stateAt({ instructionIndex: 999 })` when no such instruction exists) return `undefined`.
+Malformed objects/strings throw at the API entry. Well-formed paths that don't resolve in the current machine (e.g., `pm.stateAt({ instructionIndex: 999 })` when no such instruction exists) also throw — see the `#63` section's edge-case table for the full list. For exception-free probing, use the paired `hasState(path)` query.
 
 ## #70: WrappedMachineState (primitive)
 
@@ -116,7 +116,7 @@ At runtime, PostMachine wraps the engine's callbacks:
 - `onStep(upstreamMachineState)` is intercepted. PostMachine tracks the previous State (the one whose outgoing edge brought control here). The reference that was followed determines `arrivalPath`. The reverse-map lookup yields `candidatePaths`. The wrapper constructs `WrappedMachineState` and forwards to the user's callback.
 - `onPause` likewise wrapped.
 
-**Tracking the previous State:** PostMachine's wrapper keeps a single mutable reference (the "last seen State") between callback invocations. The engine guarantees `onStep` is called once per applied transition; the wrapper records the State at each fire, so at fire N+1 it knows the State at fire N. The "edge followed" is derived from the predecessor's `#symbolToDataMap` lookup of the symbol that matched (already available in the engine's internal step). For the *first* step, `arrivalPath` is the initial state's canonical path (the first entry of its `candidatePaths`).
+**Tracking the previous State:** PostMachine's wrapper keeps a single mutable reference (the "last seen State") between callback invocations. The engine guarantees `onStep` is called once per applied transition; the wrapper records the State at each fire, so at fire N+1 it knows the State at fire N. The "edge followed" is derived from the predecessor's `#symbolToDataMap` lookup of the symbol that matched (already available in the engine's internal step). For the *first* step, `arrivalPath` follows the first-step convention defined above (the path of the entry instruction whose reference is bound to `initialState`).
 
 ### Runtime API change
 
