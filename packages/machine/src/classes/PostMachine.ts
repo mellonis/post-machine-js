@@ -92,6 +92,15 @@ export class PostMachine extends TuringMachine {
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
+    // KNOWN LIMITATION: when `state.debug` is set AND both `onStep` and `__onPause`
+    // are provided, both callbacks fire on the same iteration. Each invocation advances
+    // `prevState` / `prevJsSymbol` via the tracking logic below. For the next iteration,
+    // arrival derivation in #wrapMachineState uses the "one step behind" tracking values.
+    // The second callback's advance overwrites the first with the same values, which is
+    // benign in the current engine v6 lifecycle, but the tracking is not correctly
+    // "one step behind" if the engine's callback dispatch order changes in a future
+    // engine release. Acceptable for now; revisit alongside the per-instruction
+    // breakpoint API (#59).
     const advanceTracking = (raw: EngineMachineState): void => {
       prevState = raw.state;
       prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
