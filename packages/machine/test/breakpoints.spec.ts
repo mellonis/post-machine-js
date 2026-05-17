@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { haltState as engineHaltState } from '@turing-machine-js/machine';
 import {
   PostMachine,
+  Tape,
   haltState,
   mark, right, check, stop,
 } from '../src/index';
@@ -179,6 +180,59 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.clearBreakpoints();
     expect(pm.listBreakpoints()).toEqual([]);
     expect(pm.stateAt('10').debug).toBeNull();
+  });
+});
+
+describe('onPause — registry-aware filtering', () => {
+  test('fires onPause when a registered breakpoint matches arrival', async () => {
+    // (Tape now imported statically above)
+    const pm = new PostMachine({
+      10: check(20, 30),
+      20: right(10),
+      30: mark,
+      40: stop,
+    });
+    pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
+    pm.setBreakpoint('30', { before: true });
+    const paused: number[] = [];
+    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    expect(paused).toContain(30);
+    pm.clearBreakpoints();
+  });
+
+  test('silently resumes when sibling instruction shares the State but did not match arrival', async () => {
+    // (Tape now imported statically above)
+    const pm = new PostMachine({
+      10: mark(40),
+      20: stop,
+      30: mark(40),
+      40: stop,
+    });
+    pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: [' '] }));
+    // 10 and 30 share a State. Set breakpoint only on 30; the program enters at 10
+    // (the entry instruction). Engine pauses on the shared State at arrival 10,
+    // but PostMachine's wrapper sees arrival=10, no registered match → silent.
+    pm.setBreakpoint('30', { before: true });
+    const paused: number[] = [];
+    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    expect(paused).toEqual([]);
+    pm.clearBreakpoints();
+  });
+
+  test('halt breakpoint fires onPause at halt entry', async () => {
+    // (Tape now imported statically above)
+    const pm = new PostMachine({
+      10: check(20, 30),
+      20: right(10),
+      30: mark,
+      40: stop,
+    });
+    pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
+    pm.setBreakpoint(haltState, { before: true });
+    const paused: number[] = [];
+    await pm.run({ onPause: () => { paused.push(1); } });
+    expect(paused.length).toBeGreaterThan(0);
+    pm.clearBreakpoints();
   });
 });
 

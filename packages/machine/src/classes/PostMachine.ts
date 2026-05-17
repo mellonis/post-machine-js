@@ -113,15 +113,9 @@ export class PostMachine extends TuringMachine {
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
-    // KNOWN LIMITATION: when `state.debug` is set AND both `onStep` and `onPause`
-    // are provided, both callbacks fire on the same iteration. Each invocation advances
-    // `prevState` / `prevJsSymbol` via the tracking logic below. For the next iteration,
-    // arrival derivation in #wrapMachineState uses the "one step behind" tracking values.
-    // The second callback's advance overwrites the first with the same values, which is
-    // benign in the current engine v6 lifecycle, but the tracking is not correctly
-    // "one step behind" if the engine's callback dispatch order changes in a future
-    // engine release. Acceptable for now; revisit alongside the per-instruction
-    // breakpoint API (#59).
+    // Tracking is owned by the always-active internal onStep wrapper (registered
+    // unconditionally even if the user passed only onPause), so prevState advances
+    // every iteration regardless of whether the user's callbacks are invoked.
     const advanceTracking = (raw: EngineMachineState): void => {
       prevState = raw.state;
       prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
@@ -130,17 +124,31 @@ export class PostMachine extends TuringMachine {
     await super.run({
       initialState: this.#initialState,
       stepsLimit,
-      onStep: onStep ? (raw) => {
+      onStep: (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        if (onStep) onStep(wrapped);
         advanceTracking(raw);
-        onStep(wrapped);
-      } : undefined,
+      },
       onPause: onPause ? async (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        advanceTracking(raw);
-        await onPause(wrapped);
+        if (this.#shouldFireOnPause(raw, wrapped)) {
+          await onPause(wrapped);
+        }
       } : undefined,
     });
+  }
+
+  #shouldFireOnPause(raw: EngineMachineState, wrapped: MachineState): boolean {
+    // Halt-arrival: engine pauses on the iteration whose nextState is halt,
+    // when haltState.debug is set. Yielded raw.state is the *previous* user
+    // instruction (e.g., 30 in `30: mark; 40: stop`), never haltState itself.
+    const nextIsHalt = raw.nextState instanceof State && raw.nextState.isHalt;
+    if (nextIsHalt && this.#breakpoints.some((bp) => bp.kind === 'halt')) {
+      return true;
+    }
+    const arrivalKey = formatPath(wrapped.arrivalPath);
+    return this.#breakpoints.some((bp) =>
+      bp.kind === 'instruction' && formatPath(bp.path) === arrivalKey);
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
@@ -540,7 +548,7 @@ export class PostMachine extends TuringMachine {
         bp.kind === 'instruction' && this.#pathToState.get(formatPath(bp.path)) === state)
       .map((bp) => bp.filter);
     withLockdownEscape(() => {
-      state.debug = filters.length > 0 ? mergeBreakpointFilters(filters) : null;
+      state.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
     });
   }
 
@@ -549,7 +557,7 @@ export class PostMachine extends TuringMachine {
       .filter((bp): bp is Extract<Breakpoint, { kind: 'halt' }> => bp.kind === 'halt')
       .map((bp) => bp.filter);
     withLockdownEscape(() => {
-      haltState.debug = filters.length > 0 ? mergeBreakpointFilters(filters) : null;
+      haltState.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
     });
   }
 
