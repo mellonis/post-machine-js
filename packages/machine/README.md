@@ -114,7 +114,7 @@ The runtime. Subclasses `TuringMachine` from `@turing-machine-js/machine`: the c
 **Constructor.** `new PostMachine(instructions, options?)` — `instructions` is the numbered-instruction map (with optional string-keyed subroutine groups); `options` is `{ blankSymbol?, markSymbol? }` (see [Custom symbols](#custom-symbols)).
 
 **Methods.**
-- `run({ stepsLimit?, onStep?, __onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(m: MachineState)` fires once per applied transition; `__onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
+- `run({ stepsLimit?, onStep?, onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(m: MachineState)` fires once per applied transition; `onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
 - `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`.
 - `replaceTapeWith(newTape)` — swap the active tape. Build the new tape against `machine.tape.alphabet` so symbol identities match the machine's interned alphabet.
 
@@ -383,7 +383,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching. Issue [#70](https://github.com/mellonis/post-machine-js/issues/70) tracks surfacing a `candidateInstructions` field on the `MachineState` passed to `onStep` / `__onPause` so debuggers can disambiguate without reaching for internals.
+For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching. Issue [#70](https://github.com/mellonis/post-machine-js/issues/70) tracks surfacing a `candidateInstructions` field on the `MachineState` passed to `onStep` / `onPause` so debuggers can disambiguate without reaching for internals.
 
 ### Forward-compatibility with engine v7
 
@@ -482,7 +482,7 @@ The bare `equivalentOn` is also re-exported. Use it directly when you need a non
 
 ## Debugging
 
-`pm.run()` accepts an experimental `__onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached. The `__` prefix marks the surface unstable — a higher-level per-instruction breakpoint API is being designed (tracked in [#59](https://github.com/mellonis/post-machine-js/issues/59)) and may rename or restructure this parameter without another major bump.
+`pm.run()` accepts an `onPause?: (s: MachineState) => void | Promise<void>` parameter. It forwards as the upstream engine's `onPause` hook and fires whenever a state with `state.debug` set is reached.
 
 For the full debugger surface — per-state runtime-mutable breakpoints (`state.debug.before` / `state.debug.after` filters), the halt-pause (`haltState.debug.before`), and the `run({ debug: boolean })` master switch — operate against the upstream API directly. `machine.initialState` is the entry point: walk the graph from there to attach `state.debug` to specific reachable states. **PostMachine deliberately does not wrap any of this** — the planned breakpoint API will provide a higher-level surface once the design settles.
 

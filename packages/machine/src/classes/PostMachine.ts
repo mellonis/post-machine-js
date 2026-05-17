@@ -82,17 +82,17 @@ export class PostMachine extends TuringMachine {
   override async run({
     stepsLimit = 1e5,
     onStep,
-    __onPause,
+    onPause,
   }: {
     stepsLimit?: number;
     onStep?: (machineState: MachineState) => void;
-    __onPause?: (machineState: MachineState) => void | Promise<void>;
+    onPause?: (machineState: MachineState) => void | Promise<void>;
   } = {}): Promise<void> {
     let prevState: State | null = null;
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
-    // KNOWN LIMITATION: when `state.debug` is set AND both `onStep` and `__onPause`
+    // KNOWN LIMITATION: when `state.debug` is set AND both `onStep` and `onPause`
     // are provided, both callbacks fire on the same iteration. Each invocation advances
     // `prevState` / `prevJsSymbol` via the tracking logic below. For the next iteration,
     // arrival derivation in #wrapMachineState uses the "one step behind" tracking values.
@@ -114,10 +114,10 @@ export class PostMachine extends TuringMachine {
         advanceTracking(raw);
         onStep(wrapped);
       } : undefined,
-      onPause: __onPause ? async (raw) => {
+      onPause: onPause ? async (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
         advanceTracking(raw);
-        await __onPause(wrapped);
+        await onPause(wrapped);
       } : undefined,
     });
   }
