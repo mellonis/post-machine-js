@@ -284,7 +284,11 @@ Land in dependency order:
 
 ## Out of scope
 
-- Conditional breakpoints with predicates (e.g., `setBreakpoint('10', { when: (machineState) => ... })`). The arrival-match design supports this trivially as future work — add a `when` field to `BreakpointFilter`.
+- Conditional breakpoints with predicates. The arrival-match design supports this as a future extension. Concrete v8 shape sketch:
+  - Simplify `before`/`after` from `boolean | string | string[]` to just `boolean` (drop the symbol-filter union).
+  - Add a general `when: (machineState: WrappedMachineState) => boolean` predicate that subsumes symbol filtering and adds arbitrary conditions (tape position, iteration count, head value, anything else `machineState` exposes).
+  - PostMachine's `BreakpointFilter` shape can diverge from the engine's `DebugConfig` shape at that point — the engine still needs `before`/`after` as `boolean | string | string[]` for its low-level interface, but PostMachine wraps it. The pause-wrapper layer evaluates `when` against the wrapped state; the engine layer keeps its current shape.
+  - This is a v8 (post-machine-js) breaking change. v6.2/v6.3 ships the mirrored shape as-is for compatibility; v8 reshapes the predicate API once PostMachine's surface has earned independence from the engine's.
 - Step-into / step-over / step-out (turing-machine-js#102). Adjacent design space; the `arrivalPath` primitive here is useful infrastructure for that work, but the step-debugger surface itself is an engine concern, not a PostMachine concern.
 - Engine v7 peer-bump (post-machine-js v7.0.0 territory; `withOverrodeHaltState` rename, paren-composite wrapper names).
 - Tracepoints (log without pausing). The `onPause` callback can implement tracepoints in user code today (log and return immediately); no API change needed.
