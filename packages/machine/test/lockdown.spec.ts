@@ -61,10 +61,24 @@ describe('wrapStateForLockdown', () => {
     expect(wrapped.debug?.before).toBe(true);
   });
 
+  test('reading .debug twice returns the same DebugConfig Proxy', () => {
+    const s = makeState();
+    s.debug = { before: true };
+    const wrapped = wrapStateForLockdown(s, new Map());
+    expect(wrapped.debug).toBe(wrapped.debug);
+  });
+
   test('reading .debug returns null when underlying debug is null', () => {
     // Covers the falsy branch of the get trap's `value && typeof value === 'object'` guard,
     // which the breakpoints suite exercises only indirectly.
     const wrapped = wrapStateForLockdown(makeState(), new Map());
     expect(wrapped.debug).toBeNull();
+  });
+
+  test('writes to non-debug fields forward to the underlying State', () => {
+    const s = makeState();
+    const wrapped = wrapStateForLockdown(s, new Map());
+    (wrapped as unknown as Record<string, unknown>)['custom'] = 42;
+    expect((s as unknown as Record<string, unknown>)['custom']).toBe(42);
   });
 });
