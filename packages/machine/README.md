@@ -333,7 +333,7 @@ The two helpers have the same shape — a `check`/move/loop pair — with mirror
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
 
-## MachineState shape (v6.2.0+)
+## MachineState shape (v6.1.0+)
 
 PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState` with two additional fields:
 
@@ -342,7 +342,7 @@ PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState
 | `arrivalPath`     | `Path`   | The instruction path that just transitioned to the current state                          |
 | `candidatePaths`  | `Path[]` | All paths whose references resolve to the current state (informational; multiple for shared states) |
 
-These fields disambiguate state-sharing (the hash-cache dedup from v6.1.0). When two instructions produce structurally-identical transitions, they share a State; `arrivalPath` tells you which instruction the engine just transitioned through, while `candidatePaths` tells you the full sharing set.
+These fields disambiguate state-sharing (the hash-cache dedup). When two instructions produce structurally-identical transitions, they share a State; `arrivalPath` tells you which instruction the engine just transitioned through, while `candidatePaths` tells you the full sharing set.
 
 **Example.**
 
@@ -511,7 +511,7 @@ Each case string is loaded onto a fresh clone of the originating PostMachine's t
 
 The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
 
-## Path-based resolver (v6.3.0+)
+## Path-based resolver (v6.1.0+)
 
 `PostMachine` exposes three construction-time queries for addressing states by instruction path.
 
@@ -536,7 +536,7 @@ pm.stateAt({ scope: ['outer', 'inner'], instructionIndex: 1, groupInstructionInd
 
 Returned States are the real engine States — `instanceof State`, usable with `State.toGraph`, `summarize`, and other engine utilities — but with `state.debug` set/get installed by PostMachine (see [Breakpoints](#breakpoints-v630) below).
 
-## Breakpoints (v6.3.0+)
+## Breakpoints (v6.1.0+)
 
 Register pauses by instruction path or by `haltState`:
 

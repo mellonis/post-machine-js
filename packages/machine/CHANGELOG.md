@@ -4,14 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.3.0] - 2026-MM-DD
+## [6.1.0] - 2026-05-18
 
-Per-instruction breakpoints ([#59](https://github.com/mellonis/post-machine-js/issues/59)) and path-based State resolver ([#63](https://github.com/mellonis/post-machine-js/issues/63)), with a per-State lockdown that funnels every direct `state.debug = X` write through the new registry.
+The v6 debugger surface lands, plus the naming foundation it builds on. Bundles three threads of work that landed on master between v6.0.0 and this release: instruction-derived state names ([#67](https://github.com/mellonis/post-machine-js/issues/67)), runtime-callback instruction context ([#70](https://github.com/mellonis/post-machine-js/issues/70)), and per-instruction breakpoints + path-based State resolver + per-State lockdown ([#59](https://github.com/mellonis/post-machine-js/issues/59), [#63](https://github.com/mellonis/post-machine-js/issues/63)).
 
 ### Added
 
-- **Path-based State resolver:** `pm.stateAt(path)`, `pm.hasState(path)`, `pm.candidatesFor(path)`. Accepts both path strings (`'foo::10.2'`) and object form (`{ scope, instructionIndex, groupInstructionIndex }`). (#63)
-- **Per-instruction breakpoint registry:** `pm.setBreakpoint(target, filter)`, `pm.clearBreakpoint(target)`, `pm.clearBreakpoints()`, `pm.listBreakpoints()`. `target` is `Path | string | State` (the State form is accepted only for `haltState`). Filters mirror the engine's `DebugConfig` shape. (#59)
+#### State naming (#67)
+
+- All states constructed inside `PostMachine#buildInitialState` now carry an instruction-derived `name`. Previously every state was labeled `id:N` (engine-default auto-counter); now top-level instructions are labeled `"N"`, subroutine body instructions `"<sub>::N"`, group inners `"<outer>.<inner>"`, continuation states `"<caller>~<target>"`, and `withOverrodeHaltState` wrappers compose to e.g. `"foo>10~30"`.
+- This makes `toMermaid` output, `summarize` output, and `MachineState.name` readable without an external translation step. See the README's "[Naming convention](#naming-convention)" section for the full reference.
+
+#### Path type and runtime-callback context (#70)
+
+- New exports: type `Path`, function `parsePath(s: string): Path`, function `formatPath(p: Path): string`. The path-string format mirrors the naming convention above — `'10'`, `'foo::1'`, `'50.2'`, `'outer::inner::10.2'`, etc.
+- `MachineState` (re-exported from `@post-machine-js/machine`) now resolves to the engine's `MachineState` extended with two PostMachine-flavored fields: `arrivalPath: Path` and `candidatePaths: Path[]`. The `onStep` and `onPause` callbacks for `pm.run()` and `pm.runStepByStep()` receive the extended shape.
+- `arrivalPath` disambiguates the state-sharing UX gap noted in the "State sharing across structurally-identical instructions" subsection. When two instructions share a State, `arrivalPath` reports the specific instruction the engine just transitioned through (not the canonical first-named one).
+- `candidatePaths` exposes the full set of paths sharing the current State, sorted deterministically (scope lex, then instruction index, then group inner index).
+
+#### Path-based State resolver (#63)
+
+- `pm.stateAt(path)`, `pm.hasState(path)`, `pm.candidatesFor(path)`. Accepts both path strings (`'foo::10.2'`) and object form (`{ scope, instructionIndex, groupInstructionIndex }`). Both `string` and `string[]` scope forms work for the object variant.
+
+#### Per-instruction breakpoint registry + lockdown (#59)
+
+- `pm.setBreakpoint(target, filter)`, `pm.clearBreakpoint(target)`, `pm.clearBreakpoints()`, `pm.listBreakpoints()`. `target` is `Path | string | State` (the State form is accepted only for `haltState`). Filters mirror the engine's `DebugConfig` shape.
 - **Construction-time lockdown:** `state.debug = X` on a State returned by `pm.stateAt(...)` or `pm.initialState` is intercepted. For un-shared States (one candidate path), the write transparently redirects to `pm.setBreakpoint(thatPath, X)` (or `pm.clearBreakpoint` when X is `null`). For shared States (multiple candidate paths), the write throws with the candidate-path list, since the assignment is ambiguous.
 - **`haltState` lockdown:** direct `haltState.debug = X` throws — `pm.setBreakpoint(haltState, ...)` is the only channel. The lockdown is installed at module load on the engine's `haltState` singleton.
 - New types exported: `Breakpoint`, `BreakpointFilter`, `BreakpointTarget`.
@@ -19,42 +36,24 @@ Per-instruction breakpoints ([#59](https://github.com/mellonis/post-machine-js/i
 
 ### Changed
 
-- **Runtime channel collapsed.** The v6.2.0 spec's two-channel model (registry-aware `setBreakpoint` vs. raw `state.debug =` runtime channel inside callbacks) is replaced with a single channel: every `state.debug = X` write, including from inside `onStep`/`onPause`, redirects through the registry. `pm.listBreakpoints()` is the sole source of truth for what will fire `onPause`.
+- **BREAKING (experimental → stable)** — `__onPause` callback on `pm.run()` renamed to `onPause`. The `__` prefix was the contract that this surface might restructure without warning; the breakpoint API doesn't restructure `onPause`'s shape, so the prefix is dropped.
+- **Single-channel debug model.** Every `state.debug = X` write — construction-time *or* inside `onStep`/`onPause` callbacks — routes through the registry. `pm.listBreakpoints()` is the sole source of truth for what will fire `onPause`.
 - **Arrival-aware `onPause` filtering.** When two instructions share an underlying State (hash dedup), the engine pauses on every visit; PostMachine's wrapper only surfaces the pause when `m.arrivalPath` matches a registered breakpoint. Sibling-instruction visits silently resume.
 - **`pm.run()` internal `onStep` is always registered with the engine.** The arrival-tracking state advances every iteration regardless of whether the user provided `onStep`. (Fixes a stale-arrival bug for runs with only `onPause`.)
-
-### Notes
-
-- The lockdown uses `Object.defineProperty` on each constructed State (and on `haltState` once at module load), not a `Proxy`. This was chosen over the originally-specified Proxy approach because engine utilities like `State.toGraph(state, ...)` read TS-downleveled private fields directly off their argument via `__classPrivateFieldGet`, which fails on a Proxy. The defineProperty approach leaves States bare so engine utilities continue to work.
-- Each State knows its PostMachine context via the redirect closure; multiple PostMachine instances each install their own lockdown on their States. `haltState` is shared across instances and is locked module-globally.
-- The graph-walk escape (`pm.stateAt('10').getNextStateForSymbol(...)` reaches an un-locked downstream State) remains, tracked in [#72](https://github.com/mellonis/post-machine-js/issues/72) (v7 territory alongside the engine peer-bump).
-
-### Migration
-
-- Direct `machine.initialState.debug = { before: true }` now redirects to `pm.setBreakpoint(<entry-path>, { before: true })` automatically. Existing code keeps working; the registry just becomes visible to `pm.listBreakpoints()`.
-- For shared-State direct writes, switch to `pm.setBreakpoint(<specific-path>, ...)` — the redirect throws with the candidate-path list to surface the ambiguity.
-- `haltState.debug = X` no longer works as a direct setter; use `pm.setBreakpoint(haltState, X)`.
-
-## [6.2.0] - 2026-MM-DD
-
-Foundation for #59 (per-instruction breakpoints) and #63 (state-by-instruction-label lookup). Extends the runtime callback shape with instruction-level context derived from the v6.1.0 naming convention.
-
-### Added
-
-- `MachineState` (re-exported from `@post-machine-js/machine`) now resolves to the engine's `MachineState` extended with two PostMachine-flavored fields: `arrivalPath: Path` and `candidatePaths: Path[]`. The `onStep` and `onPause` callbacks for `pm.run()` and `pm.runStepByStep()` receive the extended shape. (#70)
-- New exports: type `Path`, function `parsePath(s: string): Path`, function `formatPath(p: Path): string`. The path-string format mirrors the naming convention from v6.1.0 — `'10'`, `'foo::1'`, `'50.2'`, `'outer::inner::10.2'`, etc.
-- `arrivalPath` disambiguates the state-sharing UX gap noted in v6.1.0's "State sharing across structurally-identical instructions" section. When two instructions share a State, `arrivalPath` reports the specific instruction the engine just transitioned through (not the canonical first-named one).
-- `candidatePaths` exposes the full set of paths sharing the current State, sorted deterministically (scope lex, then instruction index, then group inner index).
-
-### Changed
-
-- **BREAKING (experimental → stable)** — `__onPause` callback on `pm.run()` renamed to `onPause`. The `__` prefix was the contract that this surface might restructure without warning; #59 (the structured breakpoint API) doesn't restructure `onPause`'s shape, so the prefix is dropped. Migration: simple find/replace.
+- Doc-tests in `packages/machine/test/examples.spec.ts` previously used regex shape-pinning (`s\d+\("id:\d+"\)`) because state IDs were a global counter and shifted between test runs. Now that names are deterministic, those assertions pin literal labels (`"rightToBlank>1~2"`, `"10"`, `"20"`, etc.).
+- README's two `<details>` Mermaid blocks (Quick Start example and Subroutine example) updated to show the new instruction-derived labels instead of `id:N` placeholders.
 
 ### Notes
 
 - No engine peer-dep bump — this release ships against `@turing-machine-js/machine ^6.0.0` (unchanged).
+- The lockdown uses `Object.defineProperty` on each constructed State (and on `haltState` once at module load), not a `Proxy`. Proxy was tried during implementation and abandoned because engine utilities like `State.toGraph(state, ...)` read TS-downleveled private fields directly off their argument via `__classPrivateFieldGet`, which fails on a Proxy. The defineProperty approach leaves States bare so engine utilities continue to work.
+- Each State knows its PostMachine context via the redirect closure; multiple PostMachine instances each install their own lockdown on their States. `haltState` is shared across instances and is locked module-globally.
 - The `Path` type uses a `scope?: string | string[]` union so consumers can write either `{ scope: 'foo::bar', ... }` (dotted-string form) or `{ scope: ['foo', 'bar'], ... }` (array form). `parsePath` returns the array form (canonical); both are accepted by every API that takes a Path.
 - For state-sharing: the canonical `candidatePaths[0]` is the canonical Path (first by scope, then instruction index); `arrivalPath` may differ when the engine arrived via a non-canonical reference.
+- The `id:N` → instruction-derived naming changes Mermaid output string shapes. Consumers parsing names literally (e.g., `state.name === "some>composite"`) need to update their expectations.
+- Forward-compatibility with engine v7: PostMachine's chosen separators (`::`, `.`, `~`) survive engine v7's planned paren-based wrapper composite ([turing-machine-js#148](https://github.com/mellonis/turing-machine-js/issues/148)) and the likely ban on `(`, `)`, `>` in user-provided names. When the v7 peer-dep bump lands, only the engine-emitted wrapper composite changes shape (`"foo>10~40"` → `"foo(10~40)"`); PostMachine's internally-constructed names stay the same.
+- Round-trip name accumulation through `State.fromGraph` (upstream [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138) / [#139](https://github.com/mellonis/turing-machine-js/issues/139)) is more visible now because composite names are user-meaningful (`"foo>10~20"` accumulating into `"foo>10~20>20"` after a graph round-trip reads as a real bug rather than `id:N` noise). The upstream fix lands in engine v7.
+- The graph-walk escape (`pm.stateAt('10').getNextStateForSymbol(...)` reaches an un-locked intermediate State — continuation, hopper, or group wrapper) remains, tracked in [#72](https://github.com/mellonis/post-machine-js/issues/72) (v7 territory alongside the engine peer-bump).
 
 ### Migration
 
@@ -63,32 +62,10 @@ Foundation for #59 (per-instruction breakpoints) and #63 (state-by-instruction-l
 + await pm.run({ onPause: handler });
 ```
 
-No other call-site changes required. Consumers reading `state`, `tape`, etc. on `MachineState` are unaffected — the new fields are additive.
-
-## [6.1.0] - 2026-MM-DD
-
-Instruction-derived state names for everything PostMachine constructs. Foundation for #59 (per-instruction breakpoint API) and #63 (state-by-instruction-label lookup) — both unblocked by this change.
-
-### Added
-
-- All states constructed inside `PostMachine#buildInitialState` now carry an instruction-derived `name`. Previously every state was labeled `id:N` (engine-default auto-counter); now top-level instructions are labeled `"N"`, subroutine body instructions `"<sub>::N"`, group inners `"<outer>.<inner>"`, continuation states `"<caller>~<target>"`, and `withOverrodeHaltState` wrappers compose to e.g. `"foo>10~30"`. (#67)
-- This makes `toMermaid` output, `summarize` output, and `MachineState.name` readable without an external translation step. See the README's "[Naming convention](#naming-convention)" section for the full reference.
-
-### Changed
-
-- Doc-tests in `packages/machine/test/examples.spec.ts` previously used regex shape-pinning (`s\d+\("id:\d+"\)`) because state IDs were a global counter and shifted between test runs. Now that names are deterministic, those assertions pin literal labels (`"rightToBlank>1~2"`, `"10"`, `"20"`, etc.).
-- README's two `<details>` Mermaid blocks (Quick Start example and Subroutine example) updated to show the new instruction-derived labels instead of `id:N` placeholders. Reading-guide bullets updated accordingly.
-
-### Notes
-
-- No engine peer-dep bump — this release ships against `@turing-machine-js/machine ^6.0.0` (unchanged).
-- The `id:N` → instruction-derived naming changes Mermaid output string shapes. Consumers parsing names literally (e.g., `state.name === "some>composite"`) need to update their expectations.
-- Forward-compatibility with engine v7: PostMachine's chosen separators (`::`, `.`, `~`) survive engine v7's planned paren-based wrapper composite ([turing-machine-js#148](https://github.com/mellonis/turing-machine-js/issues/148)) and the likely ban on `(`, `)`, `>` in user-provided names. When the v7 peer-dep bump lands, only the engine-emitted wrapper composite changes shape (`"foo>10~40"` → `"foo(10~40)"`); PostMachine's internally-constructed names stay the same.
-- Round-trip name accumulation through `State.fromGraph` (upstream [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138) / [#139](https://github.com/mellonis/turing-machine-js/issues/139)) is more visible now because composite names are user-meaningful (`"foo>10~20"` accumulating into `"foo>10~20>20"` after a graph round-trip reads as a real bug rather than `id:N` noise). The upstream fix lands in engine v7.
-
-### Migration
-
-No call-site changes required. State names are labels, not load-bearing for execution. Consumers parsing names literally need to update their expectations to the new shapes — see the README's "[Naming convention](#naming-convention)" section.
+- Direct `machine.initialState.debug = { before: true }` now redirects to `pm.setBreakpoint(<entry-path>, { before: true })` automatically. Existing code keeps working; the registry just becomes visible to `pm.listBreakpoints()`.
+- For shared-State direct writes, switch to `pm.setBreakpoint(<specific-path>, ...)` — the redirect throws with the candidate-path list to surface the ambiguity.
+- `haltState.debug = X` no longer works as a direct setter; use `pm.setBreakpoint(haltState, X)`.
+- State-name parsers that pinned the old `id:N` literal need to update for the new instruction-derived shapes — see the README's "[Naming convention](#naming-convention)" section.
 
 ## [6.0.0] - 2026-05-10
 
