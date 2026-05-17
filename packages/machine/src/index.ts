@@ -1,3 +1,6 @@
+import type { MachineState as EngineMachineState } from '@turing-machine-js/machine';
+import type { Path } from './path';
+
 export {
   Tape,
   State,
@@ -17,7 +20,6 @@ export type {
   EquivalenceCase,
   EquivalenceResult,
   EquivalenceReport,
-  MachineState,
 } from '@turing-machine-js/machine';
 export { alphabet, blankSymbol, markSymbol } from './consts';
 export {
@@ -36,3 +38,8 @@ export {
   equivalentPostMachines,
 } from './wrappers';
 export { parsePath, formatPath, type Path } from './path';
+
+export type MachineState = EngineMachineState & {
+  arrivalPath: Path;
+  candidatePaths: Path[];
+};
