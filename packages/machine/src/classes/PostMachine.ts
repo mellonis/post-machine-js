@@ -137,6 +137,7 @@ export class PostMachine extends TuringMachine {
 
   #firstStepArrivalPath(): Path {
     const candidates = this.#stateToCandidatePaths.get(this.#initialState);
+    /* c8 ignore next 3 */
     if (!candidates || candidates.length === 0) {
       throw new Error('PostMachine internal: initial state has no candidate paths');
     }
@@ -162,7 +163,7 @@ export class PostMachine extends TuringMachine {
       } catch {
         try {
           followed = prevState.getNextState(ifOtherSymbol);
-        } catch {
+        } catch /* c8 ignore next */ {
           followed = undefined;
         }
       }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parsePath, formatPath } from '../src/path';
+import { parsePath, formatPath, comparePathsCanonically } from '../src/path';
 
 describe('parsePath — happy paths', () => {
   test('top-level instruction', () => {
@@ -72,6 +72,10 @@ describe('parsePath — rejections', () => {
     expect(() => parsePath('10.0')).toThrow(/group.*index|positive integer/i);
   });
 
+  test('multiple "." in final segment', () => {
+    expect(() => parsePath('10.1.2')).toThrow(/multiple '\.'|invalid path/i);
+  });
+
   test('non-numeric instruction index', () => {
     expect(() => parsePath('foo::abc')).toThrow(/instruction index|integer/i);
   });
@@ -124,4 +128,14 @@ describe('roundtrip parsePath ↔ formatPath', () => {
       expect(formatPath(parsePath(s))).toBe(s);
     });
   }
+});
+
+describe('comparePathsCanonically', () => {
+  test('sorts by groupInstructionIndex when scope and instructionIndex match', () => {
+    const a = { instructionIndex: 50, groupInstructionIndex: 2 };
+    const b = { instructionIndex: 50, groupInstructionIndex: 1 };
+    expect(comparePathsCanonically(a, b)).toBeGreaterThan(0);
+    expect(comparePathsCanonically(b, a)).toBeLessThan(0);
+    expect(comparePathsCanonically(a, a)).toBe(0);
+  });
 });
