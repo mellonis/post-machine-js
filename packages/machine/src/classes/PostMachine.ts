@@ -143,7 +143,7 @@ export class PostMachine extends TuringMachine {
           [ifOtherSymbol]: {
             nextState: localSubroutinesData[subroutineName].reference,
           },
-        }),
+        }, `${instructionPrefix}${subroutineName}`),
       }), {}),
     };
 
@@ -157,6 +157,7 @@ export class PostMachine extends TuringMachine {
         instructions: subroutineInstructions,
         subroutinesDataFromUpperScope: subroutinesData,
         subroutineInitialStatesFromUpperScope: subroutineInitialStates,
+        instructionPrefix: `${instructionPrefix}${subroutineName}::`,
       }));
     });
 
