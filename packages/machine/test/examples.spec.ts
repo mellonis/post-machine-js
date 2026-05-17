@@ -393,4 +393,86 @@ describe('packages/machine/README.md', () => {
       });
     });
   });
+
+  describe('Path-based resolver (v6.3.0+)', () => {
+    test('top-level instruction is reachable by string and object path', () => {
+      const pm = new PostMachine({ 10: mark, 20: stop });
+
+      expect(pm.stateAt('10')).toBeInstanceOf(State);
+      expect(pm.hasState('10')).toBe(true);
+      expect(pm.hasState('999')).toBe(false);
+      expect(pm.candidatesFor('10')).toEqual([{ instructionIndex: 10 }]);
+    });
+
+    test('object-form paths accept both scope string and array', () => {
+      const pm = new PostMachine({
+        10: stop,
+        sub: { 1: mark, 2: stop },
+        outer: { 1: stop, inner: { 1: mark, 2: stop } },
+      });
+
+      expect(pm.stateAt({ instructionIndex: 10 })).toBeInstanceOf(State);
+      expect(pm.stateAt({ scope: 'sub', instructionIndex: 1 })).toBeInstanceOf(State);
+      expect(pm.stateAt({ scope: ['outer', 'inner'], instructionIndex: 1 })).toBeInstanceOf(State);
+    });
+  });
+
+  describe('Breakpoints (v6.3.0+)', () => {
+    test('registered breakpoint fires onPause with arrivalPath', async () => {
+      const pm = new PostMachine({
+        10: check(20, 30),
+        20: right(10),
+        30: mark,
+        40: stop,
+      });
+
+      pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
+
+      pm.setBreakpoint('30', { before: true });
+
+      const paused: number[] = [];
+      await pm.run({
+        onPause: (m: MachineState) => {
+          paused.push(m.arrivalPath.instructionIndex);
+        },
+      });
+
+      expect(paused).toContain(30);
+    });
+
+    test('listBreakpoints / clearBreakpoint / clearBreakpoints round-trip', () => {
+      const pm = new PostMachine({ 10: mark, 20: stop });
+
+      pm.setBreakpoint('10', { before: true });
+      expect(pm.listBreakpoints()).toHaveLength(1);
+
+      pm.clearBreakpoint('10');
+      expect(pm.listBreakpoints()).toEqual([]);
+
+      pm.setBreakpoint('10', { before: true });
+      pm.clearBreakpoints();
+      expect(pm.listBreakpoints()).toEqual([]);
+    });
+  });
+
+  describe('Lockdown semantics (v6.3.0+)', () => {
+    test('direct write on un-shared State redirects to setBreakpoint', () => {
+      const pm = new PostMachine({ 10: mark, 20: stop });
+
+      pm.stateAt('10').debug = { before: true };
+
+      expect(pm.listBreakpoints()).toEqual([
+        { kind: 'instruction', path: { instructionIndex: 10 }, filter: { before: true } },
+      ]);
+    });
+
+    test('direct write of null redirects to clearBreakpoint', () => {
+      const pm = new PostMachine({ 10: mark, 20: stop });
+
+      pm.setBreakpoint('10', { before: true });
+      pm.stateAt('10').debug = null;
+
+      expect(pm.listBreakpoints()).toEqual([]);
+    });
+  });
 });
