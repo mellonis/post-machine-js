@@ -379,6 +379,12 @@ const m = new PostMachine({
 // m.initialState.name === "foo>10~30"
 ```
 
+### State sharing across structurally-identical instructions
+
+PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
+
+For programmatic lookup by instruction index, use the engine's `Reference` resolution (the per-instruction-index `references` map maintained internally) rather than name matching.
+
 ### Forward-compatibility with engine v7
 
 Engine v7 (upstream `@turing-machine-js/machine`) plans to change the wrapper composite shape from `A>B` to `A(B)` (paren-based), and will likely forbid `(`, `)`, and `>` in user-provided state names. PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) are reserved by v7, so when the peer-dep bump lands, only the *wrapper composite emit* changes (e.g., `"foo>10~40"` becomes `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — remain unchanged.

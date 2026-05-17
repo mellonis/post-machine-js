@@ -244,6 +244,20 @@ describe('packages/machine/README.md', () => {
     });
   });
 
+  describe('Naming convention', () => {
+    test('Quick example: machine.initialState.name === "foo>10~30"', () => {
+      const m = new PostMachine({
+        10: call('foo', 30),
+        20: stop,
+        30: stop,
+        foo: { 1: stop },
+      });
+
+      // m.initialState.name === "foo>10~30"
+      expect(m.initialState.name).toBe('foo>10~30');
+    });
+  });
+
   describe('Introspection and equivalence', () => {
     describe('Visualization — toMermaid + State.toGraph', () => {
       function buildQuickStart(): PostMachine {
