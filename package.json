@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p packages/machine/tsconfig.json"
   },
   "author": "Ruslan Gilmullin <mellonis@yandex.ru>",
   "workspaces": [
@@ -29,6 +30,6 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
-    "@turing-machine-js/machine": "^6.0.1"
+    "@turing-machine-js/machine": "^6.2.0"
   }
 }

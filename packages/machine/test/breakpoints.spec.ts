@@ -144,12 +144,17 @@ describe('pm.setBreakpoint / listBreakpoints', () => {
 });
 
 describe('pm.clearBreakpoint / clearBreakpoints', () => {
-  test('clearBreakpoint removes one entry and resets state.debug to null', () => {
+  test('clearBreakpoint removes one entry and clears state.debug filters', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
     pm.setBreakpoint('10', { before: true });
     pm.clearBreakpoint('10');
     expect(pm.listBreakpoints()).toEqual([]);
-    expect(pm.stateAt('10').debug).toBeNull();
+    // Engine v6.1+ (#150) returns an empty `DebugConfig` after a filters
+    // reset rather than `null`. Check the public getters directly — `undefined`
+    // is the "no filter set" sentinel (field type: `symbol[] | true | undefined`).
+    const dbg = pm.stateAt('10').debug;
+    expect(dbg.before).toBeUndefined();
+    expect(dbg.after).toBeUndefined();
   });
 
   test('clearBreakpoint on a shared State shrinks the union filter', () => {
@@ -179,7 +184,10 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.setBreakpoint(haltState, { before: true });
     pm.clearBreakpoints();
     expect(pm.listBreakpoints()).toEqual([]);
-    expect(pm.stateAt('10').debug).toBeNull();
+    // Engine v6.1+ (#150) — see clearBreakpoint test above.
+    const dbg = pm.stateAt('10').debug;
+    expect(dbg.before).toBeUndefined();
+    expect(dbg.after).toBeUndefined();
   });
 });
 
