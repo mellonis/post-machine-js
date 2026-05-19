@@ -106,7 +106,7 @@ export class PostMachine extends TuringMachine {
     onPause,
   }: {
     stepsLimit?: number;
-    onStep?: (machineState: MachineState) => void;
+    onStep?: (machineState: MachineState) => void | Promise<void>;
     onPause?: (machineState: MachineState) => void | Promise<void>;
   } = {}): Promise<void> {
     let prevState: State | null = null;
@@ -124,9 +124,9 @@ export class PostMachine extends TuringMachine {
     await super.run({
       initialState: this.#initialState,
       stepsLimit,
-      onStep: (raw) => {
+      onStep: async (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        if (onStep) onStep(wrapped);
+        if (onStep) await onStep(wrapped);
         advanceTracking(raw);
       },
       onPause: onPause ? async (raw) => {
