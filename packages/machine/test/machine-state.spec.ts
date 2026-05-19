@@ -17,6 +17,22 @@ describe('PostMachine — wrapped MachineState', () => {
     }
   });
 
+  test('onIter receives arrivalPath and candidatePaths, once per iter (v6.4.0+)', async () => {
+    const m = new PostMachine({
+      10: mark,
+      20: stop,
+    });
+    const seen: MachineState[] = [];
+    await m.run({ onIter: async (s) => { seen.push(s); } });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const s of seen) {
+      expect(s.arrivalPath).toBeDefined();
+      expect(Array.isArray(s.candidatePaths)).toBe(true);
+    }
+    // First iter's arrivalPath is the entry instruction — same as onStep.
+    expect(seen[0].arrivalPath).toEqual(parsePath('10'));
+  });
+
   test('first-step arrivalPath is the entry instruction', async () => {
     const m = new PostMachine({
       10: mark,

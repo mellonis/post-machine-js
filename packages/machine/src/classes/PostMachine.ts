@@ -104,36 +104,60 @@ export class PostMachine extends TuringMachine {
     stepsLimit = 1e5,
     onStep,
     onPause,
+    onIter,
   }: {
     stepsLimit?: number;
     onStep?: (machineState: MachineState) => void;
     onPause?: (machineState: MachineState) => void | Promise<void>;
+    onIter?: (machineState: MachineState) => void | Promise<void>;
   } = {}): Promise<void> {
     let prevState: State | null = null;
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
-    // Tracking is owned by the always-active internal onStep wrapper (registered
-    // unconditionally even if the user passed only onPause), so prevState advances
-    // every iteration regardless of whether the user's callbacks are invoked.
+    // Tracking is owned by the internal onIter wrapper (engine v6.4.0+).
+    // onIter fires at end-of-iter — after both onPause(before, K) and
+    // onPause(after, K) have already read their iter-correct prev — so
+    // advancing here doesn't race those reads. Previously this lived in
+    // the internal onStep wrapper, which ran BETWEEN before- and after-
+    // fires on the same yield, causing after-fire arrivalPath to resolve
+    // against K's prev instead of K-1's. See tests/breakpoints.spec.ts
+    // "arrivalPath in after-fire onPause" for the regression case.
     const advanceTracking = (raw: EngineMachineState): void => {
       prevState = raw.state;
       prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
     };
 
-    await super.run({
+    // If the user provided any callback, our internal onIter wrapper must
+    // be registered to keep `prev` advancing — every callback (including the
+    // user's own onStep/onPause/onIter) receives the wrapped state which
+    // depends on prev. If no user callback is provided, no one observes
+    // wrapped state and we can skip the internal wrapper too, leaving the
+    // run to halt with zero per-iter await overhead.
+    const isAnyCallbackProvided = !!(onStep || onPause || onIter);
+
+    return super.run({
       initialState: this.#initialState,
       stepsLimit,
-      onStep: (raw) => {
+      onStep: onStep ? (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        if (onStep) onStep(wrapped);
-        advanceTracking(raw);
-      },
+        onStep(wrapped);
+      } : undefined,
       onPause: onPause ? async (raw) => {
         const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
         if (this.#shouldFireOnPause(raw, wrapped)) {
           await onPause(wrapped);
         }
+      } : undefined,
+      onIter: isAnyCallbackProvided ? async (raw) => {
+        if (onIter) {
+          // Wrap with PRE-advance prev so the user's onIter sees the same
+          // arrivalPath as onPause(after, K) saw — both describing the
+          // arrival at iter K.
+          const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+          await onIter(wrapped);
+        }
+        advanceTracking(raw);
       } : undefined,
     });
   }

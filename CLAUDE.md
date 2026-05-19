@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — TypeScript project-references build (`tsc --build tsconfig.build.json`) followed by `scripts/build-node-entries.mjs`, which uses Rollup to repackage `dist/index.js` into `index.mjs` (ESM) and `index.cjs` (CJS). The Rollup step marks `@turing-machine-js/machine` as `external`, so the upstream Turing-machine engine stays as a runtime dependency.
 - `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.ts`; tests are `test/**/*.spec.ts` (root README/example tests) plus `packages/*/test/**/*.spec.ts` (per-package). Vitest uses esbuild for TypeScript — no babel toolchain.
 - `npm run test:watch` — Vitest in watch mode (`vitest`).
-- `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.ts`: 95 / 90 / 95 / 95 (~5pt below current 100%).
+- `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.ts`: **100 / 100 / 100 / 100** (statements / branches / functions / lines) — pinned to current actuals as of v6.4.0. Any new code paths must be exercised by tests; if a real regression makes 100 untenable, relax intentionally rather than letting drift slip through silently.
 - `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` is ignored.
 - Run a single test: `npx vitest run packages/machine/test/machine.spec.ts -t "name"`.
 
