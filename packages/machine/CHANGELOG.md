@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2026-05-19
+
+Companion release to [`@turing-machine-js/machine` v6.2.0](https://github.com/mellonis/turing-machine-js/releases/tag/v6.2.0). Adds async `onStep` support; fixes test-level incompatibility with engine v6.1+'s `DebugConfig`-on-clear semantic. ([#76](https://github.com/mellonis/post-machine-js/pull/76))
+
+### Changed
+
+- **`onStep` is now awaited.** PostMachine wraps the engine's `onStep` to inject `prevState` tracking + `MachineState` wrapping; that internal wrapper now `await`s the user-supplied `onStep` before tracking advances, matching the engine's own [v6.2.0 await change](https://github.com/mellonis/turing-machine-js/pull/159). Returning a `Promise` from `onStep` suspends the run loop until it resolves — use this to throttle the per-iter cadence (debugger UI), animate between iters, or yield to other work. Type widened: `(m: MachineState) => void` → `(m: MachineState) => void | Promise<void>`. Sync consumers pay one microtask boundary per iter (negligible for typical loops, noted for tight ones).
+
+### Fixed
+
+- **Engine v6.1+ `DebugConfig` compat in 3 tests.** Engine [#150](https://github.com/mellonis/turing-machine-js/issues/150) (v6.1.0) changed `state.debug = null` semantics: instead of returning literal `null` on the next read, it now returns a fresh empty `DebugConfig`. Three assertions asserted `state.debug === null` and broke against any engine ≥ v6.1.0 (including v6.2.0). Updated to check the public getters (`before === undefined && after === undefined`) — the "no filter set" sentinel per the engine's `DebugConfig` field types (`symbol[] | true | undefined`). Behaviorally equivalent to the old "literal null" — no breakpoints active in either world.
+
+### Internal
+
+- **CI `typecheck` step** added between `lint` and `test:coverage`. Runs `tsc --noEmit -p packages/machine/tsconfig.json` against the spec-including config. Mirrors the [same fix in the engine repo](https://github.com/mellonis/turing-machine-js/pull/159) — catches TS errors in `*.spec.ts` that previously slipped through (build config excludes specs; vitest's esbuild doesn't type-check).
+
+### Compatibility
+
+- Peer-dep range on `@turing-machine-js/machine` stays at `^6.0.0`. Consumers on engine v6.2.0+ get the awaited-`onStep` behavior; consumers on earlier 6.x get the type widening (forward-compatible) but the engine drops the returned Promise (functionally equivalent to before — async `onStep` would have been a latent bug on those versions).
+
 ## [6.1.0] - 2026-05-18
 
 The v6 debugger surface lands, plus the naming foundation it builds on. Bundles three threads of work that landed on master between v6.0.0 and this release: instruction-derived state names ([#67](https://github.com/mellonis/post-machine-js/issues/67)), runtime-callback instruction context ([#70](https://github.com/mellonis/post-machine-js/issues/70)), and per-instruction breakpoints + path-based State resolver + per-State lockdown ([#59](https://github.com/mellonis/post-machine-js/issues/59), [#63](https://github.com/mellonis/post-machine-js/issues/63)).
