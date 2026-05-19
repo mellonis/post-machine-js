@@ -149,9 +149,12 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.setBreakpoint('10', { before: true });
     pm.clearBreakpoint('10');
     expect(pm.listBreakpoints()).toEqual([]);
-    // Engine v6.1+ (#150) returns an empty `DebugConfig` after a filters reset
-    // rather than `null` — behaviorally equivalent (no break fires).
-    expect(pm.stateAt('10').debug).toEqual({});
+    // Engine v6.1+ (#150) returns an empty `DebugConfig` after a filters
+    // reset rather than `null`. Check the public getters directly — `undefined`
+    // is the "no filter set" sentinel (field type: `symbol[] | true | undefined`).
+    const dbg = pm.stateAt('10').debug;
+    expect(dbg.before).toBeUndefined();
+    expect(dbg.after).toBeUndefined();
   });
 
   test('clearBreakpoint on a shared State shrinks the union filter', () => {
@@ -182,7 +185,9 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.clearBreakpoints();
     expect(pm.listBreakpoints()).toEqual([]);
     // Engine v6.1+ (#150) — see clearBreakpoint test above.
-    expect(pm.stateAt('10').debug).toEqual({});
+    const dbg = pm.stateAt('10').debug;
+    expect(dbg.before).toBeUndefined();
+    expect(dbg.after).toBeUndefined();
   });
 });
 
