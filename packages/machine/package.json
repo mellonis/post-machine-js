@@ -5,6 +5,10 @@
   "engines": {
     "npm": ">=7.0.0"
   },
+  "scripts": {
+    "build": "tsc --build --verbose tsconfig.build.json && node ../../scripts/build-node-entries.mjs --package=@post-machine-js/machine",
+    "prepublishOnly": "npm run build"
+  },
   "author": "Ruslan Gilmullin <mellonis@yandex.ru>",
   "homepage": "https://github.com/mellonis/post-machine-js#readme",
   "license": "GPL-3.0-or-later",
