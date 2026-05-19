@@ -77,7 +77,9 @@ describe('installStateLockdown', () => {
       // After the inner escape ends, the outer is still active.
       s.debug = null;
     });
-    expect(s.debug).toBeNull();
+    // Engine v6.1+ (#150) returns an empty `DebugConfig` after `state.debug = null`
+    // (filters cleared) rather than literal `null`.
+    expect(s.debug).toEqual({});
   });
 });
 
