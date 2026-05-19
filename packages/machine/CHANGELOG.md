@@ -4,30 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.3.0] - 2026-05-19
-
-Companion to [`@turing-machine-js/machine` v6.3.0](https://github.com/mellonis/turing-machine-js/releases/tag/v6.3.0)'s corrective revert. Restores the sync `onStep` contract in PostMachine's internal `super.run` wrapper, matches the engine's restored shape, and bumps the engine dep to `^6.3.0`.
-
-> ℹ️ **No v6.2.0 was published for this package.** v6.2.0 was prepared in [PR #77](https://github.com/mellonis/post-machine-js/pull/77) to ship the companion `await user onStep` change but was closed unmerged once the engine v6.2.0 was identified as a mistake and reverted in engine v6.3.0. The version skips straight from 6.1.0 to 6.3.0.
-
-### Changed
-
-- **`PostMachine.run`** — internal `super.run` `onStep` wrapper reverted from `async (raw) => { ...; await onStep(wrapped); ... }` back to the sync `(raw) => { ...; onStep(wrapped); ... }`. `onStep` type narrowed back: `(m: MachineState) => void | Promise<void>` → `(m: MachineState) => void`. Matches the engine's v6.3.0 restored sync contract for `onStep`. `onPause` is unaffected — it remains awaited inline, same as v6.1.0.
-- **Engine dep**: `@turing-machine-js/machine` bumped `^6.0.1` → `^6.3.0` in the root `package.json`. Peer-dep range in `packages/machine/package.json` stays at `^6.0.0` (forward-compat with engine 6.x).
-
-### Fixed (carried over from the closed PR #77 / from #76)
-
-- **3 test assertions** in `test/breakpoints.spec.ts` and `test/lockdown.spec.ts` checked `state.debug === null` after a filter clear. Engine v6.1.0 changed that semantic ([turing-machine-js#150](https://github.com/mellonis/turing-machine-js/issues/150)) — `state.debug = null` now resets filters; the next read returns an empty `DebugConfig` rather than literal `null`. Updated assertions to check the public getters directly (`before === undefined && after === undefined`) — the "no filter set" sentinel per the engine's field types (`symbol[] | true | undefined`). Behaviorally equivalent: no breakpoints active in either world.
-
-### Internal
-
-- **CI `typecheck` step** added between `lint` and `test:coverage`. Runs `tsc --noEmit -p packages/machine/tsconfig.json` against the spec-including config. Mirrors the [same fix in the engine repo](https://github.com/mellonis/turing-machine-js/pull/159) — catches TS errors in `*.spec.ts` that previously slipped through (build config excludes specs; vitest's esbuild doesn't type-check).
-
-### Migration
-
-- **From v6.1.0** — no API change. If you use the engine's awaited `onPause` you're unaffected; this PR only affects PostMachine's internal `super.run` wrapper, invisible to consumer code.
-- **From the never-published v6.2.0** — same as From v6.1.0; the v6.2.0 shape was never on npm.
-
 ## [6.1.0] - 2026-05-18
 
 The v6 debugger surface lands, plus the naming foundation it builds on. Bundles three threads of work that landed on master between v6.0.0 and this release: instruction-derived state names ([#67](https://github.com/mellonis/post-machine-js/issues/67)), runtime-callback instruction context ([#70](https://github.com/mellonis/post-machine-js/issues/70)), and per-instruction breakpoints + path-based State resolver + per-State lockdown ([#59](https://github.com/mellonis/post-machine-js/issues/59), [#63](https://github.com/mellonis/post-machine-js/issues/63)).
