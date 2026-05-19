@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-05-19
+
+Adopts the engine's new [`onIter`](https://github.com/mellonis/turing-machine-js/pull/164) hook to fix a pre-existing `arrivalPath` ordering bug. **Version skips 6.2.0 and 6.3.0** — both were prepared but neither was published (see history note below).
+
+### Fixed
+
+- **`arrivalPath` ordering bug in `onPause(after, K)`** ([turing-machine-js#163](https://github.com/mellonis/turing-machine-js/issues/163) on the engine side; regression test in [`test/breakpoints.spec.ts`](packages/machine/test/breakpoints.spec.ts)). Since v6.1.0, the internal `onStep` wrapper advanced `prev` mid-iter, which raced engine v6.0.0+'s per-iter `before → step → after` dispatch order. By the time `onPause(after, K)` fired on the same yield, `prev` had already advanced to iter K's own state — so `m.arrivalPath` resolved to iter K+1's instruction instead of K's. Worse: the registry-aware `#shouldFireOnPause` filter then saw the wrong path and **silently dropped** user-registered `{ after: true }` breakpoints rather than firing them with a wrong field.
+
+  Fixed by moving `advanceTracking` from the internal `onStep` wrapper to a new internal `onIter` wrapper. `onIter` fires at end-of-iter — after both `onPause` dispatches on the same yield have already read their iter-correct `prev` — so the advance no longer races them. Required engine v6.4.0 (the new `onIter` hook itself).
+
+### Added
+
+- **`onIter` parameter** on `pm.run()`: `onIter?: (m: MachineState) => void | Promise<void>`. Forwards to the engine's `onIter` hook with PostMachine's wrapped `MachineState` (so `m.arrivalPath` and `m.candidatePaths` are populated). Use for per-iter coordination — throttle, animation, yield-to-other-work — across the same arrival-aware filtering you get on `onPause`. Awaited inline.
+
+### Changed
+
+- **Engine peer dep**: `^6.0.0` → `^6.4.0`. Required because v6.4.0 added the `onIter` hook the fix above depends on. Consumers on engine v6.0.x — v6.3.x get a peer-dep warning and cannot install this version of `@post-machine-js/machine`.
+- Internal `onStep` wrapper is now conditional (registered only when the user provides `onStep`), since it no longer carries the always-on `advanceTracking` side-effect. Engine zero-cost when consumer provides no callbacks at all.
+
+### History note — v6.2.0 / v6.3.0 not published
+
+Both versions were prepared but neither shipped to npm:
+
+- **v6.2.0** ([PR #77](https://github.com/mellonis/post-machine-js/pull/77), closed unmerged) — bumped engine peer-dep to `^6.2.0` to ride the engine's brief `await onStep` widening. Closed after engine v6.2.0 was identified as a mistake and reverted in engine v6.3.0.
+- **v6.3.0** ([PR #78](https://github.com/mellonis/post-machine-js/pull/78), merged without version bump) — reverted PostMachine's matching `async` wrapper to sync, but didn't ship a new release on its own. Merged into master as a deferred-release fix; this v6.4.0 PR is the first release shipping that change.
+
+### Compatibility
+
+- **From v6.1.0** — engine peer-dep widened from `^6.0.0` to `^6.4.0`. Consumers on engine v6.0.x – v6.3.x must upgrade the engine alongside this package. No source-level API breaks; the `onIter` parameter is purely additive.
+
 ## [6.1.0] - 2026-05-18
 
 The v6 debugger surface lands, plus the naming foundation it builds on. Bundles three threads of work that landed on master between v6.0.0 and this release: instruction-derived state names ([#67](https://github.com/mellonis/post-machine-js/issues/67)), runtime-callback instruction context ([#70](https://github.com/mellonis/post-machine-js/issues/70)), and per-instruction breakpoints + path-based State resolver + per-State lockdown ([#59](https://github.com/mellonis/post-machine-js/issues/59), [#63](https://github.com/mellonis/post-machine-js/issues/63)).
