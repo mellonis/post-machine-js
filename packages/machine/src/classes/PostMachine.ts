@@ -134,9 +134,9 @@ export class PostMachine extends TuringMachine {
     // depends on prev. If no user callback is provided, no one observes
     // wrapped state and we can skip the internal wrapper too, leaving the
     // run to halt with zero per-iter await overhead.
-    const anyCallback = !!(onStep || onPause || onIter);
+    const isAnyCallbackProvided = !!(onStep || onPause || onIter);
 
-    await super.run({
+    return super.run({
       initialState: this.#initialState,
       stepsLimit,
       onStep: onStep ? (raw) => {
@@ -149,7 +149,7 @@ export class PostMachine extends TuringMachine {
           await onPause(wrapped);
         }
       } : undefined,
-      onIter: anyCallback ? async (raw) => {
+      onIter: isAnyCallbackProvided ? async (raw) => {
         if (onIter) {
           // Wrap with PRE-advance prev so the user's onIter sees the same
           // arrivalPath as onPause(after, K) saw — both describing the
