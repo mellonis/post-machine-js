@@ -57,25 +57,7 @@ console.log(machine.tape.symbols.join('').trim()); // ***
 
 Each instruction is a command. Used bare (`mark`, `right`, `erase`), it falls through to the next numbered instruction; called with an index (`mark(20)`), it jumps to instruction `20`. `check(ix1, ix0)` branches — `ix1` if the current cell is marked, else `ix0`. `stop` halts.
 
-The state graph for the example above:
-
-```mermaid
-flowchart TD
-    halt(((halt)))
-    s10(("**10:** check(20, 30)"))
-    s20["**20:** right(10)"]
-    s30["**30:** mark"]
-
-    s10 -- "marked (*)" --> s20
-    s10 -- "blank" --> s30
-    s20 -- "→ R" --> s10
-    s30 -- "write *<br/>(40 stops)" --> halt
-```
-
-The `40: stop` instruction is elided in the graph — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
-
-<details>
-<summary>Same graph, as the engine actually emits via <code>toMermaid(State.toGraph(machine.initialState, machine.tapeBlock))</code>:</summary>
+The state graph for the example above (`toMermaid(State.toGraph(machine.initialState, machine.tapeBlock))`):
 
 ```mermaid
 flowchart TD
@@ -92,7 +74,7 @@ flowchart TD
   s3 -- "[*] → ['*']/[S]" --> s0
 ```
 
-Reading the engine output:
+Reading the diagram:
 
 **Nodes.** Each `s\d+` is a Mermaid-internal node ID; the bracketed/parenthesized text is the state's display label. `s0` is always `haltState`. Node shapes:
 - `(((label)))` — halt state
@@ -100,14 +82,12 @@ Reading the engine output:
 - `([idle])` — the `idle` sentinel that marks the entry point via a dotted `idle -. enter .-> s_initial` edge
 - (Wrapper composites use a `subgraph w_N["halt frame"]` block — see the [Subroutines](#subroutines) section.)
 
-The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>(<continuation>)"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that.
+The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>(<continuation>)"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that. The `40: stop` instruction is elided — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
 
 **Edges.** Compact `read → write/move` syntax with bracketed tokens:
 - **Read side**: `['*']` is the literal mark symbol; `[B]` is the blank symbol; `[*]` is `ifOtherSymbol` — the any-other catch-all (or sole-edge match-all on a state with only one outgoing transition).
 - **Write side**: `[K]` is "keep" (no write); `[E]` is "erase" (write the blank); `['*']` (and `[' ']` for blank) is a literal symbol write.
 - **Move**: `[S]` = stay, `[L]` = left, `[R]` = right.
-
-</details>
 
 ## Classes
 
@@ -252,24 +232,7 @@ await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
-The state graph (top-level flow with the subroutine as a black box):
-
-```mermaid
-flowchart TD
-    halt(((halt)))
-    t1(("**1:** call('rightToBlank')"))
-    t2["**2:** mark"]
-    sub[["rightToBlank<br/>(walks right until blank)"]]
-
-    t1 -- "enters" --> sub
-    sub -. "halts → return" .-> t2
-    t2 -- "write *<br/>(3 stops)" --> halt
-```
-
-The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverriddenHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
-
-<details>
-<summary>Same graph, as the engine actually emits. The subroutine and the wrapping <code>withOverriddenHaltState</code> are visible:</summary>
+The state graph as the engine emits it — the subroutine and the wrapping `withOverriddenHaltState` composition are visible:
 
 ```mermaid
 flowchart TD
@@ -294,15 +257,15 @@ flowchart TD
   s9 -- "[*] → ['*']/[S]" --> s0
 ```
 
-Reading the engine output:
+The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverriddenHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
+
+Reading the diagram:
 - The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the bare hopper name `"rightToBlank"` on the wrapped subroutine entry (the `[[…]]` double-square node `s8`). The wrapper's composite name `"rightToBlank(1~2)"` lives on the state's `.name` but isn't reproduced as a separate graph node — the `subgraph w_8["halt frame"]` block captures the same structural information in graph form. The `s\d+` node IDs are still auto-generated and shift between runs.
-- `s8` (inside `w_8`) is the top-level entry — the engine's `idle -. enter .-> s8` edge marks it. The double-square `[[rightToBlank]]` shape signals "subroutine hopper" — i.e., a state wrapped by `withOverriddenHaltState`. The frame-local halt `c8` and the surrounding `subgraph w_8` together represent "halt within this subroutine's frame is the override target," replacing the v6 monolithic composite-named entry node.
-- `s5`/`s6` form the subroutine's internal cycle: `s5` is `right` (keep+R), `s6` is `check(1, 3)` (loops back on `'*'`, exits to halt on blank).
-- The dotted `onHalt` edge `s8 -.→ s7` is the override in action: when control flow reaches the subroutine's halt (the frame-local `c8`), the engine pops back to `s7` (the continuation named `"1~2"`).
+- `s8` (inside `w_8`) is the top-level entry — the engine's `idle -. enter .-> s8` edge marks it. The double-square `[[rightToBlank]]` shape signals "subroutine hopper" — i.e., a state wrapped by `withOverriddenHaltState`. The frame-local halt `c8` and the surrounding `subgraph w_8` together represent "halt within this subroutine's frame is the override target," replacing the v6 monolithic composite-named entry node. (Note: in this diagram `c8` has no incoming edges and the `onHalt` redirect is attached to `s8` rather than `c8` — tracked upstream as [turing-machine-js#173](https://github.com/mellonis/turing-machine-js/issues/173).)
+- `s5`/`s6` form the subroutine's internal cycle: `s5` is `right` (keep+R), `s6` is `check(1, 3)` (loops back on `'*'`, exits to halt on blank). Note: `s6 → s0` is the literal `State` transition but **not** the runtime path — the wrapper's halt-stack intercepts and redirects to `s7`. The broader question of whether body states like `s5`/`s6` should visualize as inside the halt frame is tracked at [turing-machine-js#174](https://github.com/mellonis/turing-machine-js/issues/174).
+- The dotted `onHalt` edge `s8 -.→ s7` is the override in action: when the wrapper's halt-stack intercepts a halt-bound transition from inside the subroutine, the engine pops back to `s7` (the continuation named `"1~2"`).
 - `s7` is the continuation; it falls through (keep+S) to `s9`.
 - `s9` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
-
-</details>
 
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
 
