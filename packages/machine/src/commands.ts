@@ -104,7 +104,7 @@ function callCommandStateProducer(this: { subroutineName: string; nextInstructio
     : `${instructionPrefix}${String(boundNextInstructionIndex)}`;
   const continuationName = `${callerName}~${targetName}`;
 
-  const state = subroutineInitialStates[subroutineName].withOverrodeHaltState(new State({
+  const state = subroutineInitialStates[subroutineName].withOverriddenHaltState(new State({
     [ifOtherSymbol]: {
       nextState,
     },

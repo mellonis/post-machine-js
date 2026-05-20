@@ -647,7 +647,7 @@ describe('run tests', () => {
         onStep: (...args) => machine2OnStepMock(...args),
       })).rejects.toThrow('Long execution');
 
-      const regExp = />/;
+      const regExp = /\(/;
       const machine1StateIdList = machine1OnStepMock.mock.calls
         .map((args) => args[0].state.name)
         .filter((name) => regExp.test(name))

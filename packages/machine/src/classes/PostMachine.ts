@@ -413,7 +413,7 @@ export class PostMachine extends TuringMachine {
           : `${instructionPrefix}${list[ix + 1]}`;
         const continuationName = `${callerName}~${targetName}`;
 
-        builtStates.set(String(instructionIndex), groupState.withOverrodeHaltState(new State({
+        builtStates.set(String(instructionIndex), groupState.withOverriddenHaltState(new State({
           [ifOtherSymbol]: {
             nextState,
           },

@@ -146,24 +146,25 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry-state with composite name. The wrapper at top-level instruction 1
-      // is `call('rightToBlank')`, so the composite reads as `<hopper>><continuation>` —
-      // here `"rightToBlank>1~2"` (subroutine hopper named after the subroutine, continuation
-      // forwards from instr 1 to instr 2).
+      // Halt + the entry — under engine v7 the wrapper composite is emitted as a
+      // halt-frame subgraph containing the bare hopper (double-square brackets `[[...]]`)
+      // and a frame-local halt node, not as a single composite-named round node.
+      // The composite `"rightToBlank(1~2)"` only lives on the wrapping State's `.name`.
       expect(mermaid).toContain('(((halt)))');
-      expect(mermaid).toContain('(("rightToBlank>1~2"))');
+      expect(mermaid).toMatch(/subgraph w_\d+\["halt frame"\]/);
+      expect(mermaid).toContain('[["rightToBlank"]]');
 
       // The dotted onHalt edge — the override path back from the subroutine.
       expect(mermaid).toMatch(/s\d+ -\. onHalt \.-> s\d+/);
 
       // The subroutine's internal cycle: a right-move state and a check state
-      // that loops back on '*' and exits on the blank.
-      expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);   // right (keep + R)
-      expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/); // check on '*'
-      expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);    // check on blank (ifOtherSymbol)
+      // that loops back on '*' and exits on the blank. Engine v7 label vocabulary.
+      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);    // right (keep + R)
+      expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);  // check on '*'
+      expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> s\d+/);     // check on blank
 
       // The mark instruction's edge: write '*', stay, transition to halt.
-      expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
     });
 
     test('** → marks first blank to make *** (single subroutine, single call)', async () => {
@@ -249,7 +250,7 @@ describe('packages/machine/README.md', () => {
   });
 
   describe('Naming convention', () => {
-    test('Quick example: machine.initialState.name === "foo>10~30"', () => {
+    test('Quick example: machine.initialState.name === "foo(10~30)"', () => {
       const m = new PostMachine({
         10: call('foo', 30),
         20: stop,
@@ -257,8 +258,8 @@ describe('packages/machine/README.md', () => {
         foo: { 1: stop },
       });
 
-      // m.initialState.name === "foo>10~30"
-      expect(m.initialState.name).toBe('foo>10~30');
+      // m.initialState.name === "foo(10~30)"
+      expect(m.initialState.name).toBe('foo(10~30)');
     });
   });
 
@@ -327,18 +328,22 @@ describe('packages/machine/README.md', () => {
         // Halt node (always literal "halt").
         expect(mermaid).toContain('(((halt)))');
 
-        // Initial state — double-paren entry shape with instruction-derived name.
-        expect(mermaid).toContain('(("10"))');
+        // Initial state — square-bracket node shape; under engine v7 the entry is
+        // marked by a separate idle sentinel + dotted enter edge, not a double-paren shape.
+        expect(mermaid).toContain('["10"]');
+        expect(mermaid).toContain('idle([idle])');
+        expect(mermaid).toMatch(/idle -\. enter \.-> s\d+/);
         // Two intermediate states — square-bracket node shape with instruction-derived names.
         expect(mermaid).toContain('["20"]');
         expect(mermaid).toContain('["30"]');
 
         // Each of the 4 transitions described in the README's reading guide.
-        // Edge labels are exact as emitted; node IDs (s\d+) are not pinned.
-        expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+        // Engine v7 edge-label vocabulary: ['x'] = literal symbol, [B] = blank, [*] = any-other,
+        // [K] = keep, [E] = erase; movements [L]/[R]/[S].
+        expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
       });
     });
 

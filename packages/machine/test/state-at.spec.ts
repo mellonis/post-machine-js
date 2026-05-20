@@ -104,9 +104,9 @@ describe('pm.stateAt — rejections', () => {
     expect(() => pm.stateAt('halt')).toThrow(/halt|not an instruction path/i);
   });
 
-  test('wrapper composite (contains >) is rejected', () => {
+  test('wrapper composite (contains parens) is rejected', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
-    expect(() => pm.stateAt('foo>10~20')).toThrow();
+    expect(() => pm.stateAt('foo(10~20)')).toThrow();
   });
 
   test('continuation state (contains ~) is rejected', () => {
