@@ -1,8 +1,8 @@
 import {
   PostMachine, call, check, erase, left, mark, noop, right, stop, Tape,
-} from '../src/index';
-import { subroutineNameValidator } from '../src/validators';
-import { getIxRange, getRandomInstructionIndex } from './helpers';
+} from '../index';
+import { subroutineNameValidator } from '../validators';
+import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
 
 describe('constructor', () => {
   test('no instructions', () => {

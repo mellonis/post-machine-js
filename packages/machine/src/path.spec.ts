@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parsePath, formatPath, comparePathsCanonically } from '../src/path';
+import { parsePath, formatPath, comparePathsCanonically } from './path';
 
 describe('parsePath — happy paths', () => {
   test('top-level instruction', () => {

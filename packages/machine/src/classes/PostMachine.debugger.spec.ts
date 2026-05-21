@@ -7,7 +7,7 @@ import {
   Tape,
   type MachineState,
   check, mark, right, stop,
-} from '../src/index';
+} from '../index';
 
 describe('PostMachine — async run', () => {
   function buildWalkAndMark(): PostMachine {

@@ -3,7 +3,7 @@ import {
   PostMachine,
   State,
   check, mark, right, stop,
-} from '../src/index';
+} from '../index';
 
 describe('pm.stateAt — happy paths', () => {
   test('top-level instruction by string', () => {

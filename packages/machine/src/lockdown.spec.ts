@@ -4,7 +4,7 @@ import {
   installStateLockdown,
   installHaltLockdown,
   withLockdownEscape,
-} from '../src/lockdown';
+} from './lockdown';
 
 describe('installStateLockdown', () => {
   function makeState(): State {

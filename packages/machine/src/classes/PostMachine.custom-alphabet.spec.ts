@@ -1,8 +1,8 @@
 import {
   PostMachine, Tape, alphabet, blankSymbol, call, check, erase, left, mark, markSymbol, right, stop,
   summarizePostMachine,
-} from '../src/index';
-import { getRandomInstructionIndex } from './helpers';
+} from '../index';
+import { getRandomInstructionIndex } from './PostMachine.test-helpers';
 
 describe('PostMachine custom alphabet', () => {
   describe('default behavior (no options)', () => {
