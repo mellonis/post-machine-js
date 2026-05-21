@@ -450,9 +450,15 @@ describe('run tests', () => {
         stepsLimit: 3,
         onStep: (...args) => onStepMock3(...args),
       })).resolves.toBeUndefined();
-      expect(onStepMock1).toHaveBeenCalledTimes(3);
-      expect(onStepMock2).toHaveBeenCalledTimes(3);
-      expect(onStepMock3).toHaveBeenCalledTimes(3);
+      // Under #85, the subroutine's hopper is dropped (acyclic + plain first
+      // instruction noop). The previous "iter 1: hopper, iter 2: noop body,
+      // iter 3: halt" sequence collapses to "iter 1: wrapper-of-noop, iter 2:
+      // halt" — one fewer onStep call per machine. (Note: post-iter halt
+      // dispatches as the second call here because the wrapper-of-noop's
+      // halt-bound transition resolves to haltState directly.)
+      expect(onStepMock1).toHaveBeenCalledTimes(2);
+      expect(onStepMock2).toHaveBeenCalledTimes(2);
+      expect(onStepMock3).toHaveBeenCalledTimes(2);
       expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
       expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
     });
@@ -564,7 +570,14 @@ describe('run tests', () => {
       onStep: (...args) => onStepMock(...args),
     })).resolves.toBeUndefined();
 
-    expect(onStepMock).toHaveBeenCalledTimes(8);
+    // Under #85, hoppers are dropped for `subroutineNameList[1]` (outer,
+    // first instr `mark`, acyclic) and the nested `subroutineNameList[0]`
+    // (first instr `erase`, acyclic). Outer `subroutineNameList[0]` keeps
+    // its hopper (the analyzer sees its body calling 'sub0' as a lexical
+    // self-reference, conservatively classifying it as cyclic — runtime
+    // would resolve through shadowing, but the static analyzer doesn't
+    // model scope shadowing). Net: 2 fewer onStep calls than v6.x's 8.
+    expect(onStepMock).toHaveBeenCalledTimes(6);
     expect(machine.tape.viewport[0]).toEqual(' ');
 
     const nextSymbolHistory = onStepMock.mock.calls.map((aCall) => aCall[0].nextSymbols[0]);

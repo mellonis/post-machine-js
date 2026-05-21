@@ -146,15 +146,17 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry — under engine v7's callable-subtree emit (alpha.2,
-      // #174) the wrapper is a separate `[[composite-name]]` node OUTSIDE the
-      // subgraph; the bare hopper is a regular `[name]` node INSIDE its
-      // callable subtree subgraph. Composite name `"rightToBlank(1~2)"` lives
-      // on the wrapper.
+      // Halt + the entry — under engine v7's callable-subtree emit (#174)
+      // PLUS PostMachine's drop-acyclic-hopper change (#85), the wrapper at
+      // the call site wraps `rightToBlank::1` directly (not the v6.x hopper
+      // named `rightToBlank`). The subgraph label and composite name both
+      // reflect the bare's identity.
       expect(mermaid).toContain('(((halt)))');
-      expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank"\]/);
-      expect(mermaid).toContain('[["rightToBlank(1~2)"]]');
-      expect(mermaid).toContain('["rightToBlank"]'); // bare inside the subgraph
+      expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank::1"\]/);
+      expect(mermaid).toContain('[["rightToBlank::1(1~2)"]]');
+      expect(mermaid).toContain('["rightToBlank::1"]'); // bare inside the subgraph
+      // The v6.x hopper named 'rightToBlank' is dropped (acyclic + plain first instr).
+      expect(mermaid).not.toContain('["rightToBlank"]');
 
       // Bold `== "call" ==>` from wrapper to bare + dotted `-. "return" .->`
       // from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->`
@@ -383,11 +385,13 @@ describe('packages/machine/README.md', () => {
         expect(a.compositionEdgeCount).toBe(0);
         expect(a.maxCompositionDepth).toBe(0);
 
-        // Engine alpha.2 (#174) emits wrappers as separate nodes from their
-        // bares; the subroutine adds 1 wrapper node on top of the bare hopper +
-        // body states + continuation + top-level mark.
-        // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 7 1 1
-        expect(b.stateCount).toBe(7);
+        // Under #85, `walkToBlank` is acyclic + has a plain first instruction
+        // (check), so its hopper is dropped. The subroutine contributes 2
+        // body states (walkToBlank::1, walkToBlank::2) + 1 continuation +
+        // the wrapper at instruction 10 + the top-level mark = 6 nodes
+        // (vs alpha.2's 7 with the hopper).
+        // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 6 1 1
+        expect(b.stateCount).toBe(6);
         expect(b.compositionEdgeCount).toBe(1);
         expect(b.maxCompositionDepth).toBe(1);
 
@@ -407,9 +411,12 @@ describe('packages/machine/README.md', () => {
         expect(inlineMermaid).toMatch(/idle -\. enter \.-> s\d+/);
 
         // withSubroutine: wrapper outside the subgraph + callable-subtree shape.
-        expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank"\]/);
-        expect(subMermaid).toContain('[["walkToBlank(10~20)"]]'); // wrapper, composite name
-        expect(subMermaid).toContain('["walkToBlank"]');          // bare, inside subgraph
+        // Under #85 the hopper is dropped — the wrapper wraps walkToBlank::1
+        // directly, not a bare named 'walkToBlank'.
+        expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank::1"\]/);
+        expect(subMermaid).toContain('[["walkToBlank::1(10~20)"]]'); // wrapper composite
+        expect(subMermaid).toContain('["walkToBlank::1"]');          // bare, inside subgraph
+        expect(subMermaid).not.toContain('["walkToBlank"]');         // hopper dropped
         expect(subMermaid).toContain('["10~20"]');                // continuation
         expect(subMermaid).toMatch(/s\d+ == "call" ==> s\d+/);    // wrapper → bare
         expect(subMermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);

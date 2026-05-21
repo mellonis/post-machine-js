@@ -242,6 +242,20 @@ function stopCommandStateProducer(this: null, { calledFromGroup }: CommandContex
   return haltState;
 }
 
+// WeakMap from `call('foo')`-produced state-producers to the subroutine name
+// they reference. Used by the call-graph analyzer (#85 cycle detection — see
+// `callGraph.ts`) to read each producer's target without invoking it.
+const callTargets = new WeakMap<CommandFn, string>();
+
+/**
+ * Returns the subroutine name a `call(...)` producer targets, or `undefined`
+ * if the argument isn't a `call()` producer. Used at construction time to
+ * statically analyze which subroutines participate in cycles.
+ */
+export function callTargetOf(producer: CommandFn): string | undefined {
+  return callTargets.get(producer);
+}
+
 export function call(subroutineName: string, nextInstructionIndex?: number): (context: CommandContext) => State {
   const actualNextInstructionIndex = arguments.length === 1 ? defaultNextInstructionIndex : nextInstructionIndex;
 
@@ -251,6 +265,7 @@ export function call(subroutineName: string, nextInstructionIndex?: number): (co
   });
 
   commandsSet.add(actualCommand as CommandFn);
+  callTargets.set(actualCommand as CommandFn, subroutineName);
 
   return actualCommand as (context: CommandContext) => State;
 }

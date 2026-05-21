@@ -471,10 +471,10 @@ console.log(a.stateCount, a.compositionEdgeCount, a.maxCompositionDepth);
 // 4 0 0 — inline: 4 states, no composition
 
 console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
-// 7 1 1 — subroutine: 3 more states; 1 composition edge from `call` (depth 1)
+// 6 1 1 — subroutine: 2 more states; 1 composition edge from `call` (depth 1)
 ```
 
-Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverriddenHaltState` wrapper overhead per call (~3 states under engine v7's callable-subtree emit: a separate wrapper node, the hopper bare, and the continuation) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
+Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverriddenHaltState` wrapper overhead per call (~2 states under engine v7's callable-subtree emit + PostMachine's drop-acyclic-hopper rule from [#85](https://github.com/mellonis/post-machine-js/issues/85): the wrapper node and the continuation; the v6.x hopper is dropped for the common case of a plain leading command) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
 
 The two state graphs as the engine emits them — what the numbers above are summarizing:
 
@@ -507,34 +507,33 @@ flowchart TD
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s7["10~20"]
-  s9["20"]
-  s8[["walkToBlank(10~20)"]]
+  s6["10~20"]
+  s8["20"]
+  s7[["walkToBlank::1(10~20)"]]
   idle([idle])
-  subgraph w_4["callable subtree of walkToBlank"]
-    s4["walkToBlank"]
-    s5["walkToBlank::1"]
-    s6["walkToBlank::2"]
+  subgraph w_4["callable subtree of walkToBlank::1"]
+    s4["walkToBlank::1"]
+    s5["walkToBlank::2"]
     c4(((halt)))
   end
-  idle -. enter .-> s8
-  s8 == "call" ==> s4
-  w_4 -. "return" .-> s8
-  s8 --> s7
-  s4 -- "[*] → [K]/[S]" --> s5
-  s5 -- "['*'] → [K]/[S]" --> s6
-  s5 -- "[B] → [K]/[S]" --> c4
-  s6 -- "[*] → [K]/[R]" --> s5
-  s7 -- "[*] → [K]/[S]" --> s9
-  s9 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> s7
+  s7 == "call" ==> s4
+  w_4 -. "return" .-> s7
+  s7 --> s6
+  s4 -- "['*'] → [K]/[S]" --> s5
+  s4 -- "[B] → [K]/[S]" --> c4
+  s5 -- "[*] → [K]/[R]" --> s4
+  s6 -- "[*] → [K]/[S]" --> s8
+  s8 -- "[*] → ['*']/[S]" --> s0
 ```
 
-The three extra nodes vs inline that drive `stateCount: 4 → 7`:
-- **`s8[["walkToBlank(10~20)"]]`** — the wrapper / call site, OUTSIDE the subgraph
-- **`s4["walkToBlank"]`** — the bare hopper INSIDE the callable subtree, forwarded to from the wrapper's bold `== "call" ==>` arrow
-- **`s7["10~20"]`** — the continuation that PostMachine synthesizes between the `call('walkToBlank')` site at instruction `10` and the next top-level instruction `20`
+The two extra nodes vs inline that drive `stateCount: 4 → 6`:
+- **`s7[["walkToBlank::1(10~20)"]]`** — the wrapper / call site, OUTSIDE the subgraph. Composite name `walkToBlank::1(10~20)` reflects that PostMachine drops the v6.x "hopper" anchor for acyclic subroutines with a plain first instruction (see [#85](https://github.com/mellonis/post-machine-js/issues/85)) — the wrapper wraps `walkToBlank::1` directly, saving one State.
+- **`s6["10~20"]`** — the continuation that PostMachine synthesizes between the `call('walkToBlank')` site at instruction `10` and the next top-level instruction `20`.
 
-The subroutine body (`s5`, `s6`) inside `subgraph w_4` mirrors `inline`'s `s1`, `s2` loop structurally — same algorithm, same internal back-edge. The extra cost is purely the wrapper machinery. `compositionEdgeCount: 0 → 1` and `maxCompositionDepth: 0 → 1` come from the single `withOverriddenHaltState` wrapper around `walkToBlank`.
+The subroutine body (`s4`, `s5`) inside `subgraph w_4` mirrors `inline`'s `s1`, `s2` loop structurally — same algorithm, same internal back-edge. The extra cost is purely the wrapper + continuation machinery. `compositionEdgeCount: 0 → 1` and `maxCompositionDepth: 0 → 1` come from the single `withOverriddenHaltState` wrapper.
+
+(Subroutines with `1: stop`, a leading `call(...)`, a leading group `[...]`, or that participate in a call-graph cycle keep the hopper as a forward-declaration anchor. The common case — plain leading command — drops it.)
 
 </details>
 

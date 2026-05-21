@@ -129,20 +129,23 @@ describe('PostMachine — subroutine body and hopper names', () => {
         3: mark,
       },
     });
-    // Wrapper composite at top — hopper now named "foo".
-    expect(machine.initialState.name).toBe('foo(10~halt)');
+    // Acyclic subroutine + plain first instruction → hopper dropped (#85).
+    // The wrapper's bare is foo's first-instruction State (foo::1) directly;
+    // composite name reflects that.
+    expect(machine.initialState.name).toBe('foo::1(10~halt)');
 
     // Subroutine body instructions are fully-qualified.
     const names = collectNames(machine);
     expect(names.has('foo::1')).toBe(true);
     expect(names.has('foo::2')).toBe(true);
     expect(names.has('foo::3')).toBe(true);
+    // Hopper dropped — no bare 'foo' node in the graph.
+    expect(names.has('foo')).toBe(false);
   });
 
-  test('nested subroutines use fully-qualified hopper names', () => {
-    // outer::1 is a call (produces a wrapper composite, not a plain "outer::1" node);
-    // outer::2 is mark (produces a real state named "outer::2").
-    // inner::1 is mark (produces a real state named "outer::inner::1").
+  test('nested subroutines use fully-qualified instruction names', () => {
+    // outer::1 is a call (the inner call wraps a wrapper, so outer keeps its
+    // hopper); outer::2 is a plain mark; inner::1 is a plain mark.
     const machine = new PostMachine({
       10: call('outer'),
       outer: {
@@ -151,17 +154,21 @@ describe('PostMachine — subroutine body and hopper names', () => {
         inner: { 1: mark },
       },
     });
-    // Top wrapper composite uses the top-level hopper name "outer".
+    // outer's first instruction is `call('inner')` — that produces a wrapper,
+    // so #85's hopper-drop is blocked (engine #176 would unwrap the inner
+    // wrapping). outer keeps its hopper named "outer".
     expect(machine.initialState.name).toBe('outer(10~halt)');
 
     const names = collectNames(machine);
-    // The nested call wrapper appears as bare 'outer::inner' (fq hopper) under v7's
-    // flatter emit; composite 'outer::inner(outer::1~outer::2)' lives only on state.name.
-    expect(names.has('outer::inner')).toBe(true);
+    // inner is acyclic with a plain first instruction (mark) → hopper dropped.
+    // No bare 'outer::inner' node; the inner-call wrapper composite is
+    // 'outer::inner::1(outer::1~outer::2)' and inner's body states have FQ names.
+    expect(names.has('outer::inner')).toBe(false);
+    expect(names.has('outer::inner::1')).toBe(true);
     // outer::2 is a plain mark instruction — it has its own named state.
     expect(names.has('outer::2')).toBe(true);
-    // Body states of inner subroutine are fully-qualified.
-    expect(names.has('outer::inner::1')).toBe(true);
+    // outer keeps its hopper (acyclic but first instr is a wrapper).
+    expect(names.has('outer')).toBe(true);
   });
 });
 
@@ -176,12 +183,14 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Under v7, the wrapper inside foo for call('bar') appears as bare 'foo::bar'
-    // (fq-prefixed nested hopper) with a separate continuation 'foo::1~foo::2'.
-    expect(names.has('foo::bar')).toBe(true);
+    // Under #85, `bar` is acyclic + plain first instruction (mark) → hopper
+    // dropped; no bare 'foo::bar' node. The inner-call wrapper composite is
+    // 'foo::bar::1(foo::1~foo::2)' on state.name, with body state 'foo::bar::1'
+    // appearing as a node.
+    expect(names.has('foo::bar')).toBe(false);
+    expect(names.has('foo::bar::1')).toBe(true);
     expect(names.has('foo::1~foo::2')).toBe(true);
     expect(names.has('foo::2')).toBe(true);
-    expect(names.has('foo::bar::1')).toBe(true);
   });
 
   test('group inside subroutine — inner indices namespaced', () => {
@@ -210,9 +219,10 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Wrapper at foo::1 appears as bare 'foo::bar' under v7; composite
-    // 'foo::bar(foo::1~halt)' (tail position inside foo) lives only on state.name.
-    expect(names.has('foo::bar')).toBe(true);
+    // Under #85, `bar` is acyclic + plain first instruction → hopper dropped.
+    // No bare 'foo::bar' node; the bare 'foo::bar::1' is the wrapper's target,
+    // and the tail-position continuation is 'foo::1~halt'.
+    expect(names.has('foo::bar')).toBe(false);
     expect(names.has('foo::1~halt')).toBe(true);
     expect(names.has('foo::bar::1')).toBe(true);
   });
@@ -230,10 +240,10 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Each scope hops accumulate in the prefix.
+    // Each scope hops accumulate in the prefix. `deepest` is acyclic with a
+    // plain first instruction → hopper dropped (#85); only its body state
+    // 'outer::inner::deepest::1' appears in the graph.
     expect(names.has('outer::inner::deepest::1')).toBe(true);
-    // Body inner at outer::inner::1 calls deepest. Under v7, the wrapper appears as
-    // bare 'outer::inner::deepest' (the fq hopper) with separate continuation.
-    expect(names.has('outer::inner::deepest')).toBe(true);
+    expect(names.has('outer::inner::deepest')).toBe(false);
   });
 });
