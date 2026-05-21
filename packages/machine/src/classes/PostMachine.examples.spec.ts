@@ -5,7 +5,7 @@ import {
   alphabet,
   blankSymbol,
   markSymbol,
-  call, check, left, mark, right, stop,
+  call, check, left, mark, noop, right, stop,
   toMermaid,
   summarizePostMachine,
   equivalentPostMachines,
@@ -58,6 +58,78 @@ describe('packages/machine/README.md', () => {
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
+    });
+  });
+
+  describe('Commands', () => {
+    describe('noop in the graph — fall-through and unconditional jump', () => {
+      test('noop in a chain produces a single [K]/[S] state', () => {
+        const machine = new PostMachine({
+          10: mark,
+          20: noop,
+          30: mark,
+          40: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        // 3 reachable instructions (`40: stop` is elided — see trailing-stop test below).
+        expect(mermaid).toContain('["10"]');
+        expect(mermaid).toContain('["20"]');
+        expect(mermaid).toContain('["30"]');
+        // noop's signature: `[K]/[S]` — keep, stay. Marks have `['*']/[S]`.
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s\d+/); // noop
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/); // mark
+      });
+
+      test('noop(40) jumps directly; unreachable instructions are dropped', () => {
+        const machine = new PostMachine({
+          10: noop(40),
+          20: mark,
+          30: mark,
+          40: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        // Only instruction 10 appears; 20/30 are unreachable, 40 = trailing stop.
+        expect(mermaid).toContain('["10"]');
+        expect(mermaid).not.toContain('"20"');
+        expect(mermaid).not.toContain('"30"');
+        // 10's transition is noop's `[K]/[S]` straight to halt (s0).
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s0/);
+      });
+    });
+
+    describe('Trailing stop doesn\'t get its own node', () => {
+      test('{ 10: mark, 20: stop } emits one state, not two', () => {
+        const machine = new PostMachine({
+          10: mark,
+          20: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        expect(mermaid).toContain('["10"]');
+        // No "20" label — the trailing stop is elided as a halt routing
+        // convention; instruction 10 transitions straight to s0(((halt))).
+        expect(mermaid).not.toContain('"20"');
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s0/);
+      });
+
+      test('pm.stateAt for a trailing-stop index resolves to haltState', () => {
+        const machine = new PostMachine({
+          10: mark,
+          20: stop,
+        });
+
+        const stopState = machine.stateAt({instructionIndex: 20});
+
+        // Graph doesn't render `s20`, but the lookup API still resolves the
+        // path to the canonical haltState singleton.
+        expect(stopState).toBeDefined();
+        expect(stopState!.isHalt).toBe(true);
+      });
     });
   });
 
