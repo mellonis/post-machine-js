@@ -18,6 +18,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Subroutines](#subroutines)
 - [MachineState shape](#machinestate-shape)
 - [Naming convention](#naming-convention)
+- [Tags](#tags) — [`$tag` decorator](#inline-tag-decorator) · [Registry](#post-construction-registry) · [Auto-tag policy](#auto-tag-policy) · [Mermaid output](#mermaid-output)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
 - [Links](#links)
@@ -63,7 +64,7 @@ The state graph for the example above (`toMermaid(State.toGraph(machine.initialS
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10"]
+  s1["10<br>main"]
   s2["20"]
   s3["30"]
   idle([idle])
@@ -72,6 +73,8 @@ flowchart TD
   s1 -- "[B] → [K]/[S]" --> s3
   s2 -- "[*] → [K]/[R]" --> s1
   s3 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s1 tag_main
 ```
 
 Reading the diagram:
@@ -193,7 +196,7 @@ const machine = new PostMachine({
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10"]
+  s1["10<br>main"]
   s2["20"]
   s3["30"]
   idle([idle])
@@ -201,6 +204,8 @@ flowchart TD
   s1 -- "[*] → ['*']/[S]" --> s2
   s2 -- "[*] → [K]/[S]" --> s3
   s3 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s1 tag_main
 ```
 
 `s2` is the noop. Its single outgoing edge `[*] → [K]/[S]` is the signature: read anything, keep the cell (`K`, no write), stay in place (`S`, no move) — then fall through to instruction 30. The marks at `s1` and `s3` write `'*'` and move stay; the structural difference between a "useful" command and `noop` is the write cell (`'*'` vs `K`).
@@ -220,10 +225,12 @@ const machine = new PostMachine({
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10"]
+  s1["10<br>main"]
   idle([idle])
   idle -. enter .-> s1
   s1 -- "[*] → [K]/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s1 tag_main
 ```
 
 Instruction `10` jumps directly to `40` (the trailing stop). Instructions `20` and `30` are unreachable — they don't appear in the graph at all. (`toGraph` only emits reachable states; unreachable ones are silently dropped.)
@@ -244,10 +251,12 @@ const machine = new PostMachine({
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10"]
+  s1["10<br>main"]
   idle([idle])
   idle -. enter .-> s1
   s1 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s1 tag_main
 ```
 
 Notice: no `s20` node. `stop` halts the machine, so `s1` (`10: mark`) transitions directly to `s0(((halt)))` — there's no intermediate state for the `stop` instruction. The trailing `stop` is **elided** in the structural emit: it's a halt routing convention, not a State.
@@ -315,37 +324,40 @@ The state graph as the engine emits it — the subroutine and the wrapping `with
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s4["1~2"]
-  s6["2"]
-  s5[["rightToBlank(1~2)"]]
+  s3["1~2"]
+  s5["2"]
+  s4[["rightToBlank::1(1~2)<br>main"]]
   idle([idle])
-  subgraph w_1["callable subtree of rightToBlank"]
-    s1["rightToBlank"]
-    s2["rightToBlank::1"]
-    s3["rightToBlank::2"]
+  subgraph w_1["callable subtree of rightToBlank::1"]
+    s1["rightToBlank::1<br>rightToBlank"]
+    s2["rightToBlank::2"]
     c1(((halt)))
   end
-  idle -. enter .-> s5
-  s5 == "call" ==> s1
-  w_1 -. "return" .-> s5
-  s5 --> s4
-  s1 -- "[*] → [K]/[S]" --> s2
-  s2 -- "[*] → [K]/[R]" --> s3
-  s3 -- "['*'] → [K]/[S]" --> s2
-  s3 -- "[B] → [K]/[S]" --> c1
-  s4 -- "[*] → [K]/[S]" --> s6
-  s6 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> s4
+  s4 == "call" ==> s1
+  w_1 -. "return" .-> s4
+  s4 --> s3
+  s1 -- "[*] → [K]/[R]" --> s2
+  s2 -- "['*'] → [K]/[S]" --> s1
+  s2 -- "[B] → [K]/[S]" --> c1
+  s3 -- "[*] → [K]/[S]" --> s5
+  s5 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  classDef tag_rightToBlank fill:#dbeafe,stroke:#1e40af
+  class s4 tag_main
+  class s1 tag_rightToBlank
 ```
 
 The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverriddenHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
 
-Reading the diagram (engine v7's callable-subtree emit):
-- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, the bare hopper name `"rightToBlank"` on the in-subgraph entry to the subtree, and the composite `"rightToBlank(1~2)"` on the wrapper itself (the `[[…]]` double-square node `s5`). The `s\d+` node IDs are still auto-generated and shift between runs.
-- The wrapper `s5[["rightToBlank(1~2)"]]` is the **call site** — it sits OUTSIDE the subgraph. The `idle -. enter .-> s5` edge marks it as the top-level entry. The double-square `[[…]]` shape signals "wrapper" — a state produced by `withOverriddenHaltState`. The wrapper has no transitions of its own; it delegates to the bare via the bold `== "call" ==>` arrow.
-- The `subgraph w_1["callable subtree of rightToBlank"]` is the **callable body** — it contains the hopper `s1`, the body states `s2`/`s3`, and a frame-local halt marker `c1`. The body's halt-bound transition (`s3 -- "[B]" --> c1`) lands on `c1`, not on the real `s0` halt.
-- The dotted `w_1 -. "return" .-> s5` is the **return arrow** — when the body lands on `c1`, control returns to the wrapper `s5`. Then `s5 --> s4` (the solid wrapper-to-override arrow) hands off to the continuation. This replaces the alpha.1 `-. onHalt .->` keyword.
-- `s4` is the continuation; it falls through (keep+S) to `s6`.
-- `s6` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+Reading the diagram (engine v7's callable-subtree emit + PostMachine's drop-acyclic-hopper rule from [#85](https://github.com/mellonis/post-machine-js/issues/85)):
+- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the composite `"rightToBlank::1(1~2)"` on the wrapper (the `[[…]]` double-square node `s4`). The `<br>main` and `<br>rightToBlank` suffixes are auto-tag annotations (#86) — the entry points of the top-level program and the subroutine, respectively. The `s\d+` node IDs are still auto-generated and shift between runs.
+- The wrapper `s4[["rightToBlank::1(1~2)<br>main"]]` is the **call site** — it sits OUTSIDE the subgraph. The `idle -. enter .-> s4` edge marks it as the top-level entry; the auto-tag `main` reflects that role. The double-square `[[…]]` shape signals "wrapper" — a state produced by `withOverriddenHaltState`. The wrapper has no transitions of its own; it delegates to the bare via the bold `== "call" ==>` arrow. Under [#85](https://github.com/mellonis/post-machine-js/issues/85), the wrapper now wraps `rightToBlank::1` (the first instruction) directly — there is no v6.x "hopper" anchor for this acyclic-in-the-call-graph case.
+- The `subgraph w_1["callable subtree of rightToBlank::1"]` is the **callable body** — it contains the bare entry `s1` (auto-tagged `rightToBlank` as the subroutine entry), the second-instruction state `s2`, and a frame-local halt marker `c1`. The body's halt-bound transition (`s2 -- "[B]" --> c1`) lands on `c1`, not on the real `s0` halt.
+- The dotted `w_1 -. "return" .-> s4` is the **return arrow** — when the body lands on `c1`, control returns to the wrapper `s4`. Then `s4 --> s3` (the solid wrapper-to-override arrow) hands off to the continuation. This replaces the alpha.1 `-. onHalt .->` keyword.
+- `s3` is the continuation; it falls through (keep+S) to `s5`.
+- `s5` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+- The trailing `classDef tag_main` / `classDef tag_rightToBlank` + `class` lines are auto-tag styling (see [Auto-tag policy](#auto-tag-policy)).
 
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
 
@@ -471,6 +483,92 @@ For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (cons
 
 Engine v7 (upstream `@turing-machine-js/machine`) changed the wrapper composite shape from `A>B` to `A(B)` (paren-based). PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) collide with the new paren grammar, so only the *wrapper composite emit* shifted (e.g., the v6.x `"foo>10~40"` is now `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — are unchanged. v7's `toMermaid` output also adopted a callable-subtree model: the wrapper is a `[[bare(continuation)]]` call site OUTSIDE the subgraph, with a bold `==> "call"` arrow into the bare's subtree and a dotted `-. "return" .->` arrow back to the wrapper. Replaces v6.x's composite-named entry node.
 
+## Tags
+
+Tags are out-of-band string labels attached to states. They don't change runtime behavior — they layer semantic meaning over the auto-generated path-derived names ([Naming convention](#naming-convention)) for two surfaces:
+
+- **Mermaid diagrams** — `toMermaid` emits tags as `<br>`-suffixed annotations on node labels plus `classDef`/`class` lines for visual grouping. A reader who didn't write the program sees what the structurally important entry points are without re-deriving them from the instruction list.
+- **Programmatic introspection** — `pm.findByTag(...)` retrieves paths by tag; debugger / analysis code can use tags as stable handles independent of state IDs.
+
+Three ways to apply tags: the **inline `$tag` decorator** at construction, the **`pm.tag` registry** post-construction, and the **auto-tag policy** which marks each program's / subroutine's entry point automatically.
+
+### Inline `$tag` decorator
+
+`$tag(...tags, command)` wraps a command with one or more tags. The tags apply to the resulting State; no extra graph node is created. The leading `$` flags it visually as a decorator (not a primitive command).
+
+```javascript
+import { PostMachine, $tag, check, mark, right, stop } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  10: $tag('hot', check(20, 30)),         // tag a single state
+  20: $tag('loop-body', 'sampled', right(10)),  // variadic — many tags at once
+  30: mark,
+  40: stop,
+});
+
+console.log(machine.tagsOf({ instructionIndex: 10 }));
+// ['hot', 'main'] — inline 'hot' applied at producer time, then 'main' auto-tag
+```
+
+`$tag` rejects groups — `$tag('foo', [mark, right])` throws at construction. Tag each member individually: `[$tag('lift', mark), $tag('descend', right)]`. Passing bare `$tag` (without invoking it) as an instruction also throws with a helpful message.
+
+### Post-construction registry
+
+```typescript
+pm.tag(path: Path | string, ...tags: string[]): void;
+pm.untag(path: Path | string, ...tags: string[]): void;
+pm.tagsOf(path: Path | string): readonly string[];
+pm.findByTag(tag: string): Path[];
+```
+
+`tag` / `untag` are variadic (one call adds/removes any number of tags). `tagsOf` returns a frozen snapshot; `findByTag` returns all paths whose state currently carries that tag. All four resolve `path` the same way as [`pm.stateAt`](#path-based-resolver) — string form (`'10'`, `'sub::1'`) or object form (`{ instructionIndex: 10 }`).
+
+```javascript
+import { PostMachine, mark, stop } from '@post-machine-js/machine';
+
+const machine = new PostMachine({ 10: mark, 20: mark, 30: stop });
+machine.tag('10', 'checkpoint');
+machine.tag('20', 'checkpoint', 'hot');
+
+console.log(machine.tagsOf('20'));         // ['checkpoint', 'hot'] — no 'main' (20 is not the entry)
+console.log(machine.findByTag('checkpoint').length); // 2
+
+machine.untag('20', 'hot');
+console.log(machine.tagsOf('20'));         // ['checkpoint']
+```
+
+`pm.tag(...)` and `$tag(...)` compose: tags from both sources accumulate on the same state. Inline tags are applied at construction, before any post-construction `pm.tag` call sees the state.
+
+### Auto-tag policy
+
+At construction, PostMachine auto-tags the **entry point** of each program/subroutine:
+
+| Path | Auto-tag |
+|---|---|
+| Top-level entry (e.g., the first numbered instruction `1` or `10`) | `'main'` |
+| Each subroutine's entry (e.g., `sub::1`, `rightToBlank::1`) | the subroutine name (e.g., `'sub'`, `'rightToBlank'`) |
+
+Non-entry instructions and group inner states stay clean. Halt-resolving paths (`stop`-only entries) are also skipped, because `stop` resolves to the engine's globally-shared `haltState` singleton — tagging it would leak across all PostMachine instances. The policy is mechanical and intentionally minimal: it anchors the structural roles without cluttering diagrams.
+
+```javascript
+import { PostMachine, call, check, mark, right, stop } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  10: call('rightToBlank'),
+  20: stop,
+  rightToBlank: { 1: check(2, 99), 2: right(1), 99: stop },
+});
+
+console.log(machine.tagsOf('10'));              // ['main']           — top-level entry
+console.log(machine.tagsOf('rightToBlank::1')); // ['rightToBlank']   — subroutine entry
+console.log(machine.tagsOf('rightToBlank::2')); // []                 — body, non-entry
+console.log(machine.findByTag('main').map((p) => p.instructionIndex)); // [10]
+```
+
+### Mermaid output
+
+When tags are present (auto-tag or user-applied), `toMermaid` emits them inline in node labels via `<br>` and as `classDef`/`class` lines for color grouping. The styling palette is hashed deterministically per tag name — same tag name → same color across runs. See the [Visualization](#visualization--tomermaid--statetograph) section below for full example output.
+
 ## Introspection and equivalence
 
 The v3 utilities from [`@turing-machine-js/machine`](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine) work directly against a `PostMachine`. For the two most common ones — `summarize` and `equivalentOn` — this package also ships Post-aware free-function wrappers (`summarizePostMachine`, `equivalentPostMachines`) that bind the standard arguments and hide the `getTapeBlock`-must-clone footgun. **Prefer the wrappers for typical use.** The bare upstream functions are still re-exported here for advanced cases.
@@ -497,7 +595,7 @@ The full rendered emit for this machine:
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10"]
+  s1["10<br>main"]
   s2["20"]
   s3["30"]
   idle([idle])
@@ -506,6 +604,8 @@ flowchart TD
   s1 -- "[B] → [K]/[S]" --> s3
   s2 -- "[*] → [K]/[R]" --> s1
   s3 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s1 tag_main
 ```
 
 (Same machine as the [Quick start](#quick-start) example — see that section for the node/edge-shape reading guide.)
@@ -562,7 +662,7 @@ The two state graphs as the engine emits them — what the numbers above are sum
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10"]
+  s1["10<br>main"]
   s2["20"]
   s3["30"]
   idle([idle])
@@ -571,6 +671,8 @@ flowchart TD
   s1 -- "[B] → [K]/[S]" --> s3
   s2 -- "[*] → [K]/[R]" --> s1
   s3 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s1 tag_main
 ```
 
 `s1` is `check`; on `'*'` it loops via `s2` (`right`); on blank it falls to `s3` (`mark`) → halt. Four nodes, one back-edge, zero subgraphs.
@@ -586,10 +688,10 @@ flowchart TD
   s0(((halt)))
   s6["10~20"]
   s8["20"]
-  s7[["walkToBlank::1(10~20)"]]
+  s7[["walkToBlank::1(10~20)<br>main"]]
   idle([idle])
   subgraph w_4["callable subtree of walkToBlank::1"]
-    s4["walkToBlank::1"]
+    s4["walkToBlank::1<br>walkToBlank"]
     s5["walkToBlank::2"]
     c4(((halt)))
   end
@@ -602,6 +704,10 @@ flowchart TD
   s5 -- "[*] → [K]/[R]" --> s4
   s6 -- "[*] → [K]/[S]" --> s8
   s8 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  classDef tag_walkToBlank fill:#ede9fe,stroke:#5b21b6
+  class s7 tag_main
+  class s4 tag_walkToBlank
 ```
 
 The two extra nodes vs inline that drive `stateCount: 4 → 6`:

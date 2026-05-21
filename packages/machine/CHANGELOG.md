@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-alpha.4] - 2026-05-21
+
+Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.com/mellonis/post-machine-js/issues/86)) — both an inline decorator at construction and a path-based registry post-construction — plus an auto-tag policy that marks each program's/subroutine's entry state. Engine peer-dep widened `^7.0.0-alpha.3` (the new `state.tag(...)` API was added by engine alpha.3). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+
+**Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.4`.
+
+### Added
+
+- **`$tag(...tags, command)` inline decorator** ([#86](https://github.com/mellonis/post-machine-js/issues/86)). Wraps a command with one or more tags; tags apply to the resulting State via the engine's `state.tag(...)` API. The leading `$` flags it visually as a decorator (not a primitive command). Variadic — `$tag('hot', 'sampled', mark)` adds both tags. Rejects groups — `$tag('foo', [mark, right])` throws ("tag each member individually"). Rejects bare `$tag` (uninvoked) as an instruction with a message pointing at the correct form. Composes with indexed commands: `$tag('loop-head', check(20, 40))`, `$tag('subroutine-entry', call('foo'))`.
+
+- **Path-based tag registry on `PostMachine`** ([#86](https://github.com/mellonis/post-machine-js/issues/86)):
+  - `pm.tag(path, ...tags)` — add tags to the state at path
+  - `pm.untag(path, ...tags)` — remove tags (no-op if absent)
+  - `pm.tagsOf(path)` — frozen snapshot of the state's tags
+  - `pm.findByTag(tag)` — all paths whose state currently carries that tag
+
+  All four resolve `path` the same way as `pm.stateAt` (string `'10'` / `'sub::1'` or object `{ instructionIndex: 10 }`). Throws on an unknown path. PostMachine does not maintain its own tag storage — all four forward to the engine's `state.tag(...)` / `.untag(...)` / `.tags` API.
+
+- **Auto-tag policy at construction** ([#86](https://github.com/mellonis/post-machine-js/issues/86)). PostMachine auto-tags the **entry point** of each program/subroutine:
+  - Top-level entry (first numbered instruction) → tag `'main'`
+  - Subroutine entry (first instruction of each subroutine body) → tag matching the subroutine name (`'sub'`, `'rightToBlank'`, …)
+
+  Non-entry instructions and group inner states stay clean. Halt-resolving paths (`stop`-only entries) are skipped — `stop` resolves to the globally-shared engine `haltState` singleton, so tagging it would leak the tag across all PostMachine instances. Auto-tags compose with user tags; both accumulate on the same state.
+
+- **README `## Tags` section**. Documents `$tag`, the registry methods, the auto-tag policy, and the Mermaid output shape. Linked from the TOC and from the Subroutines section.
+
+### Changed
+
+- **README diagram outputs reflect auto-tag emit**. Existing example Mermaid blocks now show `<br>main` / `<br>rightToBlank` / `<br>walkToBlank` suffixes on entry-point node labels plus trailing `classDef tag_<name>` + `class sN tag_<name>` lines. The simple-subroutine `<details>` block was additionally rewritten to reflect the alpha.3 hopper-drop shape (`rightToBlank::1` bare + `rightToBlank::1(1~2)` composite wrapper) that had been left stale.
+
+### Compatibility
+
+- Engine peer dep unchanged: `^7.0.0-alpha.3` (already pinned at alpha.3 since the alpha.3 release; alpha.3's `state.tag(...)` / `.untag(...)` / `.tags` surface is what this release builds on).
+- **Mermaid output ships auto-tag annotations by default.** Consumers that pin to exact diagram strings need to update their fixtures. The annotations are deterministic per machine.
+
+### Out of v7-alpha.4 (still pending for stable v7.0.0)
+
+- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states.
+
 ## [7.0.0-alpha.3] - 2026-05-21
 
 Third v7 pre-release. Drops the v6.x subroutine "hopper" State for the common case where it's not needed for forward-declaration ([#85](https://github.com/mellonis/post-machine-js/issues/85)). Engine peer-dep unchanged (`^7.0.0-alpha.2`). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
