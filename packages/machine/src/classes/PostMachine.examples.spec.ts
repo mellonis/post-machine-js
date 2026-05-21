@@ -13,7 +13,7 @@ import {
   formatPath,
   type MachineState,
   type Path,
-} from '../src/index';
+} from '../index';
 
 describe('packages/machine/README.md', () => {
   describe('Constants', () => {

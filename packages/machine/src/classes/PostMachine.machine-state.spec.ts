@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { PostMachine, mark, right, stop, call, parsePath } from '../src/index';
-import type { MachineState } from '../src/index';
+import { PostMachine, mark, right, stop, call, parsePath } from '../index';
+import type { MachineState } from '../index';
 
 describe('PostMachine — wrapped MachineState', () => {
   test('onStep receives arrivalPath and candidatePaths', async () => {

@@ -1,7 +1,7 @@
 import {describe, expect, test} from 'vitest';
 
-import {analyzeLocalCallGraph} from '../src/callGraph';
-import {call, mark, stop} from '../src/commands';
+import {analyzeLocalCallGraph} from './callGraph';
+import {call, mark, stop} from './commands';
 
 // Direct unit tests for the call-graph analyzer (#85). The full PostMachine
 // integration tests (`machine.spec.ts`, `naming.spec.ts`, `examples.spec.ts`)

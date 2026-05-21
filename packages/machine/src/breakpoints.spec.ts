@@ -5,12 +5,12 @@ import {
   Tape,
   haltState,
   mark, right, check, stop,
-} from '../src/index';
+} from './index';
 import {
   mergeBreakpointFilters,
   validateBreakpointFilter,
   type BreakpointFilter,
-} from '../src/breakpoints';
+} from './breakpoints';
 
 describe('mergeBreakpointFilters', () => {
   test('two `before: true` filters merge to `before: true`', () => {

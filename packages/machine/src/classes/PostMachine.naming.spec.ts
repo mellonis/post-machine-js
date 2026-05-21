@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 import {
   PostMachine, State,
   call, check, erase, left, mark, noop, right, stop,
-} from '../src/index';
-import type { Graph } from '../src/index';
+} from '../index';
+import type { Graph } from '../index';
 
 describe('PostMachine — top-level atomic-command names', () => {
   test('initialState has instruction-derived name "10"', () => {

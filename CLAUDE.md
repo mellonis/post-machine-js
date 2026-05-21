@@ -5,11 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - `npm run build` — TypeScript project-references build (`tsc --build tsconfig.build.json`) followed by `scripts/build-node-entries.mjs`, which uses Rollup to repackage `dist/index.js` into `index.mjs` (ESM) and `index.cjs` (CJS). The Rollup step marks `@turing-machine-js/machine` as `external`, so the upstream Turing-machine engine stays as a runtime dependency.
-- `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.ts`; tests are `test/**/*.spec.ts` (root README/example tests) plus `packages/*/test/**/*.spec.ts` (per-package). Vitest uses esbuild for TypeScript — no babel toolchain.
+- `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.ts`; tests are co-located with source at `packages/*/src/**/*.spec.ts` (per-file unit + integration tests next to the module under test, matching the upstream engine's convention) plus `test/**/*.spec.ts` (root cross-package tests like README examples). Vitest uses esbuild for TypeScript — no babel toolchain.
 - `npm run test:watch` — Vitest in watch mode (`vitest`).
 - `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.ts`: **100 / 100 / 100 / 100** (statements / branches / functions / lines) — pinned to current actuals as of v6.4.0. Any new code paths must be exercised by tests; if a real regression makes 100 untenable, relax intentionally rather than letting drift slip through silently.
 - `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` is ignored.
-- Run a single test: `npx vitest run packages/machine/test/machine.spec.ts -t "name"`.
+- Run a single test: `npx vitest run packages/machine/src/classes/PostMachine.spec.ts -t "name"`.
 
 `npm` ≥ 7 is required (workspaces). Node 24 is what CI uses.
 
@@ -64,7 +64,7 @@ Key files:
 Every executable code example in any `README.md` of this repo has a matching test in an `examples.spec.ts` co-located with that README:
 
 - Root `README.md` → `test/examples.spec.ts`
-- `packages/<name>/README.md` → `packages/<name>/test/examples.spec.ts`
+- `packages/<name>/README.md` → `packages/<name>/src/classes/<ClassName>.examples.spec.ts` (or another co-located location near the README's primary subject)
 
 (One `examples.spec.ts` per README. The repo will have N of them where N is the README count.)
 
