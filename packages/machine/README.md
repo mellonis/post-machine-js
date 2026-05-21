@@ -496,11 +496,13 @@ Three ways to apply tags: the **inline `$tag` decorator** at construction, the *
 
 `$tag(...tags, command)` wraps a command with one or more tags. The tags apply to the resulting State; no extra graph node is created. The leading `$` flags it visually as a decorator (not a primitive command).
 
+**Wrapping a single command.** The common case — one tag per state, applied per instruction:
+
 ```javascript
 import { PostMachine, $tag, check, mark, right, stop } from '@post-machine-js/machine';
 
 const machine = new PostMachine({
-  10: $tag('hot', check(20, 30)),         // tag a single state
+  10: $tag('hot', check(20, 30)),               // tag a single state
   20: $tag('loop-body', 'sampled', right(10)),  // variadic — many tags at once
   30: mark,
   40: stop,
@@ -510,7 +512,77 @@ console.log(machine.tagsOf({ instructionIndex: 10 }));
 // ['hot', 'main'] — inline 'hot' applied at producer time, then 'main' auto-tag
 ```
 
-`$tag` rejects groups — `$tag('foo', [mark, right])` throws at construction. Tag each member individually: `[$tag('lift', mark), $tag('descend', right)]`. Passing bare `$tag` (without invoking it) as an instruction also throws with a helpful message.
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10<br>hot, main"]
+  s2["20<br>loop-body, sampled"]
+  s3["30"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "['*'] → [K]/[S]" --> s2
+  s1 -- "[B] → [K]/[S]" --> s3
+  s2 -- "[*] → [K]/[R]" --> s1
+  s3 -- "[*] → ['*']/[S]" --> s0
+  classDef tag_hot fill:#dbeafe,stroke:#1e40af
+  classDef tag_loop-body fill:#fee2e2,stroke:#991b1b
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  classDef tag_sampled fill:#ede9fe,stroke:#5b21b6
+  class s1 tag_hot
+  class s2 tag_loop-body
+  class s1 tag_main
+  class s2 tag_sampled
+```
+
+`s1` carries two tags (`hot` from `$tag` + `main` from auto-tag) — the engine emits them comma-separated in the label and applies BOTH `classDef` lines via two `class s1 …` directives. Tag composition is additive.
+
+**Per-member in a group.** `$tag` rejects wrapping a group as a whole (`$tag('foo', [mark, right])` throws). Tag each member individually instead — the inner tags land on the per-member states inside the group's callable subtree:
+
+```javascript
+import { PostMachine, $tag, mark, right, stop } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  10: [$tag('lift', mark), $tag('descend', right)],
+  20: stop,
+});
+
+console.log(machine.tagsOf({ instructionIndex: 10, groupInstructionIndex: 1 }));
+// ['lift']
+console.log(machine.tagsOf('10'));
+// ['main'] — the outer wrapper at path '10' carries the auto-tag for the top-level entry
+```
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s6["10~20"]
+  s7[["10.1(10~20)<br>main"]]
+  idle([idle])
+  subgraph w_4["callable subtree of 10.1"]
+    s4["10.1<br>lift"]
+    s5["10.2<br>descend"]
+    c4(((halt)))
+  end
+  idle -. enter .-> s7
+  s7 == "call" ==> s4
+  w_4 -. "return" .-> s7
+  s7 --> s6
+  s4 -- "[*] → ['*']/[S]" --> s5
+  s5 -- "[*] → [K]/[R]" --> c4
+  s6 -- "[*] → [K]/[S]" --> s0
+  classDef tag_descend fill:#fef3c7,stroke:#92400e
+  classDef tag_lift fill:#fee2e2,stroke:#991b1b
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class s5 tag_descend
+  class s4 tag_lift
+  class s7 tag_main
+```
+
+The group expands into a `withOverriddenHaltState` chain wrapped in a callable subtree (same shape as a subroutine call). The wrapper `s7` is the top-level entry (auto-tagged `main`); the inner states `s4` (`lift`) and `s5` (`descend`) carry their per-member tags inside the subgraph. The group's outer path `'10'` resolves to the wrapper; group-inner paths use the `{ instructionIndex: 10, groupInstructionIndex: N }` shape.
+
+Passing bare `$tag` (without invoking it) as an instruction or as a group member also throws — with a message pointing at the correct form.
 
 ### Post-construction registry
 
