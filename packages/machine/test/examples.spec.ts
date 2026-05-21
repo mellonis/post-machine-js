@@ -390,6 +390,30 @@ describe('packages/machine/README.md', () => {
         expect(b.stateCount).toBe(7);
         expect(b.compositionEdgeCount).toBe(1);
         expect(b.maxCompositionDepth).toBe(1);
+
+        // The README's Structural summary section shows both machines'
+        // toMermaid emits in <details> blocks alongside the counts. Pin the
+        // salient shape features so the doc claim "this is what the engine
+        // emits" doesn't go stale (looser-shape checks per existing repo
+        // convention; the engine repo has stricter normalized snapshots).
+        const inlineMermaid = toMermaid(State.toGraph(inline.initialState, inline.tapeBlock));
+        const subMermaid = toMermaid(State.toGraph(withSubroutine.initialState, withSubroutine.tapeBlock));
+
+        // inline: flat graph, no subgraph, no wrapper (no `sN[[…]]` shape; the
+        // `[[` in `%% alphabets: [[" ","*"]]` is the JSON-stringified header).
+        expect(inlineMermaid).not.toMatch(/subgraph w_/);
+        expect(inlineMermaid).not.toMatch(/s\d+\[\[/);
+        expect(inlineMermaid).not.toMatch(/== "call" ==>/);
+        expect(inlineMermaid).toMatch(/idle -\. enter \.-> s\d+/);
+
+        // withSubroutine: wrapper outside the subgraph + callable-subtree shape.
+        expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank"\]/);
+        expect(subMermaid).toContain('[["walkToBlank(10~20)"]]'); // wrapper, composite name
+        expect(subMermaid).toContain('["walkToBlank"]');          // bare, inside subgraph
+        expect(subMermaid).toContain('["10~20"]');                // continuation
+        expect(subMermaid).toMatch(/s\d+ == "call" ==> s\d+/);    // wrapper → bare
+        expect(subMermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+        expect(subMermaid).not.toMatch(/onHalt/);
       });
     });
 

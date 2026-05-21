@@ -16,7 +16,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
-- [MachineState shape](#machinestate-shape-v620)
+- [MachineState shape](#machinestate-shape)
 - [Naming convention](#naming-convention)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
@@ -307,7 +307,7 @@ The two helpers have the same shape — a `check`/move/loop pair — with mirror
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
 
-## MachineState shape (v6.1.0+)
+## MachineState shape
 
 PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState` with two additional fields:
 
@@ -388,7 +388,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from an `onStep` / `onPause` callback (runtime). See [Path-based resolver](#path-based-resolver-v630) and [MachineState shape](#machinestate-shape-v620).
+For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from an `onStep` / `onPause` callback (runtime). See [Path-based resolver](#path-based-resolver) and [MachineState shape](#machinestate-shape).
 
 ### Engine v7 alignment
 
@@ -414,9 +414,26 @@ const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock)
 console.log(mermaid.split('\n')[0]); // flowchart TD
 ```
 
-The full rendered output is shown in the [Quick start](#quick-start) section's `<details>` block alongside the hand-drawn diagram, with a reading guide for the engine's compact `read → write/move` edge syntax.
+The full rendered emit for this machine:
 
-For the raw `Graph` as input to other tools (analysis, custom rendering, alternative serializations), use `State.toGraph(machine.initialState, machine.tapeBlock)` directly. The companion `fromMermaid` and `State.fromGraph` are also re-exported for round-trip workflows — load a Mermaid blob, get a `Graph` back, build a runnable machine from it. The round-trip is *behaviorally* lossless (same inputs produce same outputs) but not bytewise lossless because state IDs auto-reassign on each pass; see [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138)/[#139](https://github.com/mellonis/turing-machine-js/issues/139) for the cleaner-emit and regression-test follow-ups on the upstream side.
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  s2["20"]
+  s3["30"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "['*'] → [K]/[S]" --> s2
+  s1 -- "[B] → [K]/[S]" --> s3
+  s2 -- "[*] → [K]/[R]" --> s1
+  s3 -- "[*] → ['*']/[S]" --> s0
+```
+
+(Same machine as the [Quick start](#quick-start) example — see that section for the node/edge-shape reading guide.)
+
+For the raw `Graph` as input to other tools (analysis, custom rendering, alternative serializations), use `State.toGraph(machine.initialState, machine.tapeBlock)` directly. The companion `fromMermaid` and `State.fromGraph` are also re-exported for round-trip workflows — load a Mermaid blob, get a `Graph` back, build a runnable machine from it. Under engine v7 ([#174](https://github.com/mellonis/turing-machine-js/issues/174)), the round-trip is both behaviorally lossless AND bytewise stable for wrapped states (state IDs auto-reassign on each pass, but the emit shape — including shared-bare deduplication — is deterministic).
 
 ### Structural summary — `summarizePostMachine`
 
@@ -459,6 +476,68 @@ console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
 
 Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverriddenHaltState` wrapper overhead per call (~3 states under engine v7's callable-subtree emit: a separate wrapper node, the hopper bare, and the continuation) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
 
+The two state graphs as the engine emits them — what the numbers above are summarizing:
+
+<details>
+<summary><code>inline</code> — flat 4-state graph, no composition</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  s2["20"]
+  s3["30"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "['*'] → [K]/[S]" --> s2
+  s1 -- "[B] → [K]/[S]" --> s3
+  s2 -- "[*] → [K]/[R]" --> s1
+  s3 -- "[*] → ['*']/[S]" --> s0
+```
+
+`s1` is `check`; on `'*'` it loops via `s2` (`right`); on blank it falls to `s3` (`mark`) → halt. Four nodes, one back-edge, zero subgraphs.
+
+</details>
+
+<details>
+<summary><code>withSubroutine</code> — wrapper + callable subtree + continuation</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s7["10~20"]
+  s9["20"]
+  s8[["walkToBlank(10~20)"]]
+  idle([idle])
+  subgraph w_4["callable subtree of walkToBlank"]
+    s4["walkToBlank"]
+    s5["walkToBlank::1"]
+    s6["walkToBlank::2"]
+    c4(((halt)))
+  end
+  idle -. enter .-> s8
+  s8 == "call" ==> s4
+  w_4 -. "return" .-> s8
+  s8 --> s7
+  s4 -- "[*] → [K]/[S]" --> s5
+  s5 -- "['*'] → [K]/[S]" --> s6
+  s5 -- "[B] → [K]/[S]" --> c4
+  s6 -- "[*] → [K]/[R]" --> s5
+  s7 -- "[*] → [K]/[S]" --> s9
+  s9 -- "[*] → ['*']/[S]" --> s0
+```
+
+The three extra nodes vs inline that drive `stateCount: 4 → 7`:
+- **`s8[["walkToBlank(10~20)"]]`** — the wrapper / call site, OUTSIDE the subgraph
+- **`s4["walkToBlank"]`** — the bare hopper INSIDE the callable subtree, forwarded to from the wrapper's bold `== "call" ==>` arrow
+- **`s7["10~20"]`** — the continuation that PostMachine synthesizes between the `call('walkToBlank')` site at instruction `10` and the next top-level instruction `20`
+
+The subroutine body (`s5`, `s6`) inside `subgraph w_4` mirrors `inline`'s `s1`, `s2` loop structurally — same algorithm, same internal back-edge. The extra cost is purely the wrapper machinery. `compositionEdgeCount: 0 → 1` and `maxCompositionDepth: 0 → 1` come from the single `withOverriddenHaltState` wrapper around `walkToBlank`.
+
+</details>
+
 What `summarizePostMachine` actually surfaces is the **structural trade-off**, not just state count: `compositionEdgeCount` and `maxCompositionDepth` go to zero in the inline version (everything is one flat graph) and become non-zero with subroutines (`call` creates a composition edge; nesting goes deeper). Use those fields to reason about the structure of reuse independently of raw size.
 
 `summarizePostMachine(machine)` is sugar for `summarize(machine.initialState, machine.tapeBlock)`. The bare `summarize` is also re-exported for callers who already hold a `(state, tapeBlock)` pair.
@@ -485,7 +564,7 @@ Each case string is loaded onto a fresh clone of the originating PostMachine's t
 
 The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
 
-## Path-based resolver (v6.1.0+)
+## Path-based resolver
 
 `PostMachine` exposes three construction-time queries for addressing states by instruction path.
 
@@ -508,9 +587,9 @@ pm.stateAt({ scope: 'sub', instructionIndex: 1 });
 pm.stateAt({ scope: ['outer', 'inner'], instructionIndex: 1, groupInstructionIndex: 2 });
 ```
 
-Returned States are the real engine States — `instanceof State`, usable with `State.toGraph`, `summarize`, and other engine utilities — but with `state.debug` set/get installed by PostMachine (see [Breakpoints](#breakpoints-v630) below).
+Returned States are the real engine States — `instanceof State`, usable with `State.toGraph`, `summarize`, and other engine utilities — but with `state.debug` set/get installed by PostMachine (see [Breakpoints](#breakpoints) below).
 
-## Breakpoints (v6.1.0+)
+## Breakpoints
 
 Register pauses by instruction path or by `haltState`:
 
