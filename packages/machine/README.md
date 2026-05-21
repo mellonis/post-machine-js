@@ -177,6 +177,83 @@ The first table is the **canonical instruction set** of a Post(–Turing) machin
 
 `call` and the [Subroutines](#subroutines) feature add procedure-like reuse to the classical numbered-instruction model. `noop` is the placeholder of choice: useful for reserving instruction numbers in a worked example, padding a sketch, or as a labelled jump target. (Bare `noop` has no classical analog; `noop(ix)` corresponds to Post's unconditional jump.)
 
+<details>
+<summary><code>noop</code> in the graph — fall-through and unconditional jump</summary>
+
+```javascript
+const machine = new PostMachine({
+  10: mark,
+  20: noop,
+  30: mark,
+  40: stop,
+});
+```
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  s2["20"]
+  s3["30"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "[*] → ['*']/[S]" --> s2
+  s2 -- "[*] → [K]/[S]" --> s3
+  s3 -- "[*] → ['*']/[S]" --> s0
+```
+
+`s2` is the noop. Its single outgoing edge `[*] → [K]/[S]` is the signature: read anything, keep the cell (`K`, no write), stay in place (`S`, no move) — then fall through to instruction 30. The marks at `s1` and `s3` write `'*'` and move stay; the structural difference between a "useful" command and `noop` is the write cell (`'*'` vs `K`).
+
+Indexed form `noop(40)` rewires the fall-through to instruction 40 — Post's unconditional jump:
+
+```javascript
+const machine = new PostMachine({
+  10: noop(40),
+  20: mark,
+  30: mark,
+  40: stop,
+});
+```
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "[*] → [K]/[S]" --> s0
+```
+
+Instruction `10` jumps directly to `40` (the trailing stop). Instructions `20` and `30` are unreachable — they don't appear in the graph at all. (`toGraph` only emits reachable states; unreachable ones are silently dropped.)
+
+</details>
+
+<details>
+<summary>Trailing <code>stop</code> doesn't get its own node</summary>
+
+```javascript
+const machine = new PostMachine({
+  10: mark,
+  20: stop,
+});
+```
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "[*] → ['*']/[S]" --> s0
+```
+
+Notice: no `s20` node. `stop` halts the machine, so `s1` (`10: mark`) transitions directly to `s0(((halt)))` — there's no intermediate state for the `stop` instruction. The trailing `stop` is **elided** in the structural emit: it's a halt routing convention, not a State.
+
+The lookup API is asymmetric in a useful way — `pm.stateAt({ instructionIndex: 20 })` for this machine resolves to `haltState` (the canonical halt singleton), not `undefined`. The graph doesn't render `s20`, but the path still resolves.</details>
+
 ## Grouped instructions
 
 Several commands can share a single instruction number by passing them as an array:
