@@ -19,7 +19,7 @@ import {
 } from '../consts';
 import type { CommandContext, Instructions } from '../commands';
 import {
-  call, check, erase, left, mark, noop, right, stop,
+  $tag, call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
 import { installStateLockdown, withLockdownEscape } from '../lockdown';
@@ -450,6 +450,12 @@ export class PostMachine extends TuringMachine {
           .every((command) => commandsSet.has(command as CommandFn));
 
         if (!areInstructionsInGroupValid) {
+          if (instruction.includes($tag as never)) {
+            throw new Error(
+              'bare `$tag` decorator in a group — `$tag` must be invoked, '
+              + 'e.g. `[$tag(\'hot\', mark), right]`',
+            );
+          }
           throw new Error('invalid command in the group');
         }
 
@@ -485,6 +491,11 @@ export class PostMachine extends TuringMachine {
             nextState,
           },
         }, continuationName)));
+      } else if (instruction === $tag) {
+        throw new Error(
+          'bare `$tag` decorator passed as an instruction — `$tag` must be '
+          + 'invoked, e.g. `10: $tag(\'hot\', mark)`',
+        );
       } else {
         throw new Error('invalid instruction');
       }
@@ -505,6 +516,23 @@ export class PostMachine extends TuringMachine {
           };
 
       this.#recordPath(state, path);
+
+      // Auto-tag policy (#86). Only the ENTRY POINT of each program /
+      // subroutine gets an auto-tag — `1` for main, `alg::1` for subroutine
+      // `alg` — to keep diagrams uncluttered while still anchoring the
+      // structural roles. Group inner states and halt-resolving paths are
+      // skipped (halt is a globally-shared singleton and can't be safely
+      // tagged).
+      if (
+        groupOuterInstructionIndex === undefined
+        && !state.isHalt
+        && Number(instructionIndexStr) === list[0]
+      ) {
+        const tagName = scope.length === 0
+          ? 'main'
+          : scope[scope.length - 1];
+        state.tag(tagName);
+      }
     });
 
     return references[instructionIndexList[0]].ref;
@@ -561,6 +589,31 @@ export class PostMachine extends TuringMachine {
   candidatesFor(target: Path | string): Path[] {
     const { state } = this.#resolveToState(target);
     return this.#stateToCandidatePaths.get(state)!;
+  }
+
+  tag(target: Path | string, ...tags: string[]): void {
+    const { state } = this.#resolveToState(target);
+    state.tag(...tags);
+  }
+
+  untag(target: Path | string, ...tags: string[]): void {
+    const { state } = this.#resolveToState(target);
+    state.untag(...tags);
+  }
+
+  tagsOf(target: Path | string): readonly string[] {
+    const { state } = this.#resolveToState(target);
+    return state.tags;
+  }
+
+  findByTag(tag: string): Path[] {
+    const results: Path[] = [];
+    for (const [state, paths] of this.#stateToCandidatePaths) {
+      if (state.tags.includes(tag)) {
+        results.push(...paths);
+      }
+    }
+    return results;
   }
 
   setBreakpoint(target: BreakpointTarget, filter: BreakpointFilter): void {
