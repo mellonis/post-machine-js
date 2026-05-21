@@ -146,22 +146,30 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry — under engine v7 the wrapper composite is emitted as a
-      // halt-frame subgraph containing the bare hopper (double-square brackets `[[...]]`)
-      // and a frame-local halt node, not as a single composite-named round node.
-      // The composite `"rightToBlank(1~2)"` only lives on the wrapping State's `.name`.
+      // Halt + the entry — under engine v7's callable-subtree emit (alpha.2,
+      // #174) the wrapper is a separate `[[composite-name]]` node OUTSIDE the
+      // subgraph; the bare hopper is a regular `[name]` node INSIDE its
+      // callable subtree subgraph. Composite name `"rightToBlank(1~2)"` lives
+      // on the wrapper.
       expect(mermaid).toContain('(((halt)))');
-      expect(mermaid).toMatch(/subgraph w_\d+\["halt frame"\]/);
-      expect(mermaid).toContain('[["rightToBlank"]]');
+      expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank"\]/);
+      expect(mermaid).toContain('[["rightToBlank(1~2)"]]');
+      expect(mermaid).toContain('["rightToBlank"]'); // bare inside the subgraph
 
-      // The dotted onHalt edge — the override path back from the subroutine.
-      expect(mermaid).toMatch(/s\d+ -\. onHalt \.-> s\d+/);
+      // Bold `== "call" ==>` from wrapper to bare + dotted `-. "return" .->`
+      // from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->`
+      // keyword does not appear; wrapper-to-override is a regular solid arrow.
+      expect(mermaid).toMatch(/s\d+ == "call" ==> s\d+/);
+      expect(mermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+      expect(mermaid).not.toMatch(/onHalt/);
 
       // The subroutine's internal cycle: a right-move state and a check state
       // that loops back on '*' and exits on the blank. Engine v7 label vocabulary.
       expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);    // right (keep + R)
       expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);  // check on '*'
-      expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> s\d+/);     // check on blank
+      // Body's halt-bound transition is retargeted to the frame's halt marker (c\d+),
+      // not the real s0 — that's the callable-subtree contract.
+      expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> c\d+/);     // check on blank
 
       // The mark instruction's edge: write '*', stay, transition to halt.
       expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
@@ -375,8 +383,11 @@ describe('packages/machine/README.md', () => {
         expect(a.compositionEdgeCount).toBe(0);
         expect(a.maxCompositionDepth).toBe(0);
 
-        // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 6 1 1
-        expect(b.stateCount).toBe(6);
+        // Engine alpha.2 (#174) emits wrappers as separate nodes from their
+        // bares; the subroutine adds 1 wrapper node on top of the bare hopper +
+        // body states + continuation + top-level mark.
+        // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 7 1 1
+        expect(b.stateCount).toBe(7);
         expect(b.compositionEdgeCount).toBe(1);
         expect(b.maxCompositionDepth).toBe(1);
       });

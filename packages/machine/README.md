@@ -80,7 +80,7 @@ Reading the diagram:
 - `(((label)))` — halt state
 - `["label"]` — intermediate (and now also entry) state
 - `([idle])` — the `idle` sentinel that marks the entry point via a dotted `idle -. enter .-> s_initial` edge
-- (Wrapper composites use a `subgraph w_N["halt frame"]` block — see the [Subroutines](#subroutines) section.)
+- (Wrappers produced by `withOverriddenHaltState` use a `[[bare(continuation)]]` double-square node sitting OUTSIDE its callable subtree's `subgraph w_N["callable subtree of NAME"]` block — see the [Subroutines](#subroutines) section.)
 
 The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>(<continuation>)"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that. The `40: stop` instruction is elided — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
 
@@ -238,34 +238,37 @@ The state graph as the engine emits it — the subroutine and the wrapping `with
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s5["rightToBlank::1"]
-  s6["rightToBlank::2"]
-  s7["1~2"]
-  s9["2"]
+  s4["1~2"]
+  s6["2"]
+  s5[["rightToBlank(1~2)"]]
   idle([idle])
-  subgraph w_8["halt frame"]
-    s8[["rightToBlank"]]
-    c8(((halt)))
+  subgraph w_1["callable subtree of rightToBlank"]
+    s1["rightToBlank"]
+    s2["rightToBlank::1"]
+    s3["rightToBlank::2"]
+    c1(((halt)))
   end
-  idle -. enter .-> s8
-  s5 -- "[*] → [K]/[R]" --> s6
-  s6 -- "['*'] → [K]/[S]" --> s5
-  s6 -- "[B] → [K]/[S]" --> s0
-  s7 -- "[*] → [K]/[S]" --> s9
-  s8 -- "[*] → [K]/[S]" --> s5
-  s8 -. onHalt .-> s7
-  s9 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> s5
+  s5 == "call" ==> s1
+  w_1 -. "return" .-> s5
+  s5 --> s4
+  s1 -- "[*] → [K]/[S]" --> s2
+  s2 -- "[*] → [K]/[R]" --> s3
+  s3 -- "['*'] → [K]/[S]" --> s2
+  s3 -- "[B] → [K]/[S]" --> c1
+  s4 -- "[*] → [K]/[S]" --> s6
+  s6 -- "[*] → ['*']/[S]" --> s0
 ```
 
 The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverriddenHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
 
-Reading the diagram:
-- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the bare hopper name `"rightToBlank"` on the wrapped subroutine entry (the `[[…]]` double-square node `s8`). The wrapper's composite name `"rightToBlank(1~2)"` lives on the state's `.name` but isn't reproduced as a separate graph node — the `subgraph w_8["halt frame"]` block captures the same structural information in graph form. The `s\d+` node IDs are still auto-generated and shift between runs.
-- `s8` (inside `w_8`) is the top-level entry — the engine's `idle -. enter .-> s8` edge marks it. The double-square `[[rightToBlank]]` shape signals "subroutine hopper" — i.e., a state wrapped by `withOverriddenHaltState`. The frame-local halt `c8` and the surrounding `subgraph w_8` together represent "halt within this subroutine's frame is the override target," replacing the v6 monolithic composite-named entry node. (Note: in this diagram `c8` has no incoming edges and the `onHalt` redirect is attached to `s8` rather than `c8` — tracked upstream as [turing-machine-js#173](https://github.com/mellonis/turing-machine-js/issues/173).)
-- `s5`/`s6` form the subroutine's internal cycle: `s5` is `right` (keep+R), `s6` is `check(1, 3)` (loops back on `'*'`, exits to halt on blank). Note: `s6 → s0` is the literal `State` transition but **not** the runtime path — the wrapper's halt-stack intercepts and redirects to `s7`. The broader question of whether body states like `s5`/`s6` should visualize as inside the halt frame is tracked at [turing-machine-js#174](https://github.com/mellonis/turing-machine-js/issues/174).
-- The dotted `onHalt` edge `s8 -.→ s7` is the override in action: when the wrapper's halt-stack intercepts a halt-bound transition from inside the subroutine, the engine pops back to `s7` (the continuation named `"1~2"`).
-- `s7` is the continuation; it falls through (keep+S) to `s9`.
-- `s9` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+Reading the diagram (engine v7's callable-subtree emit):
+- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, the bare hopper name `"rightToBlank"` on the in-subgraph entry to the subtree, and the composite `"rightToBlank(1~2)"` on the wrapper itself (the `[[…]]` double-square node `s5`). The `s\d+` node IDs are still auto-generated and shift between runs.
+- The wrapper `s5[["rightToBlank(1~2)"]]` is the **call site** — it sits OUTSIDE the subgraph. The `idle -. enter .-> s5` edge marks it as the top-level entry. The double-square `[[…]]` shape signals "wrapper" — a state produced by `withOverriddenHaltState`. The wrapper has no transitions of its own; it delegates to the bare via the bold `== "call" ==>` arrow.
+- The `subgraph w_1["callable subtree of rightToBlank"]` is the **callable body** — it contains the hopper `s1`, the body states `s2`/`s3`, and a frame-local halt marker `c1`. The body's halt-bound transition (`s3 -- "[B]" --> c1`) lands on `c1`, not on the real `s0` halt.
+- The dotted `w_1 -. "return" .-> s5` is the **return arrow** — when the body lands on `c1`, control returns to the wrapper `s5`. Then `s5 --> s4` (the solid wrapper-to-override arrow) hands off to the continuation. This replaces the alpha.1 `-. onHalt .->` keyword.
+- `s4` is the continuation; it falls through (keep+S) to `s6`.
+- `s6` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
 
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
 
@@ -389,7 +392,7 @@ For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (cons
 
 ### Engine v7 alignment
 
-Engine v7 (upstream `@turing-machine-js/machine`) changed the wrapper composite shape from `A>B` to `A(B)` (paren-based). PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) collide with the new paren grammar, so only the *wrapper composite emit* shifted (e.g., the v6.x `"foo>10~40"` is now `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — are unchanged. v7 also reshaped `toMermaid` output: wrapper composites now render as a `subgraph w_N["halt frame"]` block (with the bare hopper in `[[…]]` double-square brackets) instead of a single composite-named entry node.
+Engine v7 (upstream `@turing-machine-js/machine`) changed the wrapper composite shape from `A>B` to `A(B)` (paren-based). PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) collide with the new paren grammar, so only the *wrapper composite emit* shifted (e.g., the v6.x `"foo>10~40"` is now `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — are unchanged. v7's `toMermaid` output also adopted a callable-subtree model: the wrapper is a `[[bare(continuation)]]` call site OUTSIDE the subgraph, with a bold `==> "call"` arrow into the bare's subtree and a dotted `-. "return" .->` arrow back to the wrapper. Replaces v6.x's composite-named entry node.
 
 ## Introspection and equivalence
 
@@ -451,10 +454,10 @@ console.log(a.stateCount, a.compositionEdgeCount, a.maxCompositionDepth);
 // 4 0 0 — inline: 4 states, no composition
 
 console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
-// 6 1 1 — subroutine: 2 more states; 1 composition edge from `call` (depth 1)
+// 7 1 1 — subroutine: 3 more states; 1 composition edge from `call` (depth 1)
 ```
 
-Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverriddenHaltState` wrapper overhead per call (~2 states for the wrapper + routing intermediate) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
+Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverriddenHaltState` wrapper overhead per call (~3 states under engine v7's callable-subtree emit: a separate wrapper node, the hopper bare, and the continuation) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
 
 What `summarizePostMachine` actually surfaces is the **structural trade-off**, not just state count: `compositionEdgeCount` and `maxCompositionDepth` go to zero in the inline version (everything is one flat graph) and become non-zero with subroutines (`call` creates a composition edge; nesting goes deeper). Use those fields to reason about the structure of reuse independently of raw size.
 
