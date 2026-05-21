@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an npm-workspaces + Lerna monorepo with **one published package** so far:
 
-- **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. The Turing engine is a **peer dependency** (see [Relationship to `@turing-machine-js/machine` v6.0.x](#relationship-to-turing-machine-jsmachine-v60x) below for the full version-relationship writeup). PostMachine pulls `State`, `TapeBlock`, `TuringMachine`, `Tape`, and several runtime singletons (`haltState`, `ifOtherSymbol`, the `movements` constants) from the engine.
+- **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. The Turing engine is a **peer dependency** (see [Relationship to `@turing-machine-js/machine` v7.0.0-alpha.x](#relationship-to-turing-machine-jsmachine-v700-alphax) below for the full version-relationship writeup). PostMachine pulls `State`, `TapeBlock`, `TuringMachine`, `Tape`, and several runtime singletons (`haltState`, `ifOtherSymbol`, the `movements` constants) from the engine.
 
 ### How `PostMachine` maps to the Turing engine
 
@@ -74,16 +74,22 @@ When adding or editing a README example, update the matching test in the same ch
 
 Non-README tests (sentinel-identity checks, internal plumbing) live in separately-named spec files (e.g. `v3.spec.ts`, `machine.spec.ts`), keeping the `examples.spec.ts` files purely doc-driven.
 
-## Relationship to `@turing-machine-js/machine` v6.0.x
+## Relationship to `@turing-machine-js/machine` v7.0.0-alpha.x
 
 `@turing-machine-js/machine` is declared as a **peer dependency** (and a devDependency for the in-repo build). Importantly, it must be a peer because the upstream library exposes two kinds of identity-sensitive surface that duplicate copies would break:
 
 - **Sentinel singletons** keyed by `Symbol(...)` — `haltState`, `ifOtherSymbol`, the members of `movements`, the members of `symbolCommands`. Equality checks (`=== haltState`, etc.) require the same physical object.
 - **Classes** — `Reference`, `State`, `TapeBlock`, `TuringMachine`, `Tape`, `Alphabet`. `instanceof` checks require shared constructor identity.
 
-The current peer range is `^6.0.0`. **v4 and v5 are no longer supported** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped a v5 of its own — v6.0.0 is the first post release that crosses to engine v5/v6.)
+The current peer range is `^7.0.0-alpha.2` (set in `@post-machine-js/machine@7.0.0-alpha.2`). **v4 / v5 / v6 are no longer supported on the v7 line** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped its own v5 and skipped its own v7-alpha.1; v7-alpha.2 is the first post prerelease that crosses to engine v7.)
 
-The upstream v5/v6 changes that drove this release:
+The engine v7 changes that drove this release:
+
+- **`withOverrodeHaltState` → `withOverriddenHaltState`** (engine [#149](https://github.com/mellonis/turing-machine-js/issues/149)). Consumer-side rename in `src/commands.ts`, `src/classes/PostMachine.ts`, and tests.
+- **Wrapper composite shape `A>B` → `A(B)`** (engine [#148](https://github.com/mellonis/turing-machine-js/issues/148)). `parsePath` now rejects `(`/`)` in user-provided state names. The Post `Path` separators (`::`, `.`, `~`) survive unchanged.
+- **`toMermaid` callable-subtree emit** (engine [#174](https://github.com/mellonis/turing-machine-js/issues/174)). The wrapper composite is now a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the bare hopper + body live INSIDE `subgraph w_N["callable subtree of NAME"]`. Bold `==> "call"` arrow from wrapper to bare; dotted `-. "return" .->` from subgraph back to wrapper; retired `-. onHalt .->` (wrapper-to-override is now solid `-->`). Body's halt-bound transitions retarget to the frame's halt marker `cN`, not the real `s0`. Consequence: `summarizePostMachine().stateCount` is +1 per call site vs v6.x.
+
+Previous v5/v6 engine changes still apply unchanged on v7:
 
 - **`pm.run()` stays async.** Engine v4 introduced `Promise<void>` return; v5/v6 didn't change that. Callers must still `await` it.
 - **`runStepByStep` stays unchanged.** Still a synchronous `Generator<MachineState>` (engine v6 narrowed the parent's generator return type back to `Generator<MachineState>`, matching post's existing override).
