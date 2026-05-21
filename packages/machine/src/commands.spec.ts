@@ -56,6 +56,33 @@ describe('$tag — inline tag decorator (#86)', () => {
     })).toThrow(/group/i);
   });
 
+  test('per-member `$tag` inside a group works — tags apply to each inner state', () => {
+    // The recommended workaround for "tag inside a group" — wrap each
+    // member individually instead of wrapping the group as a whole.
+    const machine = new PostMachine({
+      10: [$tag('lift', mark), $tag('descend', right)],
+      20: stop,
+    });
+
+    // Inner group instructions carry their per-member tags.
+    expect(machine.tagsOf({ instructionIndex: 10, groupInstructionIndex: 1 }))
+      .toEqual(['lift']);
+    expect(machine.tagsOf({ instructionIndex: 10, groupInstructionIndex: 2 }))
+      .toEqual(['descend']);
+
+    // The outer group wrapper at path '10' is the top-level entry — it
+    // carries only the auto-tag 'main', not the inner-member tags.
+    expect(machine.tagsOf('10')).toEqual(['main']);
+
+    // findByTag returns the group-inner path for each member tag.
+    expect(machine.findByTag('lift')).toEqual([
+      { instructionIndex: 10, groupInstructionIndex: 1 },
+    ]);
+    expect(machine.findByTag('descend')).toEqual([
+      { instructionIndex: 10, groupInstructionIndex: 2 },
+    ]);
+  });
+
   test('rejects calls with no tags', () => {
     expect(() => new PostMachine({
       10: ($tag as unknown as (...args: unknown[]) => unknown)(mark) as never,
