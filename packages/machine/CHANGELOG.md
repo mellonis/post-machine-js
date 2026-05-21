@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-alpha.3] - 2026-05-21
+
+Third v7 pre-release. Drops the v6.x subroutine "hopper" State for the common case where it's not needed for forward-declaration ([#85](https://github.com/mellonis/post-machine-js/issues/85)). Engine peer-dep unchanged (`^7.0.0-alpha.2`). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+
+**Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.3`.
+
+### Changed
+
+- **Subroutine hopper dropped for acyclic subroutines with plain first instruction** ([#85](https://github.com/mellonis/post-machine-js/issues/85)). PostMachine used to create a "hopper" State per subroutine — a stub State that wrapped a `Reference` to the subroutine's first instruction, providing a forward-declaration anchor for `withOverriddenHaltState`. For the common case, the hopper is now dropped: `call('foo')` wraps `foo::1` directly, saving one State per call site.
+
+  The hopper is **retained** in three cases where dropping it would break the runtime:
+  - **Cyclic subroutines** (self-recursion or mutual recursion). Static call-graph analysis (Tarjan's SCC) identifies subroutines participating in cycles; the hopper provides the forward-declaration needed for `call('foo')` to wrap something at the moment of construction. Mutual recursion `foo → bar → foo` continues to work.
+  - **Degenerate body `{ 1: stop }`**. The first-instruction "State" would be `haltState` itself; wrapping `haltState` produces an empty `symbolToDataMap` and the engine throws at runtime. Hopper provides a meaningful intermediate.
+  - **Leading group `[…]` or leading `call(...)`**. The first-instruction State is itself a wrapper; engine's nested-wohs collapse (#176) would unwrap the inner wrapping when the outer wrapper applies, losing the group's or inner call's continuation. Hopper preserves the chain.
+
+  Subroutines satisfying NONE of these — by far the common case — drop the hopper.
+
+  Observable changes:
+  - **Composite wrapper name**: `foo(continuation)` → `foo::1(continuation)` for hopper-dropped subs. Accurately reflects the bare's identity.
+  - **`summarizePostMachine().stateCount`**: −1 per hopper-dropped subroutine. The "Structural summary" README example shifts from `7 1 1` (alpha.2) to `6 1 1`.
+  - **`toMermaid` subgraph label**: `"callable subtree of foo"` → `"callable subtree of foo::1"` for hopper-dropped subs.
+  - **`onStep` callbacks per subroutine entry**: −1 iteration (the hopper used to fire its own `[*] → body₁` transition as a separate step; under #85, the wrapper-of-body₁ executes body₁'s transitions directly).
+
+### Migration from alpha.2
+
+**1. Wrapper composite name parser** — code that does `state.name.match(/^(\w+)\(/)` to extract the bare's name now sees `foo::1` for hopper-dropped subs (and still `foo` for hopper-retained ones). Use `state.bareStateId` (engine #174's GraphNode field) to identify the bare without parsing the name.
+
+**2. Test fixtures asserting `pm.initialState.name === 'foo(...)'`** — update to `'foo::1(...)'` for the hopper-dropped case. Or use a non-trivial body (multiple instructions) and assert on body-state names directly.
+
+**3. Test fixtures asserting exact `stateCount` or onStep call counts** — recompute under the new hopper-drop rules.
+
+**4. `pm.stateAt({ scope: ['foo'] })` or similar path lookups by subroutine name only** — under #85 there's no longer a graph node for the bare name in the hopper-dropped case. Lookups still resolve via the registry; behavior unchanged from a runtime perspective.
+
+### Out of v7-alpha.3 (still pending for stable v7.0.0)
+
+- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states.
+- **[#86](https://github.com/mellonis/post-machine-js/issues/86)** — user-supplied tags/labels on states (Mermaid + debugger surfaces).
+- **[#87](https://github.com/mellonis/post-machine-js/issues/87)** — README diagrams for `noop` and trailing-stop behaviors.
+
+### Compatibility
+
+- Engine peer dep unchanged: `^7.0.0-alpha.2`.
+
 ## [7.0.0-alpha.2] - 2026-05-21
 
 First post-machine-js v7 pre-release — adopts engine `@turing-machine-js/machine@7.0.0-alpha.2`. **post-machine-js skips its own v7 alpha.1**: engine alpha.1 was superseded by alpha.2 (which refined the `toMermaid` emit before any post-side adoption shipped), so post-machine-js's first v7 prerelease goes straight to alpha.2 matching the engine's current alpha. Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.

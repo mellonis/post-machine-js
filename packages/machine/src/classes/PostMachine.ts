@@ -23,6 +23,7 @@ import {
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
 import { installStateLockdown, withLockdownEscape } from '../lockdown';
+import { analyzeLocalCallGraph } from '../callGraph';
 import {
   type Breakpoint,
   type BreakpointFilter,
@@ -278,32 +279,98 @@ export class PostMachine extends TuringMachine {
       ...subroutinesDataFromUpperScope,
       ...localSubroutinesData,
     };
+    // Cycle-aware hopper construction (#85).
+    //
+    // Static analysis of the local subroutine call graph identifies which
+    // subroutines participate in cycles (mutual recursion or self-loop). For
+    // those, we keep the v6.x hopper — a stub `State` that wraps a
+    // `Reference` to the subroutine's first instruction, providing the
+    // forward-declaration anchor that `withOverriddenHaltState` needs at the
+    // moment `call(...)` invocations are processed.
+    //
+    // Acyclic subroutines (the common case) skip the hopper. We process them
+    // in reverse-topological build order — sinks first — so by the time
+    // `call('X')` runs for an acyclic X, X's first-instruction State already
+    // exists and we wrap it directly. Net effect: -1 graph node per acyclic
+    // subroutine; the wrapper composite name becomes `X::1(continuation)`
+    // (accurately reflects the wrapped bare) instead of `X(continuation)`.
+    const localSubroutineInstructions: Record<string, Instructions> = Object.fromEntries(
+      Object.entries(localSubroutinesData).map(([name, data]) => [name, data.instructions]),
+    );
+    const {cyclicSet, buildOrder} = analyzeLocalCallGraph(localSubroutineInstructions);
+
     const subroutineInitialStates: Record<string, State> = {
       ...subroutineInitialStatesFromUpperScope,
-      ...Object.keys(localSubroutinesData).reduce<Record<string, State>>((result, subroutineName) => ({
-        ...result,
-        [subroutineName]: new State({
+    };
+
+    // Create hoppers only for cyclic local subs. Acyclic entries are filled
+    // in after each acyclic sub's body is recursively built (below).
+    for (const subroutineName of Object.keys(localSubroutinesData)) {
+      if (cyclicSet.has(subroutineName)) {
+        subroutineInitialStates[subroutineName] = new State({
           [ifOtherSymbol]: {
             nextState: localSubroutinesData[subroutineName].reference,
           },
-        }, `${instructionPrefix}${subroutineName}`),
-      }), {}),
-    };
+        }, `${instructionPrefix}${subroutineName}`);
+      }
+    }
 
-    Object.keys(localSubroutinesData).forEach((subroutineName) => {
+    // Build subroutines in reverse-topological order. Tarjan's SCC output
+    // (in `buildOrder`) starts with sinks — local subs with no outgoing
+    // calls to other local subs — so each sub's local callees are built (and
+    // present in `subroutineInitialStates`) before the sub itself is built.
+    for (const subroutineName of buildOrder) {
       const {
         reference,
         instructions: subroutineInstructions,
       } = subroutinesData[subroutineName];
 
-      reference.bind(this.#buildInitialState({
+      const firstInstructionState = this.#buildInitialState({
         instructions: subroutineInstructions,
         subroutinesDataFromUpperScope: subroutinesData,
         subroutineInitialStatesFromUpperScope: subroutineInitialStates,
         instructionPrefix: `${instructionPrefix}${subroutineName}::`,
         scope: [...scope, subroutineName],
-      }));
-    });
+      });
+
+      reference.bind(firstInstructionState);
+
+      // Acyclic — install the first-instruction State as the subroutine's
+      // entry point IF it's safe to wrap. Two cases force a hopper fallback:
+      //
+      //   1. `firstInstructionState === haltState` (degenerate `{ 1: stop }`
+      //      body). Wrapping haltState produces a State with an empty
+      //      `symbolToDataMap`; the engine throws at runtime trying to
+      //      resolve a transition.
+      //
+      //   2. `firstInstructionState` is itself a wrapper (group `[…]` or
+      //      `call('bar')` as the subroutine's first instruction). Engine
+      //      #176 collapses nested `withOverriddenHaltState` chains — the
+      //      inner wrapping (group's own continuation, or the inner `call`'s
+      //      continuation) gets unwrapped and lost when this wrapper is
+      //      applied. Subsequent body instructions become unreachable.
+      //
+      // Both cases are detected by checking whether the first-instruction
+      // State is a plain bare (non-halt, no override). When it isn't, the
+      // hopper restores the invariant — it's a fresh State whose single
+      // `[ifOtherSymbol]` transition points at the first-instruction State,
+      // and wrapping the hopper preserves both the call-site continuation
+      // and any inner wrapping the first instruction already has.
+      if (!cyclicSet.has(subroutineName)) {
+        const canDropHopper = !firstInstructionState.isHalt
+          && firstInstructionState.overriddenHaltState === null;
+
+        if (canDropHopper) {
+          subroutineInitialStates[subroutineName] = firstInstructionState;
+        } else {
+          subroutineInitialStates[subroutineName] = new State({
+            [ifOtherSymbol]: {
+              nextState: firstInstructionState,
+            },
+          }, `${instructionPrefix}${subroutineName}`);
+        }
+      }
+    }
 
     const instructionIndexList = Object.keys(instructionsCopy);
 

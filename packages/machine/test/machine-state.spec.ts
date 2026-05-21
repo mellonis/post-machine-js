@@ -68,16 +68,21 @@ describe('PostMachine — wrapped MachineState', () => {
   });
 
   test('subroutine body instruction has fully-qualified arrivalPath', async () => {
+    // Use a 2-instruction body so the second instruction is visited as its
+    // own iter (the first instruction's State is now the wrapper's bare
+    // under #85 — its arrivalPath is the call site, not the FQ subroutine
+    // path. The second body instruction always gets its own iter regardless
+    // of hopper-drop status).
     const m = new PostMachine({
       10: call('foo'),
-      foo: { 1: mark },
+      foo: { 1: right, 2: mark },
     });
     const seen: MachineState[] = [];
     await m.run({ onStep: (s) => { seen.push(s); } });
-    // After the call wrapper, control reaches foo::1.
+    // After the call wrapper executes foo::1, control reaches foo::2.
     const fooStep = seen.find(s => {
       const scope = s.arrivalPath.scope;
-      return Array.isArray(scope) && scope.join('::') === 'foo' && s.arrivalPath.instructionIndex === 1;
+      return Array.isArray(scope) && scope.join('::') === 'foo' && s.arrivalPath.instructionIndex === 2;
     });
     expect(fooStep).toBeDefined();
   });
