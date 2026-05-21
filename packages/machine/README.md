@@ -16,7 +16,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
-- [MachineState shape](#machinestate-shape-v620)
+- [MachineState shape](#machinestate-shape)
 - [Naming convention](#naming-convention)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
 - [Debugging](#debugging)
@@ -57,54 +57,37 @@ console.log(machine.tape.symbols.join('').trim()); // ***
 
 Each instruction is a command. Used bare (`mark`, `right`, `erase`), it falls through to the next numbered instruction; called with an index (`mark(20)`), it jumps to instruction `20`. `check(ix1, ix0)` branches — `ix1` if the current cell is marked, else `ix0`. `stop` halts.
 
-The state graph for the example above:
-
-```mermaid
-flowchart TD
-    halt(((halt)))
-    s10(("**10:** check(20, 30)"))
-    s20["**20:** right(10)"]
-    s30["**30:** mark"]
-
-    s10 -- "marked (*)" --> s20
-    s10 -- "blank" --> s30
-    s20 -- "→ R" --> s10
-    s30 -- "write *<br/>(40 stops)" --> halt
-```
-
-The `40: stop` instruction is elided in the graph — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
-
-<details>
-<summary>Same graph, as the engine actually emits via <code>toMermaid(State.toGraph(machine.initialState, machine.tapeBlock))</code>:</summary>
+The state graph for the example above (`toMermaid(State.toGraph(machine.initialState, machine.tapeBlock))`):
 
 ```mermaid
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1(("10"))
+  s1["10"]
   s2["20"]
   s3["30"]
-  s1 -- "\* → ·/S" --> s2
-  s1 -- "- → ·/S" --> s3
-  s2 -- "* → ·/R" --> s1
-  s3 -- "* → */S" --> s0
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "['*'] → [K]/[S]" --> s2
+  s1 -- "[B] → [K]/[S]" --> s3
+  s2 -- "[*] → [K]/[R]" --> s1
+  s3 -- "[*] → ['*']/[S]" --> s0
 ```
 
-Reading the engine output:
+Reading the diagram:
 
 **Nodes.** Each `s\d+` is a Mermaid-internal node ID; the bracketed/parenthesized text is the state's display label. `s0` is always `haltState`. Node shapes:
 - `(((label)))` — halt state
-- `(("label"))` — entry state (the one passed as `initialState`)
-- `["label"]` — intermediate state
+- `["label"]` — intermediate (and now also entry) state
+- `([idle])` — the `idle` sentinel that marks the entry point via a dotted `idle -. enter .-> s_initial` edge
+- (Wrappers produced by `withOverriddenHaltState` use a `[[bare(continuation)]]` double-square node sitting OUTSIDE its callable subtree's `subgraph w_N["callable subtree of NAME"]` block — see the [Subroutines](#subroutines) section.)
 
-The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>><continuation>"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that.
+The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>(<continuation>)"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that. The `40: stop` instruction is elided — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
 
-**Edges.** Compact `read → write/move` syntax:
-- **Read side**: `\*` is the literal mark symbol; `-` is `ifOtherSymbol` (the catch-all when there are also explicit symbol edges from the same state); `*` (without backslash) is the sole-transition match-all — used when a state has only one outgoing edge that matches everything.
-- **Write side**: `·` is "keep" (no write); `*` is the literal mark symbol; ` ` (or whatever blank glyph the alphabet uses) is the literal blank.
-- **Move**: `S` = stay, `L` = left, `R` = right.
-
-</details>
+**Edges.** Compact `read → write/move` syntax with bracketed tokens:
+- **Read side**: `['*']` is the literal mark symbol; `[B]` is the blank symbol; `[*]` is `ifOtherSymbol` — the any-other catch-all (or sole-edge match-all on a state with only one outgoing transition).
+- **Write side**: `[K]` is "keep" (no write); `[E]` is "erase" (write the blank); `['*']` (and `[' ']` for blank) is a literal symbol write.
+- **Move**: `[S]` = stay, `[L]` = left, `[R]` = right.
 
 ## Classes
 
@@ -249,52 +232,43 @@ await machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
-The state graph (top-level flow with the subroutine as a black box):
-
-```mermaid
-flowchart TD
-    halt(((halt)))
-    t1(("**1:** call('rightToBlank')"))
-    t2["**2:** mark"]
-    sub[["rightToBlank<br/>(walks right until blank)"]]
-
-    t1 -- "enters" --> sub
-    sub -. "halts → return" .-> t2
-    t2 -- "write *<br/>(3 stops)" --> halt
-```
-
-The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverrodeHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
-
-<details>
-<summary>Same graph, as the engine actually emits. The subroutine and the wrapping <code>withOverrodeHaltState</code> are visible:</summary>
+The state graph as the engine emits it — the subroutine and the wrapping `withOverriddenHaltState` composition are visible:
 
 ```mermaid
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s5["rightToBlank::1"]
-  s6["rightToBlank::2"]
-  s7["1~2"]
-  s8(("rightToBlank>1~2"))
-  s9["2"]
-  s5 -- "* → ·/R" --> s6
-  s6 -- "\* → ·/S" --> s5
-  s6 -- "- → ·/S" --> s0
-  s7 -- "* → ·/S" --> s9
-  s8 -- "* → ·/S" --> s5
-  s8 -. onHalt .-> s7
-  s9 -- "* → */S" --> s0
+  s4["1~2"]
+  s6["2"]
+  s5[["rightToBlank(1~2)"]]
+  idle([idle])
+  subgraph w_1["callable subtree of rightToBlank"]
+    s1["rightToBlank"]
+    s2["rightToBlank::1"]
+    s3["rightToBlank::2"]
+    c1(((halt)))
+  end
+  idle -. enter .-> s5
+  s5 == "call" ==> s1
+  w_1 -. "return" .-> s5
+  s5 --> s4
+  s1 -- "[*] → [K]/[S]" --> s2
+  s2 -- "[*] → [K]/[R]" --> s3
+  s3 -- "['*'] → [K]/[S]" --> s2
+  s3 -- "[B] → [K]/[S]" --> c1
+  s4 -- "[*] → [K]/[S]" --> s6
+  s6 -- "[*] → ['*']/[S]" --> s0
 ```
 
-Reading the engine output:
-- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the composite `"rightToBlank>1~2"` for the wrapper at top-level instruction 1. The `s\d+` node IDs are still auto-generated and shift between runs.
-- `s8` is the top-level entry — `"rightToBlank>1~2"` is the `withOverrodeHaltState` wrapper notation: the subroutine entry hopper (named `"rightToBlank"`), with halt overridden to point at the continuation `"1~2"` (which forwards control from instruction 1 to instruction 2).
-- `s5`/`s6` form the subroutine's internal cycle: `s5` is `right` (keep+R), `s6` is `check(1, 3)` (loops back on `*`, exits to halt on blank).
-- The dotted `onHalt` edge `s8 -.→ s7` is the override in action: when control flow reaches the subroutine's halt, the engine pops back to `s7` (the continuation named `"1~2"`).
-- `s7` is the continuation; it falls through (keep+S) to `s9`.
-- `s9` is the `mark` instruction at top-level 2 (writes `*`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverriddenHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
 
-</details>
+Reading the diagram (engine v7's callable-subtree emit):
+- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, the bare hopper name `"rightToBlank"` on the in-subgraph entry to the subtree, and the composite `"rightToBlank(1~2)"` on the wrapper itself (the `[[…]]` double-square node `s5`). The `s\d+` node IDs are still auto-generated and shift between runs.
+- The wrapper `s5[["rightToBlank(1~2)"]]` is the **call site** — it sits OUTSIDE the subgraph. The `idle -. enter .-> s5` edge marks it as the top-level entry. The double-square `[[…]]` shape signals "wrapper" — a state produced by `withOverriddenHaltState`. The wrapper has no transitions of its own; it delegates to the bare via the bold `== "call" ==>` arrow.
+- The `subgraph w_1["callable subtree of rightToBlank"]` is the **callable body** — it contains the hopper `s1`, the body states `s2`/`s3`, and a frame-local halt marker `c1`. The body's halt-bound transition (`s3 -- "[B]" --> c1`) lands on `c1`, not on the real `s0` halt.
+- The dotted `w_1 -. "return" .-> s5` is the **return arrow** — when the body lands on `c1`, control returns to the wrapper `s5`. Then `s5 --> s4` (the solid wrapper-to-override arrow) hands off to the continuation. This replaces the alpha.1 `-. onHalt .->` keyword.
+- `s4` is the continuation; it falls through (keep+S) to `s6`.
+- `s6` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
 
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
 
@@ -333,7 +307,7 @@ The two helpers have the same shape — a `check`/move/loop pair — with mirror
 
 For a single subroutine called from MULTIPLE sites — the other archetypal use case — see the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README.
 
-## MachineState shape (v6.1.0+)
+## MachineState shape
 
 PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState` with two additional fields:
 
@@ -376,25 +350,25 @@ PostMachine names every state it constructs by instruction index, so `toMermaid`
 | Group at instr `O`, inner index `I`             | `"O.I"`                      | `"foo::O.I"`                 |
 | Continuation: from `X` to `Y`                   | `"X~Y"`                      | `"foo::X~foo::Y"`            |
 | Continuation: tail-position                     | `"X~halt"`                   | `"foo::X~halt"`              |
-| Call wrapper composite (engine auto-emits `>`)  | `"sub>X~Y"` / `"sub>X~halt"` | `"foo::sub>foo::X~foo::Y"`   |
-| Group wrapper composite                         | `"O.1>O~Y"` / `"O.1>O~halt"` | `"foo::O.1>foo::O~foo::Y"`   |
+| Call wrapper composite (engine auto-wraps in parens) | `"sub(X~Y)"` / `"sub(X~halt)"` | `"foo::sub(foo::X~foo::Y)"`   |
+| Group wrapper composite                         | `"O.1(O~Y)"` / `"O.1(O~halt)"` | `"foo::O.1(foo::O~foo::Y)"`   |
 
 **Separators in user-meaningful labels:**
 - `::` — subroutine scope (lexical nesting), like C++/Rust's scope-resolution operator. `foo::bar::1` reads as "instruction 1 inside subroutine `bar`, which is defined inside subroutine `foo`".
 - `.` — group inner-step ordinal. `50.1`, `50.2`, etc. are the sequential commands inside a group at instruction `50`.
 - `~` — continuation. `10~30` reads as "after the wrapper at instruction 10 finishes, forward to instruction 30". Tail-position uses `~halt`.
-- `>` — engine-internal `withOverrodeHaltState` composition (outer state + override target). The engine auto-builds wrapper composites in this shape; user code never writes `>` directly.
+- `(` / `)` — engine-internal `withOverriddenHaltState` composition (outer state wrapping the override target in parens). The engine auto-builds wrapper composites in this shape; user code never writes parens directly into state names.
 
 User-provided subroutine names are constrained to identifier characters (`/^[A-Z$_][A-Z0-9$_]*$/i`), so none of these separators can collide with user input.
 
-**Reading a wrapper composite.** Example: `"foo>10~40"`.
+**Reading a wrapper composite.** Example: `"foo(10~40)"`.
 
-- Split at `>`: outer = `"foo"` (the subroutine hopper), override = `"10~40"` (the continuation state).
+- The outer (bare) part is everything before the opening paren: `"foo"` (the subroutine hopper). The override is the parenthesized inner: `"10~40"` (the continuation state).
 - Split the override at `~`: caller = `"10"` (the call-site instruction), target = `"40"` (where control resumes).
 
-So `"foo>10~40"` describes: "a wrapper around the `foo` subroutine entry, which on halt forwards from instruction 10 to instruction 40."
+So `"foo(10~40)"` describes: "a wrapper around the `foo` subroutine entry, which on halt forwards from instruction 10 to instruction 40."
 
-For a more complex example, `"outer::inner::deepest>outer::inner::1~halt"`:
+For a more complex example, `"outer::inner::deepest(outer::inner::1~halt)"`:
 - Outer = `"outer::inner::deepest"` — a deeply-nested subroutine hopper (three levels of lexical nesting).
 - Override = `"outer::inner::1~halt"` — the call site at `outer::inner::1`, tail-position (forwards to halt).
 
@@ -407,18 +381,18 @@ const m = new PostMachine({
   30: stop,
   foo: { 1: stop },
 });
-// m.initialState.name === "foo>10~30"
+// m.initialState.name === "foo(10~30)"
 ```
 
 ### State sharing across structurally-identical instructions
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from an `onStep` / `onPause` callback (runtime). See [Path-based resolver](#path-based-resolver-v630) and [MachineState shape](#machinestate-shape-v620).
+For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from an `onStep` / `onPause` callback (runtime). See [Path-based resolver](#path-based-resolver) and [MachineState shape](#machinestate-shape).
 
-### Forward-compatibility with engine v7
+### Engine v7 alignment
 
-Engine v7 (upstream `@turing-machine-js/machine`) plans to change the wrapper composite shape from `A>B` to `A(B)` (paren-based), and will likely forbid `(`, `)`, and `>` in user-provided state names. PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) are reserved by v7, so when the peer-dep bump lands, only the *wrapper composite emit* changes (e.g., `"foo>10~40"` becomes `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — remain unchanged.
+Engine v7 (upstream `@turing-machine-js/machine`) changed the wrapper composite shape from `A>B` to `A(B)` (paren-based). PostMachine's naming convention was designed to survive that change: none of our separators (`::`, `.`, `~`) collide with the new paren grammar, so only the *wrapper composite emit* shifted (e.g., the v6.x `"foo>10~40"` is now `"foo(10~40)"`). The names PostMachine constructs internally — and the rules in the table above — are unchanged. v7's `toMermaid` output also adopted a callable-subtree model: the wrapper is a `[[bare(continuation)]]` call site OUTSIDE the subgraph, with a bold `==> "call"` arrow into the bare's subtree and a dotted `-. "return" .->` arrow back to the wrapper. Replaces v6.x's composite-named entry node.
 
 ## Introspection and equivalence
 
@@ -440,9 +414,26 @@ const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock)
 console.log(mermaid.split('\n')[0]); // flowchart TD
 ```
 
-The full rendered output is shown in the [Quick start](#quick-start) section's `<details>` block alongside the hand-drawn diagram, with a reading guide for the engine's compact `read → write/move` edge syntax.
+The full rendered emit for this machine:
 
-For the raw `Graph` as input to other tools (analysis, custom rendering, alternative serializations), use `State.toGraph(machine.initialState, machine.tapeBlock)` directly. The companion `fromMermaid` and `State.fromGraph` are also re-exported for round-trip workflows — load a Mermaid blob, get a `Graph` back, build a runnable machine from it. The round-trip is *behaviorally* lossless (same inputs produce same outputs) but not bytewise lossless because state IDs auto-reassign on each pass; see [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138)/[#139](https://github.com/mellonis/turing-machine-js/issues/139) for the cleaner-emit and regression-test follow-ups on the upstream side.
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  s2["20"]
+  s3["30"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "['*'] → [K]/[S]" --> s2
+  s1 -- "[B] → [K]/[S]" --> s3
+  s2 -- "[*] → [K]/[R]" --> s1
+  s3 -- "[*] → ['*']/[S]" --> s0
+```
+
+(Same machine as the [Quick start](#quick-start) example — see that section for the node/edge-shape reading guide.)
+
+For the raw `Graph` as input to other tools (analysis, custom rendering, alternative serializations), use `State.toGraph(machine.initialState, machine.tapeBlock)` directly. The companion `fromMermaid` and `State.fromGraph` are also re-exported for round-trip workflows — load a Mermaid blob, get a `Graph` back, build a runnable machine from it. Under engine v7 ([#174](https://github.com/mellonis/turing-machine-js/issues/174)), the round-trip is both behaviorally lossless AND bytewise stable for wrapped states (state IDs auto-reassign on each pass, but the emit shape — including shared-bare deduplication — is deterministic).
 
 ### Structural summary — `summarizePostMachine`
 
@@ -480,10 +471,72 @@ console.log(a.stateCount, a.compositionEdgeCount, a.maxCompositionDepth);
 // 4 0 0 — inline: 4 states, no composition
 
 console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth);
-// 6 1 1 — subroutine: 2 more states; 1 composition edge from `call` (depth 1)
+// 7 1 1 — subroutine: 3 more states; 1 composition edge from `call` (depth 1)
 ```
 
-Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverrodeHaltState` wrapper overhead per call (~2 states for the wrapper + routing intermediate) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
+Both programs do the same thing on the same input. This particular comparison is the **worst case for subroutines**: a single call site (no reuse benefit) with a small body — so the `withOverriddenHaltState` wrapper overhead per call (~3 states under engine v7's callable-subtree emit: a separate wrapper node, the hopper bare, and the continuation) shows up as pure cost. Subroutines start saving states when reuse is real and the body amortizes the wrapper overhead — see the [extend example](#subroutines) above for symmetric variants and the [duplicate-marked-region example](../../README.md#an-example-with-subroutines) in the root README for true multi-call.
+
+The two state graphs as the engine emits them — what the numbers above are summarizing:
+
+<details>
+<summary><code>inline</code> — flat 4-state graph, no composition</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s1["10"]
+  s2["20"]
+  s3["30"]
+  idle([idle])
+  idle -. enter .-> s1
+  s1 -- "['*'] → [K]/[S]" --> s2
+  s1 -- "[B] → [K]/[S]" --> s3
+  s2 -- "[*] → [K]/[R]" --> s1
+  s3 -- "[*] → ['*']/[S]" --> s0
+```
+
+`s1` is `check`; on `'*'` it loops via `s2` (`right`); on blank it falls to `s3` (`mark`) → halt. Four nodes, one back-edge, zero subgraphs.
+
+</details>
+
+<details>
+<summary><code>withSubroutine</code> — wrapper + callable subtree + continuation</summary>
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s0(((halt)))
+  s7["10~20"]
+  s9["20"]
+  s8[["walkToBlank(10~20)"]]
+  idle([idle])
+  subgraph w_4["callable subtree of walkToBlank"]
+    s4["walkToBlank"]
+    s5["walkToBlank::1"]
+    s6["walkToBlank::2"]
+    c4(((halt)))
+  end
+  idle -. enter .-> s8
+  s8 == "call" ==> s4
+  w_4 -. "return" .-> s8
+  s8 --> s7
+  s4 -- "[*] → [K]/[S]" --> s5
+  s5 -- "['*'] → [K]/[S]" --> s6
+  s5 -- "[B] → [K]/[S]" --> c4
+  s6 -- "[*] → [K]/[R]" --> s5
+  s7 -- "[*] → [K]/[S]" --> s9
+  s9 -- "[*] → ['*']/[S]" --> s0
+```
+
+The three extra nodes vs inline that drive `stateCount: 4 → 7`:
+- **`s8[["walkToBlank(10~20)"]]`** — the wrapper / call site, OUTSIDE the subgraph
+- **`s4["walkToBlank"]`** — the bare hopper INSIDE the callable subtree, forwarded to from the wrapper's bold `== "call" ==>` arrow
+- **`s7["10~20"]`** — the continuation that PostMachine synthesizes between the `call('walkToBlank')` site at instruction `10` and the next top-level instruction `20`
+
+The subroutine body (`s5`, `s6`) inside `subgraph w_4` mirrors `inline`'s `s1`, `s2` loop structurally — same algorithm, same internal back-edge. The extra cost is purely the wrapper machinery. `compositionEdgeCount: 0 → 1` and `maxCompositionDepth: 0 → 1` come from the single `withOverriddenHaltState` wrapper around `walkToBlank`.
+
+</details>
 
 What `summarizePostMachine` actually surfaces is the **structural trade-off**, not just state count: `compositionEdgeCount` and `maxCompositionDepth` go to zero in the inline version (everything is one flat graph) and become non-zero with subroutines (`call` creates a composition edge; nesting goes deeper). Use those fields to reason about the structure of reuse independently of raw size.
 
@@ -511,7 +564,7 @@ Each case string is loaded onto a fresh clone of the originating PostMachine's t
 
 The bare `equivalentOn` is also re-exported. Use it directly when you need a non-PostMachine `Runnable` on either side (e.g., comparing a `PostMachine` against a hand-rolled `TuringMachine`).
 
-## Path-based resolver (v6.1.0+)
+## Path-based resolver
 
 `PostMachine` exposes three construction-time queries for addressing states by instruction path.
 
@@ -534,9 +587,9 @@ pm.stateAt({ scope: 'sub', instructionIndex: 1 });
 pm.stateAt({ scope: ['outer', 'inner'], instructionIndex: 1, groupInstructionIndex: 2 });
 ```
 
-Returned States are the real engine States — `instanceof State`, usable with `State.toGraph`, `summarize`, and other engine utilities — but with `state.debug` set/get installed by PostMachine (see [Breakpoints](#breakpoints-v630) below).
+Returned States are the real engine States — `instanceof State`, usable with `State.toGraph`, `summarize`, and other engine utilities — but with `state.debug` set/get installed by PostMachine (see [Breakpoints](#breakpoints) below).
 
-## Breakpoints (v6.1.0+)
+## Breakpoints
 
 Register pauses by instruction path or by `haltState`:
 

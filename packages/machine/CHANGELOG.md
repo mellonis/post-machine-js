@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-alpha.2] - 2026-05-21
+
+First post-machine-js v7 pre-release — adopts engine `@turing-machine-js/machine@7.0.0-alpha.2`. **post-machine-js skips its own v7 alpha.1**: engine alpha.1 was superseded by alpha.2 (which refined the `toMermaid` emit before any post-side adoption shipped), so post-machine-js's first v7 prerelease goes straight to alpha.2 matching the engine's current alpha. Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+
+**Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.2`.
+
+### Changed
+
+- **Engine `withOverrodeHaltState` → `withOverriddenHaltState` adoption** ([#82](https://github.com/mellonis/post-machine-js/issues/82) — engine [#149](https://github.com/mellonis/turing-machine-js/issues/149)). Consumer-side references in `src/commands.ts`, `src/classes/PostMachine.ts`, README narrative, and root CLAUDE.md all switched to the renamed identifier. Hard cutover — no deprecated alias.
+
+- **Wrapper composite name format `>` → `(…)` adoption** ([#83](https://github.com/mellonis/post-machine-js/issues/83) — engine [#148](https://github.com/mellonis/turing-machine-js/issues/148)). Engine v7 changed wrapper composite shape from `A>B` to `A(B)`. PostMachine's `Path` separators (`::`, `.`, `~`) survive unchanged. `parsePath` now rejects `(`/`)` in user-provided state names (previously rejected `>`). Test assertions on `initialState.name` and graph node-name checks updated; README naming-convention table + "Reading a wrapper composite" section + "Reading the engine output" guide rewritten.
+
+- **`toMermaid` callable-subtree emit adoption** (engine [#174](https://github.com/mellonis/turing-machine-js/issues/174); no separate post-side issue — engine alpha.2 forced this). The wrapper composite is now a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the callable subtree (`subgraph w_N["callable subtree of NAME"]`) contains the bare hopper + body states + a frame-local halt marker. Bold `==> "call"` arrow from wrapper to bare; dotted `-. "return" .->` from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->` keyword no longer appears — wrapper-to-override is just a solid `-->` arrow. README's engine-emit Mermaid block regenerated. Test expectations updated.
+
+  As a knock-on effect of separating wrapper/bare nodes, `summarizePostMachine` reports +1 `stateCount` per subroutine call site vs alpha.1. The example in the "Structural summary" section reports `7 1 1` (was `6 1 1` under alpha.1's collapsed-bare emit).
+
+### Compatibility
+
+- Peer dep `@turing-machine-js/machine` widened `^6.4.0` → `^7.0.0-alpha.2`. v4/v5/v6 engine majors are no longer supported on the v7 line — consumers must upgrade in lockstep.
+
+### Out of v7-alpha.2 (still pending for stable v7.0.0)
+
+- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states (continuations, hoppers, group wrappers). Construction-time tightening; doesn't affect runtime semantics for existing programs.
+
+### Migration
+
+For consumers updating from v6.x:
+
+**1. Engine identifier rename** — if you import `withOverrodeHaltState` directly from `@turing-machine-js/machine` (rare; PostMachine wraps it internally), rename to `withOverriddenHaltState`.
+
+**2. Wrapper composite shape in `state.name`** — `"foo>10~40"` is now `"foo(10~40)"`. Code that parses wrapper names by `>`-splitting needs to switch to paren-parsing.
+
+**3. State names with `(`/`)` rejected** — `new PostMachine({ "foo(bar)": { 1: stop } })` now throws. The collision is structural: paren is the new wrapper-composition delimiter.
+
+**4. `toMermaid` output format** — the wrapper now sits OUTSIDE the subgraph as a separate `[[…]]` node; the bare hopper is INSIDE the `callable subtree` subgraph as a regular `[…]` node. Body's halt-bound transitions land on the frame's halt marker `cN`, not on the real `s0` halt. If you render or pattern-match Mermaid output, the shape changed completely — see the README's "Reading the engine output" section.
+
+**5. `summarizePostMachine().stateCount` may shift** — each call site (`call(...)`) now contributes ONE more state to the count (the separate wrapper node). Existing assertions on exact stateCount need adjusting.
+
 ## [6.4.0] - 2026-05-19
 
 Adopts the engine's new [`onIter`](https://github.com/mellonis/turing-machine-js/pull/164) hook to fix a pre-existing `arrivalPath` ordering bug. **Version skips 6.2.0 and 6.3.0** — both were prepared but neither was published (see history note below).

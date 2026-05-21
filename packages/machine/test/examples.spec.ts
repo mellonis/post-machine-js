@@ -146,24 +146,33 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry-state with composite name. The wrapper at top-level instruction 1
-      // is `call('rightToBlank')`, so the composite reads as `<hopper>><continuation>` —
-      // here `"rightToBlank>1~2"` (subroutine hopper named after the subroutine, continuation
-      // forwards from instr 1 to instr 2).
+      // Halt + the entry — under engine v7's callable-subtree emit (alpha.2,
+      // #174) the wrapper is a separate `[[composite-name]]` node OUTSIDE the
+      // subgraph; the bare hopper is a regular `[name]` node INSIDE its
+      // callable subtree subgraph. Composite name `"rightToBlank(1~2)"` lives
+      // on the wrapper.
       expect(mermaid).toContain('(((halt)))');
-      expect(mermaid).toContain('(("rightToBlank>1~2"))');
+      expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank"\]/);
+      expect(mermaid).toContain('[["rightToBlank(1~2)"]]');
+      expect(mermaid).toContain('["rightToBlank"]'); // bare inside the subgraph
 
-      // The dotted onHalt edge — the override path back from the subroutine.
-      expect(mermaid).toMatch(/s\d+ -\. onHalt \.-> s\d+/);
+      // Bold `== "call" ==>` from wrapper to bare + dotted `-. "return" .->`
+      // from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->`
+      // keyword does not appear; wrapper-to-override is a regular solid arrow.
+      expect(mermaid).toMatch(/s\d+ == "call" ==> s\d+/);
+      expect(mermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+      expect(mermaid).not.toMatch(/onHalt/);
 
       // The subroutine's internal cycle: a right-move state and a check state
-      // that loops back on '*' and exits on the blank.
-      expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);   // right (keep + R)
-      expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/); // check on '*'
-      expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);    // check on blank (ifOtherSymbol)
+      // that loops back on '*' and exits on the blank. Engine v7 label vocabulary.
+      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);    // right (keep + R)
+      expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);  // check on '*'
+      // Body's halt-bound transition is retargeted to the frame's halt marker (c\d+),
+      // not the real s0 — that's the callable-subtree contract.
+      expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> c\d+/);     // check on blank
 
       // The mark instruction's edge: write '*', stay, transition to halt.
-      expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
     });
 
     test('** → marks first blank to make *** (single subroutine, single call)', async () => {
@@ -249,7 +258,7 @@ describe('packages/machine/README.md', () => {
   });
 
   describe('Naming convention', () => {
-    test('Quick example: machine.initialState.name === "foo>10~30"', () => {
+    test('Quick example: machine.initialState.name === "foo(10~30)"', () => {
       const m = new PostMachine({
         10: call('foo', 30),
         20: stop,
@@ -257,8 +266,8 @@ describe('packages/machine/README.md', () => {
         foo: { 1: stop },
       });
 
-      // m.initialState.name === "foo>10~30"
-      expect(m.initialState.name).toBe('foo>10~30');
+      // m.initialState.name === "foo(10~30)"
+      expect(m.initialState.name).toBe('foo(10~30)');
     });
   });
 
@@ -327,18 +336,22 @@ describe('packages/machine/README.md', () => {
         // Halt node (always literal "halt").
         expect(mermaid).toContain('(((halt)))');
 
-        // Initial state — double-paren entry shape with instruction-derived name.
-        expect(mermaid).toContain('(("10"))');
+        // Initial state — square-bracket node shape; under engine v7 the entry is
+        // marked by a separate idle sentinel + dotted enter edge, not a double-paren shape.
+        expect(mermaid).toContain('["10"]');
+        expect(mermaid).toContain('idle([idle])');
+        expect(mermaid).toMatch(/idle -\. enter \.-> s\d+/);
         // Two intermediate states — square-bracket node shape with instruction-derived names.
         expect(mermaid).toContain('["20"]');
         expect(mermaid).toContain('["30"]');
 
         // Each of the 4 transitions described in the README's reading guide.
-        // Edge labels are exact as emitted; node IDs (s\d+) are not pinned.
-        expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+        // Engine v7 edge-label vocabulary: ['x'] = literal symbol, [B] = blank, [*] = any-other,
+        // [K] = keep, [E] = erase; movements [L]/[R]/[S].
+        expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
       });
     });
 
@@ -370,10 +383,37 @@ describe('packages/machine/README.md', () => {
         expect(a.compositionEdgeCount).toBe(0);
         expect(a.maxCompositionDepth).toBe(0);
 
-        // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 6 1 1
-        expect(b.stateCount).toBe(6);
+        // Engine alpha.2 (#174) emits wrappers as separate nodes from their
+        // bares; the subroutine adds 1 wrapper node on top of the bare hopper +
+        // body states + continuation + top-level mark.
+        // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 7 1 1
+        expect(b.stateCount).toBe(7);
         expect(b.compositionEdgeCount).toBe(1);
         expect(b.maxCompositionDepth).toBe(1);
+
+        // The README's Structural summary section shows both machines'
+        // toMermaid emits in <details> blocks alongside the counts. Pin the
+        // salient shape features so the doc claim "this is what the engine
+        // emits" doesn't go stale (looser-shape checks per existing repo
+        // convention; the engine repo has stricter normalized snapshots).
+        const inlineMermaid = toMermaid(State.toGraph(inline.initialState, inline.tapeBlock));
+        const subMermaid = toMermaid(State.toGraph(withSubroutine.initialState, withSubroutine.tapeBlock));
+
+        // inline: flat graph, no subgraph, no wrapper (no `sN[[…]]` shape; the
+        // `[[` in `%% alphabets: [[" ","*"]]` is the JSON-stringified header).
+        expect(inlineMermaid).not.toMatch(/subgraph w_/);
+        expect(inlineMermaid).not.toMatch(/s\d+\[\[/);
+        expect(inlineMermaid).not.toMatch(/== "call" ==>/);
+        expect(inlineMermaid).toMatch(/idle -\. enter \.-> s\d+/);
+
+        // withSubroutine: wrapper outside the subgraph + callable-subtree shape.
+        expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank"\]/);
+        expect(subMermaid).toContain('[["walkToBlank(10~20)"]]'); // wrapper, composite name
+        expect(subMermaid).toContain('["walkToBlank"]');          // bare, inside subgraph
+        expect(subMermaid).toContain('["10~20"]');                // continuation
+        expect(subMermaid).toMatch(/s\d+ == "call" ==> s\d+/);    // wrapper → bare
+        expect(subMermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+        expect(subMermaid).not.toMatch(/onHalt/);
       });
     });
 

@@ -89,7 +89,7 @@ describe('PostMachine — wrapped MachineState', () => {
     const seen: MachineState[] = [];
     await m.run({ onStep: (s) => { seen.push(s); } });
     // The second inner (mark) fires at 50.2 — the first inner (right) is wrapped
-    // by withOverrodeHaltState and therefore resolves to the outer group path {50}
+    // by withOverriddenHaltState and therefore resolves to the outer group path {50}
     // rather than {50.1}. The second inner state is unambiguously tagged 50.2.
     const groupInner = seen.find(s =>
       s.arrivalPath.instructionIndex === 50 && s.arrivalPath.groupInstructionIndex === 2
