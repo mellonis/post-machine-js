@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.0.0-alpha.4] - 2026-05-21
+## [7.0.0-alpha.4] - 2026-05-23
 
-Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.com/mellonis/post-machine-js/issues/86)) — both an inline decorator at construction and a path-based registry post-construction — plus an auto-tag policy that marks each program's/subroutine's entry state. Engine peer-dep widened `^7.0.0-alpha.3` (the new `state.tag(...)` API was added by engine alpha.3). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.com/mellonis/post-machine-js/issues/86)) — both an inline decorator at construction and a path-based registry post-construction — plus an auto-tag policy that marks each program's/subroutine's entry state. Engine peer-dep widened `^7.0.0-alpha.2` → `^7.0.0-alpha.4` — alpha.3 added the `state.tag(...)` API this release builds on, and alpha.4 ships two upstream bug fixes that post inherits transparently (`toMermaid` HTML-entity-escapes user content in labels — fixes alphabet-with-`"` parse errors, [engine #194](https://github.com/mellonis/turing-machine-js/issues/194); `runStepByStep` halt stack scoped to the call, fixes a memory leak / ghost-iteration when the same machine is reused across calls, [engine #196](https://github.com/mellonis/turing-machine-js/issues/196)). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 **Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.4`.
 
