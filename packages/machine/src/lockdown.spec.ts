@@ -84,10 +84,7 @@ describe('installStateLockdown', () => {
   });
 });
 
-describe('haltState writes — no lockdown (post #207)', () => {
-  // The module-load `installHaltLockdown` was dropped in this release. Halt-BP
-  // writes go straight to the engine's setter, which (turing-machine-js#207)
-  // accepts boolean and throws on object shapes.
+describe('haltState writes — no lockdown', () => {
   test('boolean writes pass through to the engine setter', () => {
     haltState.debug = true;
     expect(haltState.debug).toBe(true);

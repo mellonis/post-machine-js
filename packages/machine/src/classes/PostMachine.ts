@@ -74,10 +74,8 @@ export class PostMachine extends TuringMachine {
     }
 
     // Install the lockdown on every constructed State (except haltState — it's
-    // a process-global singleton; installing a per-instance lockdown would block
-    // other PostMachine instances and turing-only consumers from writing it.
-    // Direct `haltState.debug = boolean` writes go to the engine setter, which
-    // (turing-machine-js#207) accepts boolean and rejects object shapes).
+    // a process-global singleton; per-instance lockdown would block other
+    // PostMachine instances and turing-only consumers from writing it).
     // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
     // when the State has exactly one candidate path; ambiguous shared States throw.
     // Iterate over the unique-state keyspace so shared States aren't re-installed.
@@ -698,18 +696,9 @@ export class PostMachine extends TuringMachine {
   }
 
   #refreshHaltDebug(): void {
-    // turing-machine-js#207: `haltState.debug` is now a boolean. The legacy
-    // `mergeBreakpointFilters` returned a per-side DebugConfig object that
-    // the engine rejects at write time. Halt has one meaningful pause
-    // moment (post-triggering-iter), so any registered halt-BP collapses to
-    // "on"; absence collapses to "off". The per-BP `filter` shape kept in
-    // `#breakpoints` is now decorative for halt entries — it still drives
-    // arrival-path filtering in the onPause wrapper but doesn't shape the
-    // engine-level write.
-    //
-    // No `withLockdownEscape` needed — the module-load `installHaltLockdown`
-    // was dropped in this release; haltState writes go straight to the
-    // engine's setter (which under #207 accepts boolean).
+    // The per-BP `filter` is decorative for halt entries — it drives
+    // arrival-path filtering in the onPause wrapper, not the engine-level
+    // write. haltState.debug is a boolean (turing-machine-js#207).
     const hasHaltBP = this.#breakpoints.some((bp) => bp.kind === 'halt');
     haltState.debug = hasHaltBP;
   }

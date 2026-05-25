@@ -4,13 +4,8 @@ import {
 import { subroutineNameValidator } from '../validators';
 import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
 
-// `MachineState.matchedTransition.id` is `${stateId}.${patternIx}` and stateId
-// is a process-global counter (turing-machine-js#205). Two PostMachines built
-// from the same instructions get different stateIds, so cross-machine
-// `toEqual` comparisons of onStep call records would diff on this field
-// despite being functionally identical. The "last and next command" tests
-// below compare three machines built from the same body — strip
-// `matchedTransition` before comparing to keep the equivalence semantic.
+// matchedTransition.id embeds process-global stateIds (turing-machine-js#205)
+// — strip it for cross-machine call-record equality.
 function stripMatchedTransition(calls: unknown[][]): unknown[][] {
   return calls.map((args) => args.map((arg) => {
     if (arg && typeof arg === 'object' && 'matchedTransition' in arg) {
