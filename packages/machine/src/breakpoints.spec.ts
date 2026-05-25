@@ -203,7 +203,9 @@ describe('onPause — registry-aware filtering', () => {
     pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
     pm.setBreakpoint('30', { before: true });
     const paused: number[] = [];
-    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    const session = pm.debugRun();
+    session.on('pause', (s) => { paused.push(s.arrivalPath.instructionIndex); session.continue(); });
+    await session.start();
     expect(paused).toContain(30);
     pm.clearBreakpoints();
   });
@@ -224,7 +226,9 @@ describe('onPause — registry-aware filtering', () => {
     pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
     pm.setBreakpoint('30', { after: true });
     const paused: number[] = [];
-    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    const session = pm.debugRun();
+    session.on('pause', (s) => { paused.push(s.arrivalPath.instructionIndex); session.continue(); });
+    await session.start();
     expect(paused).toEqual([30]);
     pm.clearBreakpoints();
   });
@@ -243,7 +247,9 @@ describe('onPause — registry-aware filtering', () => {
     // but PostMachine's wrapper sees arrival=10, no registered match → silent.
     pm.setBreakpoint('30', { before: true });
     const paused: number[] = [];
-    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    const session = pm.debugRun();
+    session.on('pause', (s) => { paused.push(s.arrivalPath.instructionIndex); session.continue(); });
+    await session.start();
     expect(paused).toEqual([]);
     pm.clearBreakpoints();
   });
@@ -259,7 +265,9 @@ describe('onPause — registry-aware filtering', () => {
     pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
     pm.setBreakpoint(haltState, { before: true });
     const paused: number[] = [];
-    await pm.run({ onPause: () => { paused.push(1); } });
+    const session = pm.debugRun();
+    session.on('pause', () => { paused.push(1); session.continue(); });
+    await session.start();
     expect(paused.length).toBeGreaterThan(0);
     pm.clearBreakpoints();
   });
