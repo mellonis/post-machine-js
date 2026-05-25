@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-alpha.5] - 2026-05-25
+
+Fifth v7 pre-release. Drops the module-load haltState lockdown in lockstep with engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) — the lockdown was funneling per-side `DebugConfig` writes through `withLockdownEscape`, but with engine alpha.5 collapsing `haltState.debug` to a `boolean`, there's nothing to mediate. Engine peer-dep widened `^7.0.0-alpha.4` → `^7.0.0-alpha.5`; consumers inherit per-iter `MachineState.matchedTransition` ([engine #205](https://github.com/mellonis/turing-machine-js/issues/205)) and the `GraphTransition.id` separator change (`-` → `.`, same issue) transparently. Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+
+**Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.5`.
+
+### Removed
+
+- **Module-load `installHaltLockdown(haltState)` from `src/index.ts`** ([PR #94](https://github.com/mellonis/post-machine-js/pull/94)). Direct `haltState.debug = boolean` writes from user code now go straight to the engine setter (which under engine #207 accepts boolean and throws on object shapes). The "per-PostMachine routing" benefit was syntactic only — `haltState` is a process-global singleton, so `pm.setBreakpoint(haltState, …)` wrote the same global flag regardless of instance. The module-load side-effect also leaked into turing-only consumers that imported `@post-machine-js/machine` for shared APIs but never constructed a PostMachine — they were blocked from writing `haltState.debug` for no benefit.
+
+- **`installHaltLockdown` + `HALT_LOCKDOWN_ERROR` exports from `src/lockdown.ts`**. State-side `installStateLockdown` + `withLockdownEscape` are unaffected — those guard a real per-PostMachine registry (`#stateToCandidatePaths` + `#breakpoints`) where direct writes would bypass arrival-path filtering.
+
+### Changed
+
+- **`PostMachine.#refreshHaltDebug` writes the boolean directly** ([PR #94](https://github.com/mellonis/post-machine-js/pull/94)). No `withLockdownEscape` needed — the engine setter accepts the write. The per-BP `filter` shape kept in `#breakpoints` is now decorative for halt entries (it still drives arrival-path filtering in the `onPause` wrapper but doesn't shape the engine-level write).
+
+- **`pm.setBreakpoint(haltState, filter)` filter shape is decorative**. Any registered halt-BP collapses to `haltState.debug = true`; absence collapses to `false`. The `filter` is kept for API stability and continues to drive the registry's arrival-path filtering, but no longer maps to a per-side write.
+
+### Docs
+
+- **`packages/machine/README.md`** — halt breakpoint section rewritten: documents the relaxed direct-write surface (`haltState.debug = true / false / null` accepted; object writes throw the engine's boolean-only error), the registry-bypass caveat (direct writes don't appear in `pm.listBreakpoints()`), and when to use direct vs `pm.setBreakpoint(haltState, …)`.
+
+- **`CLAUDE.md`** — Subtlety 6 + debugger-primitives section updated to reflect "haltState is NO LONGER locked", split halt vs non-halt lockdown coverage.
+
+- **Source-comment audit** ([PR #95](https://github.com/mellonis/post-machine-js/pull/95)). 11 files, -43 lines net. Removed "was X / pre-vN / v6.x hopper / Under #N" historical narratives that belonged in commits/PRs/CHANGELOG. Fixed two stale references: `callGraph.ts` mentioned a non-existent `extractCallTargets` function, and `PostMachine.debugger.spec.ts` called `onPause` "experimental" though it's been stable since v6.1.0.
+
+### Compatibility
+
+- **Engine peer-dep widened** `^7.0.0-alpha.4` → `^7.0.0-alpha.5`. Required — the source uses the new boolean `haltState.debug` API. Consumers on engine alpha.4 would see a runtime throw on the first halt-BP toggle.
+
+- **Breaking for consumers that relied on the lockdown throw.** Pre-alpha.5 post code that did `haltState.debug = { before: true }` from user code received a post-side "Direct haltState.debug assignment is disabled" error. That throw is gone; the same write now reaches the engine and throws the engine's "haltState.debug only accepts boolean" error instead. Whole-object boolean writes (`haltState.debug = true`) that previously threw the lockdown error now succeed.
+
+- **Behavior changes inherited from engine alpha.5**: halt-imminent pause moved from BEFORE side to AFTER side of the halt-triggering iter (engine #207); `MachineState.matchedTransition` added on every yield (engine #205); `GraphTransition.id` separator changed from `-` to `.` (engine #205).
+
+### Out of v7-alpha.5 (still pending for stable v7.0.0)
+
+- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states.
+
 ## [7.0.0-alpha.4] - 2026-05-23
 
 Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.com/mellonis/post-machine-js/issues/86)) — both an inline decorator at construction and a path-based registry post-construction — plus an auto-tag policy that marks each program's/subroutine's entry state. Engine peer-dep widened `^7.0.0-alpha.2` → `^7.0.0-alpha.4` — alpha.3 added the `state.tag(...)` API this release builds on, and alpha.4 ships two upstream bug fixes that post inherits transparently (`toMermaid` HTML-entity-escapes user content in labels — fixes alphabet-with-`"` parse errors, [engine #194](https://github.com/mellonis/turing-machine-js/issues/194); `runStepByStep` halt stack scoped to the call, fixes a memory leak / ghost-iteration when the same machine is reused across calls, [engine #196](https://github.com/mellonis/turing-machine-js/issues/196)). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
