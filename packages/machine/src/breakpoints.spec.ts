@@ -149,9 +149,9 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.setBreakpoint('10', { before: true });
     pm.clearBreakpoint('10');
     expect(pm.listBreakpoints()).toEqual([]);
-    // Engine v6.1+ (#150) returns an empty `DebugConfig` after a filters
-    // reset rather than `null`. Check the public getters directly — `undefined`
-    // is the "no filter set" sentinel (field type: `symbol[] | true | undefined`).
+    // state.debug after a clear is an empty DebugConfig — read filter getters
+    // directly; `undefined` is the "no filter set" sentinel
+    // (field type: `symbol[] | true | undefined`).
     const dbg = pm.stateAt('10').debug;
     expect(dbg.before).toBeUndefined();
     expect(dbg.after).toBeUndefined();
@@ -184,7 +184,7 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.setBreakpoint(haltState, { before: true });
     pm.clearBreakpoints();
     expect(pm.listBreakpoints()).toEqual([]);
-    // Engine v6.1+ (#150) — see clearBreakpoint test above.
+    // Empty DebugConfig after clear — see clearBreakpoint test above.
     const dbg = pm.stateAt('10').debug;
     expect(dbg.before).toBeUndefined();
     expect(dbg.after).toBeUndefined();
@@ -209,19 +209,12 @@ describe('onPause — registry-aware filtering', () => {
   });
 
   test('arrivalPath in after-fire onPause is the iter that just fired, not the next one', async () => {
-    // Regression test for the v6.1.0-v6.3.0 `advanceTracking` ordering bug.
-    // Before v6.4.0, PostMachine advanced `prev` inside its `onStep` wrapper,
-    // which runs BETWEEN engine v6's `onPause(before, K)` and `onPause(after, K)`
-    // dispatches on the same yield. So `onPause(after, K)` saw `prev = K`
-    // (advanced by onStep on the same iter) instead of `K-1` — and the path
-    // resolver "from K, with K's symbol, to ..." returned K+1's instruction,
-    // not K's. In this program, instruction 30's after-fire would have
-    // resolved to 40 (the next-fall-through instruction) instead of 30.
-    //
-    // Fixed in v6.4.0 by moving advanceTracking from the internal onStep
-    // wrapper to a new internal onIter wrapper, which fires at end-of-iter
-    // — after both onPause dispatches have already read their iter-correct
-    // prev. Engine onIter hook landed in turing-machine-js v6.4.0 (#163).
+    // Regression: after-fire onPause must see arrivalPath of the iter that
+    // fired, not the next one. Without end-of-iter prev advance,
+    // onPause(after, K) reads prev = K (advanced by onStep mid-iter) instead
+    // of K-1 — the path resolver then returns K+1's instruction.
+    // In this program, instruction 30's after-fire would resolve to 40
+    // (next fall-through) instead of 30.
     const pm = new PostMachine({
       10: check(20, 30),
       20: right(10),

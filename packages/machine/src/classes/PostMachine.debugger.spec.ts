@@ -1,6 +1,6 @@
-// PostMachine debugger surface — async run() semantics and the experimental
-// onPause forwarding. Mirrors v3.spec.ts structure; both files
-// stay non-README (README-driven tests live in examples.spec.ts).
+// PostMachine debugger surface — async run() semantics and onPause forwarding.
+// Mirrors v3.spec.ts structure; both files stay non-README (README-driven
+// tests live in examples.spec.ts).
 
 import {
   PostMachine,
@@ -82,9 +82,8 @@ describe('PostMachine — onPause forwarding', () => {
       symbols: ['*', '*', ' '],
     }));
 
-    // Attach a `before` breakpoint on the initial state. Per turing v4,
-    // setting `state.debug` is runtime-mutable; the upstream run() loop
-    // checks it on each iteration boundary.
+    // Attach a `before` breakpoint on the initial state. `state.debug` is
+    // runtime-mutable; the upstream run() loop checks it on each iter.
     machine.initialState.debug = { before: true };
 
     const seen: MachineState[] = [];

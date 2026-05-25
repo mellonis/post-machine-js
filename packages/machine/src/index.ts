@@ -1,12 +1,6 @@
 import type { MachineState as EngineMachineState } from '@turing-machine-js/machine';
 import type { Path } from './path';
 
-// haltState is intentionally NOT locked down — direct
-// `haltState.debug = boolean` writes go to the engine
-// setter (turing-machine-js#207). Per-PostMachine
-// State lockdown is installed by PostMachine's
-// constructor (see `installStateLockdown`).
-
 export {
   Tape,
   State,
