@@ -4,6 +4,19 @@ import {
 import { subroutineNameValidator } from '../validators';
 import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
 
+// matchedTransition.id embeds process-global stateIds (turing-machine-js#205)
+// — strip it for cross-machine call-record equality.
+function stripMatchedTransition(calls: unknown[][]): unknown[][] {
+  return calls.map((args) => args.map((arg) => {
+    if (arg && typeof arg === 'object' && 'matchedTransition' in arg) {
+      const { matchedTransition, ...rest } = arg as Record<string, unknown>;
+      void matchedTransition;
+      return rest;
+    }
+    return arg;
+  }));
+}
+
 describe('constructor', () => {
   test('no instructions', () => {
     expect(() => {
@@ -406,8 +419,10 @@ describe('run tests', () => {
         expect(onStepMock1).toHaveBeenCalledTimes(1);
         expect(onStepMock2).toHaveBeenCalledTimes(1);
         expect(onStepMock3).toHaveBeenCalledTimes(1);
-        expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
-        expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+        expect(stripMatchedTransition(onStepMock1.mock.calls))
+          .toEqual(stripMatchedTransition(onStepMock2.mock.calls));
+        expect(stripMatchedTransition(onStepMock2.mock.calls))
+          .toEqual(stripMatchedTransition(onStepMock3.mock.calls));
       });
     });
 
@@ -459,8 +474,10 @@ describe('run tests', () => {
       expect(onStepMock1).toHaveBeenCalledTimes(2);
       expect(onStepMock2).toHaveBeenCalledTimes(2);
       expect(onStepMock3).toHaveBeenCalledTimes(2);
-      expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
-      expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+      expect(stripMatchedTransition(onStepMock1.mock.calls))
+        .toEqual(stripMatchedTransition(onStepMock2.mock.calls));
+      expect(stripMatchedTransition(onStepMock2.mock.calls))
+        .toEqual(stripMatchedTransition(onStepMock3.mock.calls));
     });
   });
 

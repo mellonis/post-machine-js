@@ -73,9 +73,9 @@ export class PostMachine extends TuringMachine {
       paths.sort(comparePathsCanonically);
     }
 
-    // Install the lockdown on every constructed State (except haltState, which is
-    // locked module-globally with halt-specific semantics — it's shared across
-    // PostMachine instances, so per-instance lockdown would clobber across runs).
+    // Install the lockdown on every constructed State (except haltState — it's
+    // a process-global singleton; per-instance lockdown would block other
+    // PostMachine instances and turing-only consumers from writing it).
     // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
     // when the State has exactly one candidate path; ambiguous shared States throw.
     // Iterate over the unique-state keyspace so shared States aren't re-installed.
@@ -696,12 +696,11 @@ export class PostMachine extends TuringMachine {
   }
 
   #refreshHaltDebug(): void {
-    const filters = this.#breakpoints
-      .filter((bp): bp is Extract<Breakpoint, { kind: 'halt' }> => bp.kind === 'halt')
-      .map((bp) => bp.filter);
-    withLockdownEscape(() => {
-      haltState.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
-    });
+    // The per-BP `filter` is decorative for halt entries — it drives
+    // arrival-path filtering in the onPause wrapper, not the engine-level
+    // write. haltState.debug is a boolean (turing-machine-js#207).
+    const hasHaltBP = this.#breakpoints.some((bp) => bp.kind === 'halt');
+    haltState.debug = hasHaltBP;
   }
 
   #onUserDebugWrite(state: State, value: unknown): void {

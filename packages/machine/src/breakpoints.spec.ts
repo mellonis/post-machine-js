@@ -295,9 +295,13 @@ describe('lockdown redirect — direct state.debug writes', () => {
     }).toThrow(/ambiguous.*'10'.*'30'/);
   });
 
-  test('haltState debug write throws (no PostMachine context for redirect)', () => {
+  test('haltState writes go to the engine setter — boolean OK, object throws', () => {
+    haltState.debug = true;
+    expect(haltState.debug).toBe(true);
+    haltState.debug = false;
     expect(() => {
+      // @ts-expect-error — HaltState typed alias narrows to boolean | null
       haltState.debug = { before: true };
-    }).toThrow(/setBreakpoint\(haltState/);
+    }).toThrow(/haltState\.debug only accepts boolean/);
   });
 });

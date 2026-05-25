@@ -1,11 +1,11 @@
-import { haltState as engineHaltState, type MachineState as EngineMachineState } from '@turing-machine-js/machine';
+import type { MachineState as EngineMachineState } from '@turing-machine-js/machine';
 import type { Path } from './path';
-import { installHaltLockdown } from './lockdown';
 
-// Install lockdown on the engine's haltState singleton at module load. Direct
-// `haltState.debug = X` writes throw; only pm.setBreakpoint(haltState, …) can
-// modify it (via withLockdownEscape internally).
-installHaltLockdown(engineHaltState);
+// haltState is intentionally NOT locked down — direct
+// `haltState.debug = boolean` writes go to the engine
+// setter (turing-machine-js#207). Per-PostMachine
+// State lockdown is installed by PostMachine's
+// constructor (see `installStateLockdown`).
 
 export {
   Tape,
