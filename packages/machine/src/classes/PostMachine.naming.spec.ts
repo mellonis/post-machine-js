@@ -118,6 +118,8 @@ describe('PostMachine — group states and wrapper composite', () => {
   });
 });
 
+// Hopper-drop spec (#85): acyclic subroutines with a plain first instruction
+// skip the hopper and wrap their first-instruction State directly.
 describe('PostMachine — subroutine body and hopper names', () => {
   test('subroutine inner states use fully-qualified names', () => {
     // Use mark/right/mark so all three instructions produce real (non-halt) states.
@@ -129,8 +131,7 @@ describe('PostMachine — subroutine body and hopper names', () => {
         3: mark,
       },
     });
-    // Acyclic subroutine + plain first instruction → hopper dropped (#85).
-    // The wrapper's bare is foo's first-instruction State (foo::1) directly;
+    // Wrapper's bare is foo's first-instruction State (foo::1) directly;
     // composite name reflects that.
     expect(machine.initialState.name).toBe('foo::1(10~halt)');
 
@@ -139,7 +140,7 @@ describe('PostMachine — subroutine body and hopper names', () => {
     expect(names.has('foo::1')).toBe(true);
     expect(names.has('foo::2')).toBe(true);
     expect(names.has('foo::3')).toBe(true);
-    // Hopper dropped — no bare 'foo' node in the graph.
+    // No bare 'foo' node in the graph.
     expect(names.has('foo')).toBe(false);
   });
 
@@ -155,7 +156,7 @@ describe('PostMachine — subroutine body and hopper names', () => {
       },
     });
     // outer's first instruction is `call('inner')` — that produces a wrapper,
-    // so #85's hopper-drop is blocked (engine #176 would unwrap the inner
+    // so the hopper-drop is blocked (engine #176 would unwrap the inner
     // wrapping). outer keeps its hopper named "outer".
     expect(machine.initialState.name).toBe('outer(10~halt)');
 
@@ -183,10 +184,9 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Under #85, `bar` is acyclic + plain first instruction (mark) → hopper
-    // dropped; no bare 'foo::bar' node. The inner-call wrapper composite is
-    // 'foo::bar::1(foo::1~foo::2)' on state.name, with body state 'foo::bar::1'
-    // appearing as a node.
+    // `bar` is acyclic + plain first instruction → no bare 'foo::bar' node.
+    // The inner-call wrapper composite is 'foo::bar::1(foo::1~foo::2)' on
+    // state.name, with body state 'foo::bar::1' appearing as a node.
     expect(names.has('foo::bar')).toBe(false);
     expect(names.has('foo::bar::1')).toBe(true);
     expect(names.has('foo::1~foo::2')).toBe(true);
@@ -219,9 +219,9 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Under #85, `bar` is acyclic + plain first instruction → hopper dropped.
-    // No bare 'foo::bar' node; the bare 'foo::bar::1' is the wrapper's target,
-    // and the tail-position continuation is 'foo::1~halt'.
+    // `bar` is acyclic + plain first instruction → no bare 'foo::bar' node.
+    // The bare 'foo::bar::1' is the wrapper's target; tail continuation
+    // is 'foo::1~halt'.
     expect(names.has('foo::bar')).toBe(false);
     expect(names.has('foo::1~halt')).toBe(true);
     expect(names.has('foo::bar::1')).toBe(true);
@@ -240,9 +240,9 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Each scope hops accumulate in the prefix. `deepest` is acyclic with a
-    // plain first instruction → hopper dropped (#85); only its body state
-    // 'outer::inner::deepest::1' appears in the graph.
+    // Each scope hop accumulates in the prefix. `deepest` is acyclic with
+    // a plain first instruction — no bare 'outer::inner::deepest' node,
+    // only its body state 'outer::inner::deepest::1' appears.
     expect(names.has('outer::inner::deepest::1')).toBe(true);
     expect(names.has('outer::inner::deepest')).toBe(false);
   });

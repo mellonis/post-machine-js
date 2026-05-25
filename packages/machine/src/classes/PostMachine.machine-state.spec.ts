@@ -17,7 +17,7 @@ describe('PostMachine — wrapped MachineState', () => {
     }
   });
 
-  test('onIter receives arrivalPath and candidatePaths, once per iter (v6.4.0+)', async () => {
+  test('onIter receives arrivalPath and candidatePaths, once per iter', async () => {
     const m = new PostMachine({
       10: mark,
       20: stop,
@@ -68,11 +68,9 @@ describe('PostMachine — wrapped MachineState', () => {
   });
 
   test('subroutine body instruction has fully-qualified arrivalPath', async () => {
-    // Use a 2-instruction body so the second instruction is visited as its
-    // own iter (the first instruction's State is now the wrapper's bare
-    // under #85 — its arrivalPath is the call site, not the FQ subroutine
-    // path. The second body instruction always gets its own iter regardless
-    // of hopper-drop status).
+    // 2-instruction body so the second instruction visits as its own iter:
+    // the first instruction's State IS the wrapper's bare, so its
+    // arrivalPath is the call site (not the FQ subroutine path).
     const m = new PostMachine({
       10: call('foo'),
       foo: { 1: right, 2: mark },

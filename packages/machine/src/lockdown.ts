@@ -16,8 +16,8 @@ export function withLockdownEscape<T>(fn: () => T): T {
 }
 
 function captureProtoDebugAccessor(state: object): { get: () => unknown; set: (v: unknown) => void } {
-  // Engine v6: State.prototype owns `get debug() / set debug()`. The descriptor is
-  // always on the immediate prototype.
+  // State.prototype owns `get debug() / set debug()` — descriptor is on the
+  // immediate prototype.
   const proto = Object.getPrototypeOf(state);
   const desc = Object.getOwnPropertyDescriptor(proto, 'debug')!;
   return { get: desc.get!.bind(state), set: desc.set!.bind(state) };

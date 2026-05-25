@@ -221,25 +221,19 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry — under engine v7's callable-subtree emit (#174)
-      // PLUS PostMachine's drop-acyclic-hopper change (#85), the wrapper at
-      // the call site wraps `rightToBlank::1` directly (not the v6.x hopper
-      // named `rightToBlank`). The subgraph label and composite name both
-      // reflect the bare's identity.
+      // Acyclic + plain-first-instruction → wrapper wraps `rightToBlank::1`
+      // directly; subgraph label and composite name reflect the bare's identity.
       expect(mermaid).toContain('(((halt)))');
       expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank::1"\]/);
-      // Wrapper bears the top-level entry auto-tag `main` (#86).
+      // Top-level entry auto-tag `main` (#86).
       expect(mermaid).toContain('[["rightToBlank::1(1~2)<br>main"]]');
-      // Bare inside the subgraph bears the subroutine-entry auto-tag (#86).
+      // Subroutine-entry auto-tag (#86).
       expect(mermaid).toContain('["rightToBlank::1<br>rightToBlank"]');
-      // The v6.x hopper named 'rightToBlank' is dropped (acyclic + plain first instr).
-      // The bare's display label is now `rightToBlank::1<br>rightToBlank`, so the
-      // bare 'rightToBlank' (without `::1`) does not appear as a node label.
+      // No bare `rightToBlank` (without `::1`) node label.
       expect(mermaid).not.toMatch(/s\d+\["rightToBlank"\]/);
 
-      // Bold `== "call" ==>` from wrapper to bare + dotted `-. "return" .->`
-      // from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->`
-      // keyword does not appear; wrapper-to-override is a regular solid arrow.
+      // Bold `== "call" ==>` wrapper→bare + dotted `-. "return" .->`
+      // subgraph→wrapper. Wrapper-to-override is a regular solid arrow.
       expect(mermaid).toMatch(/s\d+ == "call" ==> s\d+/);
       expect(mermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
       expect(mermaid).not.toMatch(/onHalt/);
@@ -352,7 +346,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('MachineState shape (v6.1.0+)', () => {
+  describe('MachineState shape', () => {
     test('onStep receives arrivalPath and candidatePaths for a simple machine', async () => {
       const m = new PostMachine({
         10: mark,
@@ -514,11 +508,9 @@ describe('packages/machine/README.md', () => {
         expect(a.compositionEdgeCount).toBe(0);
         expect(a.maxCompositionDepth).toBe(0);
 
-        // Under #85, `walkToBlank` is acyclic + has a plain first instruction
-        // (check), so its hopper is dropped. The subroutine contributes 2
-        // body states (walkToBlank::1, walkToBlank::2) + 1 continuation +
-        // the wrapper at instruction 10 + the top-level mark = 6 nodes
-        // (vs alpha.2's 7 with the hopper).
+        // `walkToBlank` is acyclic + plain first instruction (check), so no
+        // hopper. 6 nodes: 2 body (walkToBlank::1, walkToBlank::2) + 1
+        // continuation + wrapper at instruction 10 + top-level mark.
         // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 6 1 1
         expect(b.stateCount).toBe(6);
         expect(b.compositionEdgeCount).toBe(1);
@@ -572,7 +564,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Path-based resolver (v6.1.0+)', () => {
+  describe('Path-based resolver', () => {
     test('top-level instruction is reachable by string and object path', () => {
       const pm = new PostMachine({ 10: mark, 20: stop });
 
@@ -595,7 +587,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Breakpoints (v6.1.0+)', () => {
+  describe('Breakpoints', () => {
     test('registered breakpoint fires onPause with arrivalPath', async () => {
       const pm = new PostMachine({
         10: check(20, 30),
@@ -633,7 +625,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Lockdown semantics (v6.1.0+)', () => {
+  describe('Lockdown semantics', () => {
     test('direct write on un-shared State redirects to setBreakpoint', () => {
       const pm = new PostMachine({ 10: mark, 20: stop });
 

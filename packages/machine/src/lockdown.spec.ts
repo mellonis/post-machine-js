@@ -76,9 +76,8 @@ describe('installStateLockdown', () => {
       // After the inner escape ends, the outer is still active.
       s.debug = null;
     });
-    // Engine v6.1+ (#150) returns an empty `DebugConfig` after `state.debug = null`
-    // (filters cleared) rather than literal `null`. Check the public getters
-    // directly — `undefined` is the "no filter set" sentinel.
+    // state.debug after a clear is an empty DebugConfig — read filter getters
+    // directly; `undefined` is the "no filter set" sentinel.
     expect(s.debug.before).toBeUndefined();
     expect(s.debug.after).toBeUndefined();
   });

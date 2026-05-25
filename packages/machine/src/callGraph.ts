@@ -94,8 +94,6 @@ export function analyzeLocalCallGraph(
   return {cyclicSet, buildOrder};
 }
 
-// Same as `extractCallTargets` above but with the right return type. The
-// earlier function had a placeholder return; this is the real one.
 function extractCallTargetsFromInstructions(instructions: Instructions): Set<string> {
   const targets = new Set<string>();
 

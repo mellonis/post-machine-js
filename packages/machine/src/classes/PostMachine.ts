@@ -116,14 +116,9 @@ export class PostMachine extends TuringMachine {
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
-    // Tracking is owned by the internal onIter wrapper (engine v6.4.0+).
-    // onIter fires at end-of-iter — after both onPause(before, K) and
-    // onPause(after, K) have already read their iter-correct prev — so
-    // advancing here doesn't race those reads. Previously this lived in
-    // the internal onStep wrapper, which ran BETWEEN before- and after-
-    // fires on the same yield, causing after-fire arrivalPath to resolve
-    // against K's prev instead of K-1's. See tests/breakpoints.spec.ts
-    // "arrivalPath in after-fire onPause" for the regression case.
+    // Advance at end-of-iter (via the internal onIter wrapper) so both
+    // `onPause(before, K)` and `onPause(after, K)` read iter-correct prev.
+    // Advancing inside onStep would race after-fire arrivalPath resolution.
     const advanceTracking = (raw: EngineMachineState): void => {
       prevState = raw.state;
       prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
@@ -281,19 +276,15 @@ export class PostMachine extends TuringMachine {
     };
     // Cycle-aware hopper construction (#85).
     //
-    // Static analysis of the local subroutine call graph identifies which
-    // subroutines participate in cycles (mutual recursion or self-loop). For
-    // those, we keep the v6.x hopper — a stub `State` that wraps a
-    // `Reference` to the subroutine's first instruction, providing the
-    // forward-declaration anchor that `withOverriddenHaltState` needs at the
-    // moment `call(...)` invocations are processed.
+    // Subroutines in cycles (mutual recursion / self-loop) get a hopper — a
+    // stub `State` wrapping a `Reference` to the first instruction — to give
+    // `withOverriddenHaltState` a forward-declaration anchor when `call(...)`
+    // is processed.
     //
-    // Acyclic subroutines (the common case) skip the hopper. We process them
-    // in reverse-topological build order — sinks first — so by the time
-    // `call('X')` runs for an acyclic X, X's first-instruction State already
-    // exists and we wrap it directly. Net effect: -1 graph node per acyclic
-    // subroutine; the wrapper composite name becomes `X::1(continuation)`
-    // (accurately reflects the wrapped bare) instead of `X(continuation)`.
+    // Acyclic subroutines skip the hopper: processed in reverse-topological
+    // build order, so by the time `call('X')` runs for acyclic X, X's
+    // first-instruction State already exists and we wrap it directly.
+    // Composite name reflects the wrapped bare: `X::1(continuation)`.
     const localSubroutineInstructions: Record<string, Instructions> = Object.fromEntries(
       Object.entries(localSubroutinesData).map(([name, data]) => [name, data.instructions]),
     );
