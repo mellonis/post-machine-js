@@ -880,8 +880,10 @@ pm.setBreakpoint('10', { before: true, after: '*' });
 Halt breakpoints:
 
 ```javascript
-pm.setBreakpoint(haltState, { before: true });       // pause at halt entry
+pm.setBreakpoint(haltState, { before: true });       // pause at halt entry (filter shape is decorative)
 ```
+
+> Engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) collapsed `haltState.debug` to a `boolean` — halt has one meaningful pause moment. The `filter` shape passed to `pm.setBreakpoint(haltState, …)` is kept for API stability but is now decorative: any registered halt breakpoint enables the engine-level boolean, and the registry entry drives only the arrival-path filtering in PostMachine's `onPause` wrapper. The pause fires on the AFTER side of the iter whose transition leads to halt.
 
 Management:
 
@@ -907,16 +909,20 @@ pm.stateAt('10').debug = null;
 // equivalent to pm.clearBreakpoint('10')
 ```
 
-Direct writes on `haltState` throw (no PostMachine context for a redirect):
+Direct writes on `haltState` now go straight to the engine setter — the prior module-load halt-lockdown was dropped alongside engine [#207](https://github.com/mellonis/turing-machine-js/issues/207). Boolean writes are accepted; object writes throw the engine's boolean-only error:
 
 ```javascript
-haltState.debug = { before: true };
-// throws — use pm.setBreakpoint(haltState, ...)
+haltState.debug = true;                              // ok — enables the halt breakpoint
+haltState.debug = false;                             // ok — disables
+haltState.debug = null;                              // ok — alias of false
+haltState.debug = { before: true };                  // throws: "haltState.debug only accepts boolean..."
 ```
 
-This single-channel model preserves a global invariant: `pm.listBreakpoints()` is the source of truth for what will fire `onPause`.
+Direct halt writes bypass PostMachine's registry — they enable the engine pause but `pm.listBreakpoints()` won't record them. Use `pm.setBreakpoint(haltState, …)` when arrival-path filtering or registry awareness matters; use the direct write for ad-hoc halt-pause toggling in tools that don't need the registry.
 
-For the underlying engine reference — filter shapes, ordering (`before → step → after` on the same yield as of engine v6), the `haltState.debug.after` rejection — see [Debugging breakpoints](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints) in the upstream README.
+This relaxed model preserves the single-channel invariant where it matters: `pm.listBreakpoints()` is still the source of truth for what PostMachine's `onPause` wrapper surfaces. The engine's pause itself is now an open channel — by design, since the halt-lockdown's "per-PostMachine routing" benefit was syntactic only (haltState is a process-global singleton).
+
+For the underlying engine reference — filter shapes for non-halt states, the `before → step → after` per-iter lifecycle (engine v6), and the boolean `haltState.debug` API (engine #207) — see [Debugging breakpoints](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints) in the upstream README.
 
 ## Links
 

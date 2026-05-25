@@ -696,12 +696,20 @@ export class PostMachine extends TuringMachine {
   }
 
   #refreshHaltDebug(): void {
-    const filters = this.#breakpoints
-      .filter((bp): bp is Extract<Breakpoint, { kind: 'halt' }> => bp.kind === 'halt')
-      .map((bp) => bp.filter);
-    withLockdownEscape(() => {
-      haltState.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
-    });
+    // turing-machine-js#207: `haltState.debug` is now a boolean. The legacy
+    // `mergeBreakpointFilters` returned a per-side DebugConfig object that
+    // the engine rejects at write time. Halt has one meaningful pause
+    // moment (post-triggering-iter), so any registered halt-BP collapses to
+    // "on"; absence collapses to "off". The per-BP `filter` shape kept in
+    // `#breakpoints` is now decorative for halt entries — it still drives
+    // arrival-path filtering in the onPause wrapper but doesn't shape the
+    // engine-level write.
+    //
+    // No `withLockdownEscape` needed — the module-load `installHaltLockdown`
+    // was dropped in this release; haltState writes go straight to the
+    // engine's setter (which under #207 accepts boolean).
+    const hasHaltBP = this.#breakpoints.some((bp) => bp.kind === 'halt');
+    haltState.debug = hasHaltBP;
   }
 
   #onUserDebugWrite(state: State, value: unknown): void {

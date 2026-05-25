@@ -295,9 +295,20 @@ describe('lockdown redirect — direct state.debug writes', () => {
     }).toThrow(/ambiguous.*'10'.*'30'/);
   });
 
-  test('haltState debug write throws (no PostMachine context for redirect)', () => {
+  test('haltState debug write goes straight to the engine setter — no lockdown (post-machine-js dropped haltState lockdown alongside engine #207)', () => {
+    // Pre-7.0.0-alpha.5 of post-machine-js (with engine pre-#207), direct
+    // `haltState.debug = X` writes from user code threw a lockdown-specific
+    // error message. The lockdown was dropped along with engine #207 — its
+    // "per-PostMachine routing" benefit was syntactic only (haltState is a
+    // process-global singleton). User writes now hit the engine setter
+    // directly: boolean is accepted; object shapes throw the engine's
+    // boolean-only error.
+    haltState.debug = true;
+    expect(haltState.debug).toBe(true);
+    haltState.debug = false;
     expect(() => {
+      // @ts-expect-error — HaltState typed alias narrows to boolean | null
       haltState.debug = { before: true };
-    }).toThrow(/setBreakpoint\(haltState/);
+    }).toThrow(/haltState\.debug only accepts boolean/);
   });
 });

@@ -4,6 +4,24 @@ import {
 import { subroutineNameValidator } from '../validators';
 import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
 
+// `MachineState.matchedTransition.id` is `${stateId}.${patternIx}` and stateId
+// is a process-global counter (turing-machine-js#205). Two PostMachines built
+// from the same instructions get different stateIds, so cross-machine
+// `toEqual` comparisons of onStep call records would diff on this field
+// despite being functionally identical. The "last and next command" tests
+// below compare three machines built from the same body — strip
+// `matchedTransition` before comparing to keep the equivalence semantic.
+function stripMatchedTransition(calls: unknown[][]): unknown[][] {
+  return calls.map((args) => args.map((arg) => {
+    if (arg && typeof arg === 'object' && 'matchedTransition' in arg) {
+      const { matchedTransition, ...rest } = arg as Record<string, unknown>;
+      void matchedTransition;
+      return rest;
+    }
+    return arg;
+  }));
+}
+
 describe('constructor', () => {
   test('no instructions', () => {
     expect(() => {
@@ -406,8 +424,10 @@ describe('run tests', () => {
         expect(onStepMock1).toHaveBeenCalledTimes(1);
         expect(onStepMock2).toHaveBeenCalledTimes(1);
         expect(onStepMock3).toHaveBeenCalledTimes(1);
-        expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
-        expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+        expect(stripMatchedTransition(onStepMock1.mock.calls))
+          .toEqual(stripMatchedTransition(onStepMock2.mock.calls));
+        expect(stripMatchedTransition(onStepMock2.mock.calls))
+          .toEqual(stripMatchedTransition(onStepMock3.mock.calls));
       });
     });
 
@@ -459,8 +479,10 @@ describe('run tests', () => {
       expect(onStepMock1).toHaveBeenCalledTimes(2);
       expect(onStepMock2).toHaveBeenCalledTimes(2);
       expect(onStepMock3).toHaveBeenCalledTimes(2);
-      expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
-      expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+      expect(stripMatchedTransition(onStepMock1.mock.calls))
+        .toEqual(stripMatchedTransition(onStepMock2.mock.calls));
+      expect(stripMatchedTransition(onStepMock2.mock.calls))
+        .toEqual(stripMatchedTransition(onStepMock3.mock.calls));
     });
   });
 

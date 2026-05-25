@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import { State, ifOtherSymbol, haltState } from '@turing-machine-js/machine';
 import {
   installStateLockdown,
-  installHaltLockdown,
   withLockdownEscape,
 } from './lockdown';
 
@@ -85,27 +84,23 @@ describe('installStateLockdown', () => {
   });
 });
 
-describe('installHaltLockdown', () => {
-  test('user writes throw a halt-specific error', () => {
-    // Note: installHaltLockdown mutates the engine's haltState singleton. We install
-    // once here; later imports of haltState see the locked-down accessor. Tests in
-    // this file run in sequence within one Vitest worker, so the installation
-    // persists across tests in the same file but does not leak across spec files
-    // (each file gets its own module graph).
-    installHaltLockdown(haltState);
-    expect(() => {
-      haltState.debug = { before: true };
-    }).toThrow(/setBreakpoint\(haltState/);
+describe('haltState writes — no lockdown (post #207)', () => {
+  // The module-load `installHaltLockdown` was dropped in this release. Halt-BP
+  // writes go straight to the engine's setter, which (turing-machine-js#207)
+  // accepts boolean and throws on object shapes.
+  test('boolean writes pass through to the engine setter', () => {
+    haltState.debug = true;
+    expect(haltState.debug).toBe(true);
+    haltState.debug = false;
+    expect(haltState.debug).toBe(false);
+    haltState.debug = null;
+    expect(haltState.debug).toBe(false);
   });
 
-  test('escape allows internal writes to haltState', () => {
-    withLockdownEscape(() => {
+  test('object writes throw the engine-level error, not a lockdown error', () => {
+    expect(() => {
+      // @ts-expect-error — HaltState typed alias only accepts boolean | null
       haltState.debug = { before: true };
-    });
-    expect(haltState.debug?.before).toBe(true);
-    // Clear so other tests in this file/run aren't affected.
-    withLockdownEscape(() => {
-      haltState.debug = null;
-    });
+    }).toThrow(/haltState\.debug only accepts boolean/);
   });
 });
