@@ -73,9 +73,11 @@ export class PostMachine extends TuringMachine {
       paths.sort(comparePathsCanonically);
     }
 
-    // Install the lockdown on every constructed State (except haltState, which is
-    // locked module-globally with halt-specific semantics — it's shared across
-    // PostMachine instances, so per-instance lockdown would clobber across runs).
+    // Install the lockdown on every constructed State (except haltState — it's
+    // a process-global singleton; installing a per-instance lockdown would block
+    // other PostMachine instances and turing-only consumers from writing it.
+    // Direct `haltState.debug = boolean` writes go to the engine setter, which
+    // (turing-machine-js#207) accepts boolean and rejects object shapes).
     // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
     // when the State has exactly one candidate path; ambiguous shared States throw.
     // Iterate over the unique-state keyspace so shared States aren't re-installed.
