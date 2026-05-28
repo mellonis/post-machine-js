@@ -5,7 +5,6 @@
 import {
   PostMachine,
   Tape,
-  type MachineState,
   check, mark, right, stop,
 } from '../index';
 
@@ -28,11 +27,11 @@ describe('PostMachine — async run', () => {
     }));
 
     const result = machine.run();
-    expect(result).toBeInstanceOf(Promise);
-    return result; // ensure jest waits for halt
+    // v7: run() is sync, returns void.
+    expect(result).toBeUndefined();
   });
 
-  test('run() resolves only after the machine halts', async () => {
+  test('run() is synchronous — tape is final immediately after the call', () => {
     const machine = buildWalkAndMark();
 
     machine.replaceTapeWith(new Tape({
@@ -40,10 +39,10 @@ describe('PostMachine — async run', () => {
       symbols: ['*', '*', ' '],
     }));
 
-    // Before run resolves, the tape should be the input.
+    // Before run runs, the tape should be the input.
     expect(machine.tape.symbols.join('').trim()).toBe('**');
 
-    await machine.run();
+    machine.run();
 
     expect(machine.tape.symbols.join('').trim()).toBe('***');
   });
@@ -57,9 +56,7 @@ describe('PostMachine — async run', () => {
     }));
 
     const seen: number[] = [];
-    await machine.run({
-      onStep: (s: MachineState) => { seen.push(s.step); },
-    });
+    for (const s of machine.runStepByStep()) { seen.push(s.step); }
 
     expect(seen.length).toBeGreaterThan(0);
     // Steps are 1-indexed and monotonically increasing.
@@ -86,13 +83,13 @@ describe('PostMachine — onPause forwarding', () => {
     // runtime-mutable; the upstream run() loop checks it on each iter.
     machine.initialState.debug = { before: true };
 
-    const seen: MachineState[] = [];
-    await machine.run({
-      onPause: (s) => { seen.push(s); },
-    });
+    const seen: Array<{side: string; cause: string}> = [];
+    const session = machine.debugRun();
+    session.on('pause', (s) => { seen.push({side: s.pause.side, cause: s.pause.cause}); session.continue(); });
+    await session.start();
 
     expect(seen.length).toBeGreaterThan(0);
-    expect(seen[0].debugBreak).toEqual({ before: true });
+    expect(seen[0]).toEqual({ side: 'before', cause: 'breakpoint' });
   });
 
   test('run() awaits an async onPause before resolving', async () => {
@@ -111,14 +108,15 @@ describe('PostMachine — onPause forwarding', () => {
     machine.initialState.debug = { before: true };
 
     let asyncCallbackResolved = false;
-    await machine.run({
-      onPause: async () => {
-        await new Promise((r) => setTimeout(r, 10));
-        asyncCallbackResolved = true;
-      },
+    const session = machine.debugRun();
+    session.on('pause', async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      asyncCallbackResolved = true;
+      session.continue();
     });
+    await session.start();
 
-    // If run() resolved before the async callback finished, this would be false.
+    // If start() resolved before the async callback finished, this would be false.
     expect(asyncCallbackResolved).toBe(true);
   });
 });

@@ -9,7 +9,7 @@ describe('PostMachine — wrapped MachineState', () => {
       20: stop,
     });
     const seen: MachineState[] = [];
-    await m.run({ onStep: (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     expect(seen.length).toBeGreaterThan(0);
     for (const s of seen) {
       expect(s.arrivalPath).toBeDefined();
@@ -23,7 +23,7 @@ describe('PostMachine — wrapped MachineState', () => {
       20: stop,
     });
     const seen: MachineState[] = [];
-    await m.run({ onIter: async (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     expect(seen.length).toBeGreaterThan(0);
     for (const s of seen) {
       expect(s.arrivalPath).toBeDefined();
@@ -39,7 +39,7 @@ describe('PostMachine — wrapped MachineState', () => {
       20: stop,
     });
     const seen: MachineState[] = [];
-    await m.run({ onStep: (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     expect(seen[0].arrivalPath).toEqual(parsePath('10'));
   });
 
@@ -49,7 +49,7 @@ describe('PostMachine — wrapped MachineState', () => {
       20: stop,
     });
     const seen: MachineState[] = [];
-    await m.run({ onStep: (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     expect(seen[0].candidatePaths).toEqual([parsePath('10')]);
   });
 
@@ -62,7 +62,7 @@ describe('PostMachine — wrapped MachineState', () => {
       30: stop,
     });
     const seen: MachineState[] = [];
-    await m.run({ onStep: (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     expect(seen[0].candidatePaths.length).toBe(2);
     expect(seen[0].candidatePaths.map(p => p.instructionIndex)).toEqual([10, 20]);
   });
@@ -76,7 +76,7 @@ describe('PostMachine — wrapped MachineState', () => {
       foo: { 1: right, 2: mark },
     });
     const seen: MachineState[] = [];
-    await m.run({ onStep: (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     // After the call wrapper executes foo::1, control reaches foo::2.
     const fooStep = seen.find(s => {
       const scope = s.arrivalPath.scope;
@@ -90,7 +90,7 @@ describe('PostMachine — wrapped MachineState', () => {
       50: [right, mark],
     });
     const seen: MachineState[] = [];
-    await m.run({ onStep: (s) => { seen.push(s); } });
+    for (const s of m.runStepByStep()) { seen.push(s); }
     // The second inner (mark) fires at 50.2 — the first inner (right) is wrapped
     // by withOverriddenHaltState and therefore resolves to the outer group path {50}
     // rather than {50.1}. The second inner state is unambiguously tagged 50.2.

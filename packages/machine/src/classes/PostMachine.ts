@@ -1,5 +1,6 @@
 import {
   Alphabet,
+  DebugSession as EngineDebugSession,
   type MachineState as EngineMachineState,
   Reference,
   State,
@@ -9,6 +10,7 @@ import {
   ifOtherSymbol,
   haltState,
 } from '@turing-machine-js/machine';
+import { PostDebugSession } from './PostDebugSession';
 import {
   blankSymbol as defaultBlankSymbol,
   commandsSet,
@@ -101,74 +103,37 @@ export class PostMachine extends TuringMachine {
     this.tapeBlock.replaceTape(newTape);
   }
 
-  override async run({
-    stepsLimit = 1e5,
-    onStep,
-    onPause,
-    onIter,
-  }: {
-    stepsLimit?: number;
-    onStep?: (machineState: MachineState) => void;
-    onPause?: (machineState: MachineState) => void | Promise<void>;
-    onIter?: (machineState: MachineState) => void | Promise<void>;
-  } = {}): Promise<void> {
-    let prevState: State | null = null;
-    let prevJsSymbol: symbol | null = null;
-    const entryPath = this.#firstStepArrivalPath();
-
-    // Advance at end-of-iter (via the internal onIter wrapper) so both
-    // `onPause(before, K)` and `onPause(after, K)` read iter-correct prev.
-    // Advancing inside onStep would race after-fire arrivalPath resolution.
-    const advanceTracking = (raw: EngineMachineState): void => {
-      prevState = raw.state;
-      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
-    };
-
-    // If the user provided any callback, our internal onIter wrapper must
-    // be registered to keep `prev` advancing — every callback (including the
-    // user's own onStep/onPause/onIter) receives the wrapped state which
-    // depends on prev. If no user callback is provided, no one observes
-    // wrapped state and we can skip the internal wrapper too, leaving the
-    // run to halt with zero per-iter await overhead.
-    const isAnyCallbackProvided = !!(onStep || onPause || onIter);
-
-    return super.run({
-      initialState: this.#initialState,
-      stepsLimit,
-      onStep: onStep ? (raw) => {
-        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        onStep(wrapped);
-      } : undefined,
-      onPause: onPause ? async (raw) => {
-        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        if (this.#shouldFireOnPause(raw, wrapped)) {
-          await onPause(wrapped);
-        }
-      } : undefined,
-      onIter: isAnyCallbackProvided ? async (raw) => {
-        if (onIter) {
-          // Wrap with PRE-advance prev so the user's onIter sees the same
-          // arrivalPath as onPause(after, K) saw — both describing the
-          // arrival at iter K.
-          const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-          await onIter(wrapped);
-        }
-        advanceTracking(raw);
-      } : undefined,
-    });
+  /**
+   * Run the machine to halt — pure execution, no observation. Sync, returns
+   * void. Matches the engine's v7 `run()` contract.
+   *
+   * For interactive debugging (breakpoints, step-in / step-over / step-out,
+   * throttle, click-pause), use `debugRun()` to construct a `PostDebugSession`.
+   */
+  override run({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): void {
+    super.run({ initialState: this.#initialState, stepsLimit });
   }
 
-  #shouldFireOnPause(raw: EngineMachineState, wrapped: MachineState): boolean {
-    // Halt-arrival: engine pauses on the iteration whose nextState is halt,
-    // when haltState.debug is set. Yielded raw.state is the *previous* user
-    // instruction (e.g., 30 in `30: mark; 40: stop`), never haltState itself.
-    const nextIsHalt = raw.nextState instanceof State && raw.nextState.isHalt;
-    if (nextIsHalt && this.#breakpoints.some((bp) => bp.kind === 'halt')) {
-      return true;
-    }
-    const arrivalKey = formatPath(wrapped.arrivalPath);
-    return this.#breakpoints.some((bp) =>
-      bp.kind === 'instruction' && formatPath(bp.path) === arrivalKey);
+  /**
+   * Return a `PostDebugSession` bound to this PostMachine. The session
+   * wraps each engine MachineState with post-specific `arrivalPath` /
+   * `candidatePaths`, and applies the PostMachine's breakpoint registry as
+   * a filter before forwarding pause events.
+   */
+  debugRun({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): PostDebugSession {
+    const entryPath = this.#firstStepArrivalPath();
+    const engineSession = new EngineDebugSession(this, {
+      initialState: this.#initialState,
+      stepsLimit,
+    });
+    return new PostDebugSession({
+      postMachine: this,
+      engineSession,
+      entryPath,
+      wrap: (raw, prev, prevSym) => this.#wrapMachineState(raw, prev, prevSym, entryPath),
+      getBreakpoints: () => this.#breakpoints,
+      tapeBlockSymbol: (pattern) => this.tapeBlock.symbol(pattern),
+    });
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
@@ -223,7 +188,17 @@ export class PostMachine extends TuringMachine {
       }
     }
     const candidatePaths = this.#stateToCandidatePaths.get(raw.state) ?? [];
-    return { ...raw, arrivalPath, candidatePaths } as MachineState;
+    // Attach post fields IN PLACE rather than spreading into a new object. The
+    // engine stamps a non-enumerable `MACHINE_STATE_INTERNAL` Symbol accessor
+    // on each yield (halt-stack + matched symbol + halt-imminence) that the
+    // engine's DebugSession reads for breakpoint detection. A spread
+    // (`{...raw}`) silently drops that Symbol — and it's package-private, so
+    // we can't re-attach it. Mutating `raw` (a fresh per-iter object the engine
+    // doesn't retain) preserves the accessor while adding our fields.
+    const wrapped = raw as MachineState;
+    wrapped.arrivalPath = arrivalPath;
+    wrapped.candidatePaths = candidatePaths;
+    return wrapped;
   }
 
   #buildInitialState({

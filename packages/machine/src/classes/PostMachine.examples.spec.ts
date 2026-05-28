@@ -354,12 +354,10 @@ describe('packages/machine/README.md', () => {
       });
 
       const steps: { arrivalPath: Path; candidatePaths: Path[] }[] = [];
-      await m.run({
-        onStep: (s: MachineState) => {
-          // console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
-          steps.push({ arrivalPath: s.arrivalPath, candidatePaths: s.candidatePaths });
-        },
-      });
+      for (const s of m.runStepByStep()) {
+        // console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
+        steps.push({ arrivalPath: s.arrivalPath, candidatePaths: s.candidatePaths });
+      }
 
       // onStep fires once — for the `mark` transition at instruction 10.
       expect(steps).toHaveLength(1);
@@ -601,11 +599,12 @@ describe('packages/machine/README.md', () => {
       pm.setBreakpoint('30', { before: true });
 
       const paused: number[] = [];
-      await pm.run({
-        onPause: (m: MachineState) => {
-          paused.push(m.arrivalPath.instructionIndex);
-        },
+      const session = pm.debugRun();
+      session.on('pause', (m: MachineState) => {
+        paused.push(m.arrivalPath.instructionIndex);
+        session.continue();
       });
+      await session.start();
 
       expect(paused).toContain(30);
     });
