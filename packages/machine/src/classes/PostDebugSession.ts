@@ -1,6 +1,8 @@
 import {
   DebugSession as EngineDebugSession,
   type MachineState as EngineMachineState,
+  type PauseInfo,
+  type PausedMachineState as EnginePausedMachineState,
   State,
   haltState,
 } from '@turing-machine-js/machine';
@@ -11,13 +13,19 @@ import type { PostMachine } from './PostMachine';
 
 export type PostDebugSessionEvent = 'pause' | 'step' | 'iter' | 'halt';
 
+/** A post-wrapped `MachineState` (arrivalPath / candidatePaths) plus the
+ *  engine's one-sided pause descriptor — the payload of a `pause` event. */
+export type PostPausedMachineState = MachineState & { pause: PauseInfo };
+
 export type PostDebugSessionListener<E extends PostDebugSessionEvent> =
   E extends 'halt'
     ? () => void | Promise<void>
-    : (machineState: MachineState) => void | Promise<void>;
+    : E extends 'pause'
+      ? (machineState: PostPausedMachineState) => void | Promise<void>
+      : (machineState: MachineState) => void | Promise<void>;
 
 type ListenerMap = {
-  pause: Array<(m: MachineState) => void | Promise<void>>;
+  pause: Array<(m: PostPausedMachineState) => void | Promise<void>>;
   step: Array<(m: MachineState) => void | Promise<void>>;
   iter: Array<(m: MachineState) => void | Promise<void>>;
   halt: Array<() => void | Promise<void>>;
@@ -73,7 +81,12 @@ export class PostDebugSession {
       for (const fn of this.#listeners.step) void fn(wrapped);
     });
     this.#engineSession.on('pause', (raw) => {
-      const wrapped = this.#wrap(raw, this.#prevState, this.#prevJsSymbol);
+      // raw is the engine's PausedMachineState — carry its `pause` descriptor
+      // onto the post-wrapped state so post pause listeners see {side, cause}.
+      const wrapped: PostPausedMachineState = {
+        ...this.#wrap(raw, this.#prevState, this.#prevJsSymbol),
+        pause: raw.pause,
+      };
       // Apply post-machine breakpoint registry filter — fire only when the
       // engine pause was triggered by a registered breakpoint (or by a
       // step-mode endpoint / manual pause).
@@ -148,8 +161,8 @@ export class PostDebugSession {
   // listeners. Step-mode endpoints and manual pauses always pass through;
   // breakpoint-cause pauses are filtered against the registry so only
   // path-registered or halt-registered states fire.
-  #shouldFire(raw: EngineMachineState, wrapped: MachineState): boolean {
-    const cause = raw.debugBreak?.cause;
+  #shouldFire(raw: EnginePausedMachineState, wrapped: MachineState): boolean {
+    const cause = raw.pause.cause;
     if (cause === 'step' || cause === 'manual') {
       return true;
     }

@@ -84,13 +84,13 @@ describe('PostMachine — onPause forwarding', () => {
     // runtime-mutable; the upstream run() loop checks it on each iter.
     machine.initialState.debug = { before: true };
 
-    const seen: MachineState[] = [];
+    const seen: Array<{side: string; cause: string}> = [];
     const session = machine.debugRun();
-    session.on('pause', (s) => { seen.push(s); session.continue(); });
+    session.on('pause', (s) => { seen.push({side: s.pause.side, cause: s.pause.cause}); session.continue(); });
     await session.start();
 
     expect(seen.length).toBeGreaterThan(0);
-    expect(seen[0].debugBreak).toEqual({ before: true, cause: 'breakpoint' });
+    expect(seen[0]).toEqual({ side: 'before', cause: 'breakpoint' });
   });
 
   test('run() awaits an async onPause before resolving', async () => {

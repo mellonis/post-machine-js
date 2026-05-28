@@ -188,7 +188,17 @@ export class PostMachine extends TuringMachine {
       }
     }
     const candidatePaths = this.#stateToCandidatePaths.get(raw.state) ?? [];
-    return { ...raw, arrivalPath, candidatePaths } as MachineState;
+    // Attach post fields IN PLACE rather than spreading into a new object. The
+    // engine stamps a non-enumerable `MACHINE_STATE_INTERNAL` Symbol accessor
+    // on each yield (halt-stack + matched symbol + halt-imminence) that the
+    // engine's DebugSession reads for breakpoint detection. A spread
+    // (`{...raw}`) silently drops that Symbol — and it's package-private, so
+    // we can't re-attach it. Mutating `raw` (a fresh per-iter object the engine
+    // doesn't retain) preserves the accessor while adding our fields.
+    const wrapped = raw as MachineState;
+    wrapped.arrivalPath = arrivalPath;
+    wrapped.candidatePaths = candidatePaths;
+    return wrapped;
   }
 
   #buildInitialState({
