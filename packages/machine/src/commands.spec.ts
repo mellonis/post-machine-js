@@ -144,7 +144,7 @@ describe('$tag — inline tag decorator (#86)', () => {
     });
 
     // The tag doesn't affect runtime — the machine still halts normally.
-    await machine.run();
+    machine.run();
 
     expect(machine.tape.symbols[0]).toBe('*');
   });
