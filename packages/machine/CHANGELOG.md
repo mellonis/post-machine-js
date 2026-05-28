@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-alpha.6] - 2026-05-29
+
+Adopts engine **v7.0.0-alpha.6** ([turing-machine-js#102](https://github.com/mellonis/turing-machine-js/issues/102)) — the debug-surface reshape. `PostMachine.run()` becomes synchronous and callback-free, a new `PostMachine.debugRun()` returns an interactive `PostDebugSession`, and the per-yield `m.debugBreak` is replaced by the engine's one-sided `m.pause: { side, cause }`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+
+> **Post alpha numbering is independent from the engine.** This `alpha.6` happens to match the engine `alpha.6` it adopts, but the two cycles are not lockstep — this is the second number coincidence after `alpha.5` (2026-05-25). Don't infer a lockstep relationship from the matching numbers.
+
+**Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.6`.
+
+### Added
+
+- **`PostMachine.debugRun({ stepsLimit? })` → `PostDebugSession`** — the interactive debugger surface. Wraps the engine's `DebugSession`, re-adds the post-level `MachineState` fields (`arrivalPath` / `candidatePaths`), and applies the per-instruction breakpoint registry as a pause filter. Emits `pause` / `step` / `iter` / `halt` events (`session.on(event, listener)`); drive with `continue()` / `stepIn()` / `stepOver()` / `stepOut()` / `pause()` / `stop()` / `setRunInterval(ms)`; call `await session.start()` to begin.
+- **`PostPausedMachineState`** — `MachineState & { pause: PauseInfo }`, the `pause`-event payload. `PauseInfo = { side: 'before' | 'after', cause: 'breakpoint' | 'step' | 'manual' }` (re-exported transitively from the engine).
+
+### Changed
+
+- **`PostMachine.run()` is synchronous and callback-free** — `run({ stepsLimit? }): void` (was `async … : Promise<void>` accepting `onStep` / `onPause`). Mirrors the engine's `run()` change. **Breaking** for callers awaiting `run()` or passing callbacks — move per-step observation to `runStepByStep()` and breakpoints / stepping to `debugRun()`.
+
+  ```js
+  // before (alpha.5):
+  await pm.run({ onPause: (m) => { /* m.debugBreak */ } });
+
+  // alpha.6:
+  const session = pm.debugRun();
+  session.on('pause', (m) => { /* m.pause: { side, cause } */ session.continue(); });
+  await session.start();
+  ```
+
+- **`runStepByStep()` is the pure-iteration observation path** — unchanged in shape (`Generator<MachineState>`), but it's now where you read `arrivalPath` / `candidatePaths` per step (the role the removed `onStep` callback played).
+
+  ```js
+  for (const m of pm.runStepByStep()) {
+    // m.arrivalPath, m.candidatePaths
+  }
+  ```
+
+- **Engine peer dependency widened** `^7.0.0-alpha.5` → `^7.0.0-alpha.6` — `debugRun()` requires the engine's `DebugSession`, new in engine alpha.6.
+
+### Removed
+
+- **`onStep` / `onPause` callbacks on `run()`** and the per-yield **`m.debugBreak`** descriptor — replaced by `debugRun()` events + `m.pause`. **Breaking from alpha.5.**
+
+### Docs
+
+- README: rewrote the `PostMachine` method table, MachineState-shape, and Breakpoints sections for the `run()` / `debugRun()` / `runStepByStep()` split; dropped the now-pointless `await` on the synchronous `run()` throughout the examples.
+
 ## [7.0.0-alpha.5] - 2026-05-25
 
 Fifth v7 pre-release. Drops the module-load haltState lockdown in lockstep with engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) — the lockdown was funneling per-side `DebugConfig` writes through `withLockdownEscape`, but with engine alpha.5 collapsing `haltState.debug` to a `boolean`, there's nothing to mediate. Engine peer-dep widened `^7.0.0-alpha.4` → `^7.0.0-alpha.5`; consumers inherit per-iter `MachineState.matchedTransition` ([engine #205](https://github.com/mellonis/turing-machine-js/issues/205)) and the `GraphTransition.id` separator change (`-` → `.`, same issue) transparently. Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
