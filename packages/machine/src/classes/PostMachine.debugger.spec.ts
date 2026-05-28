@@ -5,7 +5,6 @@
 import {
   PostMachine,
   Tape,
-  type MachineState,
   check, mark, right, stop,
 } from '../index';
 
