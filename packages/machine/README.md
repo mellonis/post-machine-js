@@ -20,7 +20,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Naming convention](#naming-convention)
 - [Tags](#tags) — [`$tag` decorator](#inline-tag-decorator) · [Registry](#post-construction-registry) · [Auto-tag policy](#auto-tag-policy) · [Mermaid output](#mermaid-output)
 - [Introspection and equivalence](#introspection-and-equivalence) — [Visualization](#visualization--tomermaid--statetograph) · [Structural summary](#structural-summary--summarizepostmachine) · [Behavioral equivalence](#behavioral-equivalence--equivalentpostmachines)
-- [Debugging](#debugging)
+- [Breakpoints](#breakpoints)
 - [Links](#links)
 
 </details>
@@ -52,7 +52,7 @@ machine.replaceTapeWith(new Tape({
   symbols: ['*', '*', ' '],
 }));
 
-await machine.run();
+machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
@@ -101,8 +101,9 @@ The runtime. Subclasses `TuringMachine` from `@turing-machine-js/machine`: the c
 **Constructor.** `new PostMachine(instructions, options?)` — `instructions` is the numbered-instruction map (with optional string-keyed subroutine groups); `options` is `{ blankSymbol?, markSymbol? }` (see [Custom symbols](#custom-symbols)).
 
 **Methods.**
-- `run({ stepsLimit?, onStep?, onPause? } = {})` → `Promise<void>`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. `onStep(m: MachineState)` fires once per applied transition; `onPause` forwards to the engine's debugger (see [Debugging](#debugging)).
-- `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`.
+- `run({ stepsLimit? } = {})` → `void`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. **Synchronous and callback-free as of v7.0.0-alpha.6** (adopting engine [#102](https://github.com/mellonis/turing-machine-js/issues/102)) — for per-step observation use `runStepByStep()`; for breakpoints, throttling, or interactive stepping use `debugRun()`.
+- `debugRun({ stepsLimit? } = {})` → `PostDebugSession`. An interactive debugger session bound to this machine (see [Breakpoints](#breakpoints)). It emits `pause` / `step` / `iter` / `halt` events (`session.on(event, listener)`) and exposes `continue()` / `stepIn()` / `stepOver()` / `stepOut()` / `pause()` / `stop()` / `setRunInterval(ms)`; call `await session.start()` to begin. `pause`-event payloads carry `m.pause: { side: 'before' | 'after', cause: 'breakpoint' | 'step' | 'manual' }`.
+- `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`. Pure iteration — it does no breakpoint detection (that lives in `debugRun()`).
 - `replaceTapeWith(newTape)` — swap the active tape. Build the new tape against `machine.tape.alphabet` so symbol identities match the machine's interned alphabet.
 
 **Properties.**
@@ -146,7 +147,7 @@ machine.replaceTapeWith(new Tape({
   symbols: ['#', '#', '.'],
 }));
 
-await machine.run();
+machine.run();
 console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 ```
 
@@ -281,7 +282,7 @@ machine.replaceTapeWith(new Tape({
   position: 0,
 }));
 
-await machine.run();
+machine.run();
 console.log(machine.tape.symbols.join('').trim()); // **
 ```
 
@@ -314,7 +315,7 @@ machine.replaceTapeWith(new Tape({
   symbols: ['*', '*', ' '],
 }));
 
-await machine.run();
+machine.run();
 console.log(machine.tape.symbols.join('').trim()); // ***
 ```
 
@@ -388,7 +389,7 @@ extend.replaceTapeWith(new Tape({
   position: 1,
 }));
 
-await extend.run();
+extend.run();
 console.log(extend.tape.symbols.join('')); // ***
 ```
 
@@ -398,7 +399,7 @@ For a single subroutine called from MULTIPLE sites — the other archetypal use 
 
 ## MachineState shape
 
-PostMachine's `onStep` and `onPause` callbacks receive an extended `MachineState` with two additional fields:
+Every `MachineState` PostMachine yields — from `runStepByStep()` and from `debugRun()` session events (`step` / `iter` / `pause`) — is an extended `MachineState` with two additional fields:
 
 | Field             | Type     | Meaning                                                                                  |
 |-------------------|----------|------------------------------------------------------------------------------------------|
@@ -417,11 +418,9 @@ const m = new PostMachine({
   20: stop,
 });
 
-await m.run({
-  onStep: (s) => {
-    console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
-  },
-});
+for (const s of m.runStepByStep()) {
+  console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
+}
 ```
 
 The `Path` type and the `parsePath`/`formatPath` helpers are exported from `@post-machine-js/machine` — see the [Naming convention](#naming-convention) section for the path-string format.
@@ -477,7 +476,7 @@ const m = new PostMachine({
 
 PostMachine caches state nodes by command shape, so two instructions producing structurally-identical transitions (same command kind, same next-instruction target) share a single underlying `State` object. The shared state carries the name of the *first-processed* instruction. Behavior is identical regardless of which instruction control arrives through, but `MachineState.name` may report the canonical instruction's name rather than the caller's instruction index.
 
-For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from an `onStep` / `onPause` callback (runtime). See [Path-based resolver](#path-based-resolver) and [MachineState shape](#machinestate-shape).
+For programmatic lookup by instruction index, use `pm.candidatesFor(path)` (construction-time) or read `MachineState.candidatePaths` from a `runStepByStep()` yield or a `debugRun()` session event (runtime). See [Path-based resolver](#path-based-resolver) and [MachineState shape](#machinestate-shape).
 
 ### Engine v7 alignment
 
@@ -861,11 +860,13 @@ pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' 
 
 pm.setBreakpoint('30', { before: true });
 
-await pm.run({
-  onPause: (m) => {
-    // m.arrivalPath === { instructionIndex: 30 }
-  },
+const session = pm.debugRun();
+session.on('pause', (m) => {
+  // m.arrivalPath === { instructionIndex: 30 }
+  // m.pause === { side: 'before', cause: 'breakpoint' }
+  session.continue();
 });
+await session.start();
 ```
 
 Filters mirror the engine's `DebugConfig`:
@@ -883,7 +884,7 @@ Halt breakpoints:
 pm.setBreakpoint(haltState, { before: true });       // pause at halt entry (filter shape is decorative)
 ```
 
-> Engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) collapsed `haltState.debug` to a `boolean` — halt has one meaningful pause moment. The `filter` shape passed to `pm.setBreakpoint(haltState, …)` is kept for API stability but is now decorative: any registered halt breakpoint enables the engine-level boolean, and the registry entry drives only the arrival-path filtering in PostMachine's `onPause` wrapper. The pause fires on the AFTER side of the iter whose transition leads to halt.
+> Engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) collapsed `haltState.debug` to a `boolean` — halt has one meaningful pause moment. The `filter` shape passed to `pm.setBreakpoint(haltState, …)` is kept for API stability but is now decorative: any registered halt breakpoint enables the engine-level boolean, and the registry entry drives only the arrival-path filtering in the `debugRun()` session's pause filter. The pause fires on the AFTER side of the iter whose transition leads to halt.
 
 Management:
 
@@ -893,7 +894,7 @@ pm.clearBreakpoint('10');  // remove a single registration
 pm.clearBreakpoints();     // remove all
 ```
 
-**State sharing.** When two instructions share an underlying State (hash dedup), setting a breakpoint on instruction 30 enables `state.debug` on the shared State — meaning the engine pauses on every visit. PostMachine's `onPause` wrapper consults the registry and *only* surfaces the pause when `m.arrivalPath` matches a registered path. Sibling-instruction visits silently resume.
+**State sharing.** When two instructions share an underlying State (hash dedup), setting a breakpoint on instruction 30 enables `state.debug` on the shared State — meaning the engine pauses on every visit. The `debugRun()` session consults the registry and *only* surfaces the pause when `m.arrivalPath` matches a registered path. Sibling-instruction visits auto-continue.
 
 ### Lockdown semantics
 
@@ -920,7 +921,7 @@ haltState.debug = { before: true };                  // throws: "haltState.debug
 
 Direct halt writes bypass PostMachine's registry — they enable the engine pause but `pm.listBreakpoints()` won't record them. Use `pm.setBreakpoint(haltState, …)` when arrival-path filtering or registry awareness matters; use the direct write for ad-hoc halt-pause toggling in tools that don't need the registry.
 
-This relaxed model preserves the single-channel invariant where it matters: `pm.listBreakpoints()` is still the source of truth for what PostMachine's `onPause` wrapper surfaces. The engine's pause itself is now an open channel — by design, since the halt-lockdown's "per-PostMachine routing" benefit was syntactic only (haltState is a process-global singleton).
+This relaxed model preserves the single-channel invariant where it matters: `pm.listBreakpoints()` is still the source of truth for what the `debugRun()` session surfaces. The engine's pause itself is now an open channel — by design, since the halt-lockdown's "per-PostMachine routing" benefit was syntactic only (haltState is a process-global singleton).
 
 For the underlying engine reference — filter shapes for non-halt states, the `before → step → after` per-iter lifecycle (engine v6), and the boolean `haltState.debug` API (engine #207) — see [Debugging breakpoints](https://github.com/mellonis/turing-machine-js/tree/master/packages/machine#debugging-breakpoints) in the upstream README.
 

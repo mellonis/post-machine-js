@@ -53,7 +53,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['*', '*', ' '],
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
@@ -149,7 +149,7 @@ describe('packages/machine/README.md', () => {
         position: 0,
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // **
       expect(machine.tape.symbols.join('').trim())
@@ -267,7 +267,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['*', '*', ' '],
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
@@ -299,7 +299,7 @@ describe('packages/machine/README.md', () => {
         position: 1,
       }));
 
-      await extend.run();
+      extend.run();
 
       // console.log(extend.tape.symbols.join('')); // ***
       expect(extend.tape.symbols.join(''))
@@ -324,7 +324,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
       expect(machine.tape.symbols.join('').replace(/\.+$/, ''))
