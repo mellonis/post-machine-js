@@ -83,7 +83,7 @@ Reading the diagram:
 - `(((label)))` — halt state
 - `["label"]` — intermediate (and now also entry) state
 - `([idle])` — the `idle` sentinel that marks the entry point via a dotted `idle -. enter .-> s_initial` edge
-- (Wrappers produced by `withOverriddenHaltState` use a `[[bare(continuation)]]` double-square node sitting OUTSIDE its callable subtree's `subgraph w_N["callable subtree of NAME"]` block — see the [Subroutines](#subroutines) section.)
+- (Wrappers produced by `withOverriddenHaltState` use a `[[bare(continuation)]]` double-square node. Top-level wrappers sit OUTSIDE their callable subtree's `subgraph w_N["callable subtree of NAME"]` block; wrappers whose continuation chain participates in a caller's frame render INSIDE the owner frame's subgraph with the same `[[…]]` shape — see the [Subroutines](#subroutines) section.)
 
 The labels are PostMachine's instruction-derived names — `"10"`, `"20"`, `"30"` map directly to the instruction indices in the program. The wrapper composite shape (`"<outer>(<continuation>)"`) doesn't appear in this example because there are no calls or groups; see the [Subroutines](#subroutines) section for that. The `40: stop` instruction is elided — `stop` halts the machine, so the transition from `30: mark` flows straight to halt rather than through an intermediate state.
 
