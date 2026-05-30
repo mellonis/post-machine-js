@@ -81,13 +81,28 @@ Non-README tests (sentinel-identity checks, internal plumbing) live in separatel
 - **Sentinel singletons** keyed by `Symbol(...)` — `haltState`, `ifOtherSymbol`, the members of `movements`, the members of `symbolCommands`. Equality checks (`=== haltState`, etc.) require the same physical object.
 - **Classes** — `Reference`, `State`, `TapeBlock`, `TuringMachine`, `Tape`, `Alphabet`. `instanceof` checks require shared constructor identity.
 
-The current peer range is `^7.0.0-alpha.2` (set in `@post-machine-js/machine@7.0.0-alpha.2`). **v4 / v5 / v6 are no longer supported on the v7 line** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped its own v5 and skipped its own v7-alpha.1; v7-alpha.2 is the first post prerelease that crosses to engine v7.)
+The latest peer range is `^7.0.0-alpha.6` (set in `@post-machine-js/machine@7.0.0-alpha.6`). **v4 / v5 / v6 are no longer supported on the v7 line** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped its own v5 and skipped its own v7-alpha.1; v7-alpha.2 is the first post prerelease that crosses to engine v7.)
 
-The engine v7 changes that drove this release:
+Engine v7 alpha changes adopted in post v7 alphas (chronological):
 
+**post alpha.2 (engine alpha.2):**
 - **`withOverrodeHaltState` → `withOverriddenHaltState`** (engine [#149](https://github.com/mellonis/turing-machine-js/issues/149)). Consumer-side rename in `src/commands.ts`, `src/classes/PostMachine.ts`, and tests.
 - **Wrapper composite shape `A>B` → `A(B)`** (engine [#148](https://github.com/mellonis/turing-machine-js/issues/148)). `parsePath` now rejects `(`/`)` in user-provided state names. The Post `Path` separators (`::`, `.`, `~`) survive unchanged.
 - **`toMermaid` callable-subtree emit** (engine [#174](https://github.com/mellonis/turing-machine-js/issues/174)). The wrapper composite is now a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the bare hopper + body live INSIDE `subgraph w_N["callable subtree of NAME"]`. Bold `==> "call"` arrow from wrapper to bare; dotted `-. "return" .->` from subgraph back to wrapper; retired `-. onHalt .->` (wrapper-to-override is now solid `-->`). Body's halt-bound transitions retarget to the frame's halt marker `cN`, not the real `s0`. Consequence: `summarizePostMachine().stateCount` is +1 per call site vs v6.x.
+
+**post alpha.3 (engine alpha.3, no functional engine adopt — internal):**
+- Hopper drop ([#85](https://github.com/mellonis/post-machine-js/issues/85)) — acyclic subroutines with plain leading instructions no longer get a hopper State; Tarjan SCC on local call graph identifies cyclic subs (hopper retained). Common case wraps `foo::1` directly, saving one State per call site. Composite wrapper name shifts `foo(continuation)` → `foo::1(continuation)`.
+
+**post alpha.4 (engine alpha.3 still; #186 state-tags adopted):**
+- **Path-based `pm.tag(...)` registry + inline `$tag(...)` decorator + auto-tag policy** ([#86](https://github.com/mellonis/post-machine-js/issues/86)) on top of engine [#186](https://github.com/mellonis/turing-machine-js/issues/186)'s state-tags surface. Note: post alpha.4 (state tags) shipped 2026-05-21 while engine alpha.4 (collectStates + bug fixes) shipped 2026-05-23 — same alpha-number, **NOT** lockstep. Post and engine alpha cycles are independent even when the numbers happen to coincide.
+
+**post alpha.5 (engine alpha.5; #207 haltState.debug → boolean):**
+- **Dropped the module-load `haltState` lockdown** ([#94](https://github.com/mellonis/post-machine-js/pull/94)) now that engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) collapsed `haltState.debug` to a boolean. The per-side `DebugConfig` the lockdown funneled no longer exists; direct `haltState.debug = boolean` goes straight to the engine setter. `pm.setBreakpoint(haltState, …)` still works for registry-aware halt pauses.
+
+**post alpha.6 (engine alpha.6; #102 DebugSession reshape + #213 CallFrame):**
+- **Adopted the engine's debug-surface reshape**: `pm.run()` is now sync + callback-free; a new `pm.debugRun()` returns a `PostDebugSession` (wraps the engine `DebugSession`, re-adds `arrivalPath`/`candidatePaths`, applies the breakpoint registry as a pause filter, reads the one-sided `m.pause: {side, cause}` that replaced the per-yield `m.debugBreak`).
+- `#wrapMachineState` switched from spread to in-place mutation so the engine's `MACHINE_STATE_INTERNAL` accessor survives the wrap (detection needs it).
+- Engine [#213](https://github.com/mellonis/turing-machine-js/issues/213) (`CallFrame extends State`) is API-compatible — `instanceof State` preserved — and required no post-side change.
 
 Previous v5/v6 engine changes still apply unchanged on v7:
 
