@@ -104,12 +104,16 @@ export class PostDebugSession {
       // surface through the normal path below.
       if (this.#pendingStepInstruction !== null && raw.pause.cause === 'step') {
         if (this.#stillInClickTimeInstruction(wrapped.arrivalPath, this.#pendingStepInstruction)) {
-          // Either a sub-step transition (same scope+index, group sub-step)
-          // or a descent into a sub-scope (call/group body) — keep stepping.
+          // Either we're inside a deeper call/group than the click anchor
+          // (we'll return to click scope when it pops), OR we're at a
+          // sub-step transition within the same numbered instruction
+          // (group sub-step `10.2 → 10.3` keeps `(scope, instructionIndex)`).
+          // Keep stepping.
           this.#engineSession.stepIn();
           return;
         }
-        // Landed on a different (scope, instructionIndex) pair → surface.
+        // Returned to the click-time scope at a different numbered index
+        // (or any other "landed on a new instruction" case) → surface.
         this.#pendingStepInstruction = null;
       } else if (this.#pendingStepInstruction !== null) {
         // Non-step pause during stepInstruction — surfaces normally; the
@@ -214,8 +218,12 @@ export class PostDebugSession {
    * it surfaces normally and consumes the stepInstruction intent.
    *
    * Implementation: drives the engine via repeated `stepIn` internally;
-   * filters the resulting step-cause pauses via [[`Path`]] comparison
-   * against the click-time anchor. Resolves
+   * filters the resulting step-cause pauses against the click-time
+   * `(scope, instructionIndex)` anchor. Different-scope pauses (we
+   * descended into a call/group) keep stepping — the engine call stack
+   * guarantees a return to the click scope. Same-scope pauses surface
+   * unless `instructionIndex` matches the anchor (group sub-step
+   * `10.2 → 10.3` is silent). Resolves
    * [post-machine-js#101](https://github.com/mellonis/post-machine-js/issues/101).
    */
   stepInstruction(): void {
@@ -233,31 +241,37 @@ export class PostDebugSession {
     this.#engineSession.setRunInterval(ms);
   }
 
-  /** stepInstruction filter — is `current` still inside the click-time
-   *  instruction (so we keep silent-stepping)? Two cases are silent:
-   *  exact match on `(scope, instructionIndex)` (sub-step inside the same
-   *  numbered instruction — e.g. group sub-step `50.2` after a click at
-   *  `50.1`), and any descent into a sub-scope (call/group body — `foo::1`
-   *  after a click at `50: call('foo')`). Sibling and shallower scopes,
-   *  or same-scope different-index, mean we landed on a new instruction
-   *  and the silent stepping ends. */
+  /** stepInstruction filter — should we keep silent-stepping?
+   *
+   *  Three regions relative to the click-time scope (Post's call stack
+   *  discipline makes this deterministic — returns always go back to an
+   *  ancestor scope, never to a sibling without first returning):
+   *
+   *  - **Deeper than click** (`cur.length > click.length`) — we're inside
+   *    a call/group descended from the click frame. Keep stepping.
+   *  - **Shallower than click** (`cur.length < click.length`) — we've
+   *    returned past the click frame (e.g. clicked inside `foo`,
+   *    `foo::N=stop` popped back to main). Surface.
+   *  - **Same depth as click** (`cur.length === click.length`) — either
+   *    a sibling callee invoked at the same level (different `scope`
+   *    contents — keep stepping; the return brings us back to click
+   *    scope) or we're back in the click scope (matching `scope`
+   *    contents — check `instructionIndex`: equal means sub-step
+   *    transition inside the same numbered instruction, keep stepping;
+   *    different means next numbered instruction, surface). */
   #stillInClickTimeInstruction(
     current: Path,
     click: { scope: string[]; instructionIndex: number },
   ): boolean {
     const cur = normalizeScope(current.scope);
-    // Descended into a sub-scope (current scope strictly extends click scope).
-    if (cur.length > click.scope.length
-        && click.scope.every((s, i) => cur[i] === s)) {
-      return true;
+    if (cur.length > click.scope.length) return true;       // deeper
+    if (cur.length < click.scope.length) return false;      // shallower → surface
+    // Equal depth.
+    if (!cur.every((s, i) => s === click.scope[i])) {
+      return true;                                          // sibling scope at same depth
     }
-    // Same scope, same numbered index — sub-step within the same instruction.
-    if (cur.length === click.scope.length
-        && cur.every((s, i) => s === click.scope[i])
-        && current.instructionIndex === click.instructionIndex) {
-      return true;
-    }
-    return false;
+    // Back in click scope — sub-step iff numbered index matches.
+    return current.instructionIndex === click.instructionIndex;
   }
 
   // Decide whether a raw engine pause should surface to post-machine pause
