@@ -305,6 +305,55 @@ describe('PostDebugSession — step controls and lifecycle', () => {
       expect(() => session.stepInstruction()).toThrow(/no paused state/);
     });
 
+    test('mid-group → next numbered (group sub-steps stay silent)', async () => {
+      // stepInstruction from a group sub-step exercises the "same scope,
+      // same instructionIndex" branch of #stillInClickTimeInstruction —
+      // 10.2 → 10.3 has the same top-level index 10, so it stays silent;
+      // the surface fires only when we land on 20. `20: right` (not stop)
+      // because the engine doesn't pause before terminal stops.
+      const machine = new PostMachine({ 10: [mark, right, mark], 20: right, 30: stop });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      let phase = 0;
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (phase === 0) { phase = 1; session.stepIn(); }            // descend into group, lands at 10.2
+        else if (phase === 1) { phase = 2; session.stepInstruction(); } // walk through 10.3 silently → 20
+        else session.continue();
+      });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('10.2');
+      expect(paths[2]).toBe('20');
+    });
+
+    test('nested call from non-main scope → silent descent stays inside the outer click scope', async () => {
+      // stepInstruction from a non-main scope (foo) over a call('bar')
+      // exercises the "descended into sub-scope" branch with a non-empty
+      // click scope — every-callback fires, deeper-scope detection holds.
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: stop,
+        foo: { 1: mark, 2: call('bar'), 3: stop },
+        bar: { 1: mark, 2: stop },
+      });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      let phase = 0;
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (phase === 0) { phase = 1; session.stepIn(); }            // main → lands at foo::2 (the call to bar)
+        else if (phase === 1) { phase = 2; session.stepInstruction(); } // walk through bar silently → foo::3
+        else session.continue();
+      });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('foo::2');
+      expect(paths[2]).toBe('foo::3');
+    });
+
     test('a registered breakpoint mid-advance interrupts stepInstruction and surfaces normally', async () => {
       const machine = new PostMachine({
         10: call('foo'),
