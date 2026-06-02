@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-alpha.7] - 2026-06-02
+
+Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that advances to the next numbered instruction in the current scope. Resolves [#101](https://github.com/mellonis/post-machine-js/issues/101). Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.7`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+
+**Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.7`.
+
+### Added
+
+- **`PostDebugSession.stepInstruction()`** ([#101](https://github.com/mellonis/post-machine-js/issues/101)) — advance to the next numbered Post instruction in the current scope. Skips sub-step transitions inside groups (`50.1` → `50.2`) and descents into called scopes (`call('foo')` → `foo::1`) because those aren't numbered instructions in the *current* scope. Two rules cover the full semantics: (1) advance until the click-time `(scope, instructionIndex)` pair changes — sub-step transitions and sub-scope descents stay silent; (2) if there's no next numbered instruction in the current scope (you hit `stop` or fall through the end), the natural engine continuation fires — return to caller's continuation if inside a call/group, halt if at top level. Position-independent: same behavior whether paused at an atomic instruction, a `call(...)` entry, a group entry, mid-group, or inside a called scope. Mirrors `stepIn`/`stepOver`/`stepOut` naming axis. If a registered breakpoint or external `pause()` fires mid-advance, it surfaces normally and consumes the stepInstruction intent. Internally drives the engine via repeated `stepIn`; filters the resulting step-cause pauses via path comparison against the click-time anchor. Throws if called without a paused state.
+
+### Compatibility
+
+- Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.7`. (Semver-prerelease caret on the alpha.6 range already accepted alpha.7+; the widening is the workspace convention.)
+- Existing `stepIn` / `stepOver` / `stepOut` / `continue` / `pause` / `stop` / `setRunInterval` controls unchanged.
+
 ## [7.0.0-alpha.6] - 2026-05-29
 
 Adopts engine **v7.0.0-alpha.6** ([turing-machine-js#102](https://github.com/mellonis/turing-machine-js/issues/102)) — the debug-surface reshape. `PostMachine.run()` becomes synchronous and callback-free, a new `PostMachine.debugRun()` returns an interactive `PostDebugSession`, and the per-yield `m.debugBreak` is replaced by the engine's one-sided `m.pause: { side, cause }`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.

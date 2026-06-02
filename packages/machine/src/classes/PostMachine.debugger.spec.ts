@@ -7,7 +7,13 @@ import {
   Tape,
   haltState,
   call, check, mark, right, stop,
+  formatPath,
+  type Path,
 } from '../index';
+
+function formatArrival(p: Path): string {
+  return formatPath(p);
+}
 
 describe('PostMachine — async run', () => {
   function buildWalkAndMark(): PostMachine {
@@ -185,6 +191,143 @@ describe('PostDebugSession — step controls and lifecycle', () => {
     expect(causes[0]).toBe('breakpoint');
     expect(causes.length).toBeGreaterThanOrEqual(2);
     expect(causes.slice(1)).toContain('step');
+  });
+
+  describe('stepInstruction() — next-numbered-instruction in current scope (#101)', () => {
+    test('atomic → next numbered atomic in same scope', async () => {
+      const machine = new PostMachine({ 10: mark, 20: mark, 30: stop });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (paths.length === 1) session.stepInstruction();
+        else session.continue();
+      });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('20');
+    });
+
+    test('at a call(…) entry, stepInstruction runs the call to completion and lands on caller’s next instruction', async () => {
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: mark,
+        30: stop,
+        foo: { 1: mark, 2: stop },
+      });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (paths.length === 1) session.stepInstruction();
+        else session.continue();
+      });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('20');
+    });
+
+    test('inside a callee → next numbered in callee’s scope', async () => {
+      // stepIn from a call site executes the wrapper’s iter (which IS the
+      // bare’s first instruction) and lands BEFORE the callee’s second
+      // numbered instruction; from there, stepInstruction advances by one
+      // numbered index in the callee’s scope.
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: stop,
+        foo: { 1: mark, 2: mark, 3: stop },
+      });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      let phase = 0;
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (phase === 0) { phase = 1; session.stepIn(); }            // descend into foo (lands at foo::2)
+        else if (phase === 1) { phase = 2; session.stepInstruction(); } // foo::2 → foo::3
+        else session.continue();
+      });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('foo::2');
+      expect(paths[2]).toBe('foo::3');
+    });
+
+    test('inside a callee at last numbered → returns to caller’s continuation', async () => {
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: mark,
+        30: stop,
+        foo: { 1: mark, 2: stop },
+      });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      let phase = 0;
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (phase === 0) { phase = 1; session.stepIn(); }            // descend into foo (lands at foo::2 = stop)
+        else if (phase === 1) { phase = 2; session.stepInstruction(); } // pops foo back to caller's 20
+        else session.continue();
+      });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('foo::2');
+      expect(paths[2]).toBe('20');
+    });
+
+    test('stepInstruction when next numbered is a terminal stop → halts', async () => {
+      // Engine doesn't pause before `stop` (it transitions to haltState
+      // directly, no before-iter pause point), so stepInstruction's
+      // "advance to next numbered" naturally falls through to halt when
+      // the next numbered is a stop at top level.
+      const machine = new PostMachine({ 10: mark, 20: stop });
+      machine.setBreakpoint('10', { before: true });
+      const paths: string[] = [];
+      let halted = false;
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        session.stepInstruction();
+      });
+      session.on('halt', () => { halted = true; });
+      await session.start();
+      expect(paths[0]).toBe('10');
+      expect(paths.length).toBe(1);
+      expect(halted).toBe(true);
+    });
+
+    test('throws if called before any pause has fired', () => {
+      const machine = new PostMachine({ 10: mark, 20: stop });
+      const session = machine.debugRun();
+      expect(() => session.stepInstruction()).toThrow(/no paused state/);
+    });
+
+    test('a registered breakpoint mid-advance interrupts stepInstruction and surfaces normally', async () => {
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: mark,
+        30: stop,
+        foo: { 1: mark, 2: mark, 3: stop },
+      });
+      machine.setBreakpoint('10', { before: true });
+      machine.setBreakpoint('foo::2', { before: true });
+      const paths: string[] = [];
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        paths.push(formatArrival(m.arrivalPath));
+        if (paths.length === 1) session.stepInstruction();
+        else session.continue();
+      });
+      await session.start();
+      // First pause at the initial breakpoint on 10; stepInstruction tries
+      // to advance past 10's call('foo'), but the foo::2 breakpoint fires
+      // mid-advance and surfaces.
+      expect(paths[0]).toBe('10');
+      expect(paths[1]).toBe('foo::2');
+    });
   });
 
   test('external pause() fires a manual-cause pause; setRunInterval throttles the run', async () => {

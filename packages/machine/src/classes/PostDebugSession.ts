@@ -6,7 +6,7 @@ import {
   State,
   haltState,
 } from '@turing-machine-js/machine';
-import { formatPath, type Path } from '../path';
+import { formatPath, normalizeScope, type Path } from '../path';
 import type { MachineState } from '../index';
 import type { Breakpoint } from '../breakpoints';
 import type { PostMachine } from './PostMachine';
@@ -55,6 +55,15 @@ export class PostDebugSession {
   };
   #prevState: State | null = null;
   #prevJsSymbol: symbol | null = null;
+  /** Latest pause's `arrivalPath`. Read by `stepInstruction()` to anchor the
+   *  click-time `(scope, instructionIndex)` it must advance past. */
+  #lastPausedPath: Path | null = null;
+  /** When set, the session is mid-`stepInstruction()` — the engine is being
+   *  driven via repeated `stepIn` until the path's `(scope, instructionIndex)`
+   *  differs from this anchor (sub-step transitions and descents into a
+   *  sub-scope are silently passed through). Cleared on landing, halt, or
+   *  any non-step interrupt. */
+  #pendingStepInstruction: { scope: string[]; instructionIndex: number } | null = null;
   readonly #entryPath: Path;
   readonly #wrap: (raw: EngineMachineState, prev: State | null, prevSym: symbol | null) => MachineState;
   readonly #getBreakpoints: () => readonly Breakpoint[];
@@ -87,6 +96,28 @@ export class PostDebugSession {
         ...this.#wrap(raw, this.#prevState, this.#prevJsSymbol),
         pause: raw.pause,
       };
+      this.#lastPausedPath = wrapped.arrivalPath;
+
+      // stepInstruction internal filter — only on step-cause pauses (the
+      // kind our own stepInstruction() drives via repeated engine.stepIn).
+      // Other causes (breakpoint, manual) interrupt stepInstruction and
+      // surface through the normal path below.
+      if (this.#pendingStepInstruction !== null && raw.pause.cause === 'step') {
+        if (this.#stillInClickTimeInstruction(wrapped.arrivalPath, this.#pendingStepInstruction)) {
+          // Either a sub-step transition (same scope+index, group sub-step)
+          // or a descent into a sub-scope (call/group body) — keep stepping.
+          this.#engineSession.stepIn();
+          return;
+        }
+        // Landed on a different (scope, instructionIndex) pair → surface.
+        this.#pendingStepInstruction = null;
+      } else if (this.#pendingStepInstruction !== null) {
+        // Non-step pause during stepInstruction — surfaces normally; the
+        // user sees the breakpoint / manual pause and the stepInstruction
+        // intent is consumed.
+        this.#pendingStepInstruction = null;
+      }
+
       // Apply post-machine breakpoint registry filter — fire only when the
       // engine pause was triggered by a registered breakpoint (or by a
       // step-mode endpoint / manual pause).
@@ -104,6 +135,8 @@ export class PostDebugSession {
       this.#prevJsSymbol = this.#tapeBlockSymbol([raw.currentSymbols[0]]);
     });
     this.#engineSession.on('halt', () => {
+      this.#pendingStepInstruction = null;
+      this.#lastPausedPath = null;
       for (const fn of this.#listeners.halt) void fn();
     });
 
@@ -153,8 +186,78 @@ export class PostDebugSession {
     this.#engineSession.stepOut();
   }
 
+  /**
+   * Advance to the next **numbered Post instruction** in the current scope.
+   *
+   * `stepInstruction()` is the Post-level program-counter step — it skips
+   * sub-step transitions inside groups (`50.1` → `50.2`) and descents into
+   * called scopes (`call('foo')` → `foo::1`) because those aren't numbered
+   * instructions in the *current* scope's program. Two rules cover the
+   * whole semantics:
+   *
+   * 1. Advance until the click-time `(scope, instructionIndex)` pair
+   *    changes. Sub-step transitions and sub-scope descents stay silent.
+   * 2. If there's no next numbered instruction in the current scope
+   *    (you hit `stop` or fall through the end), the natural engine
+   *    continuation fires — return to caller's continuation if inside
+   *    a call/group, halt if at top level.
+   *
+   * Position-independent: same behavior whether you're at an atomic
+   * instruction, a `call(...)` entry, a group entry, mid-group, or any
+   * instruction inside a called scope. The "open question" about whether
+   * to descend into a callee's body is resolved by rule 1 — different
+   * scope = different "instruction" only when the scope is the current
+   * one's, otherwise the descent is silent and we run until we exit the
+   * call (which lands us on the caller's next numbered instruction).
+   *
+   * If a registered breakpoint or external `pause()` fires mid-advance,
+   * it surfaces normally and consumes the stepInstruction intent.
+   *
+   * Implementation: drives the engine via repeated `stepIn` internally;
+   * filters the resulting step-cause pauses via [[`Path`]] comparison
+   * against the click-time anchor. Resolves
+   * [post-machine-js#101](https://github.com/mellonis/post-machine-js/issues/101).
+   */
+  stepInstruction(): void {
+    if (this.#lastPausedPath === null) {
+      throw new Error('stepInstruction: no paused state to advance from');
+    }
+    this.#pendingStepInstruction = {
+      scope: normalizeScope(this.#lastPausedPath.scope),
+      instructionIndex: this.#lastPausedPath.instructionIndex,
+    };
+    this.#engineSession.stepIn();
+  }
+
   setRunInterval(ms: number): void {
     this.#engineSession.setRunInterval(ms);
+  }
+
+  /** stepInstruction filter — is `current` still inside the click-time
+   *  instruction (so we keep silent-stepping)? Two cases are silent:
+   *  exact match on `(scope, instructionIndex)` (sub-step inside the same
+   *  numbered instruction — e.g. group sub-step `50.2` after a click at
+   *  `50.1`), and any descent into a sub-scope (call/group body — `foo::1`
+   *  after a click at `50: call('foo')`). Sibling and shallower scopes,
+   *  or same-scope different-index, mean we landed on a new instruction
+   *  and the silent stepping ends. */
+  #stillInClickTimeInstruction(
+    current: Path,
+    click: { scope: string[]; instructionIndex: number },
+  ): boolean {
+    const cur = normalizeScope(current.scope);
+    // Descended into a sub-scope (current scope strictly extends click scope).
+    if (cur.length > click.scope.length
+        && click.scope.every((s, i) => cur[i] === s)) {
+      return true;
+    }
+    // Same scope, same numbered index — sub-step within the same instruction.
+    if (cur.length === click.scope.length
+        && cur.every((s, i) => s === click.scope[i])
+        && current.instructionIndex === click.instructionIndex) {
+      return true;
+    }
+    return false;
   }
 
   // Decide whether a raw engine pause should surface to post-machine pause
