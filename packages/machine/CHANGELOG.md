@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [7.0.0-alpha.7] - 2026-06-02
 
-Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that advances to the next numbered instruction in the current scope. Resolves [#101](https://github.com/mellonis/post-machine-js/issues/101). Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.7`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that advances to the next numbered instruction in the current scope. Resolves [#101](https://github.com/mellonis/post-machine-js/issues/101). Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.8`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 **Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.7`.
 
@@ -16,7 +16,7 @@ Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that
 
 ### Compatibility
 
-- Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.7`. (Semver-prerelease caret on the alpha.6 range already accepted alpha.7+; the widening is the workspace convention.)
+- Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.8`. (Semver-prerelease caret on the alpha.6 range already accepted alpha.7+; the widening is the workspace convention.)
 - Existing `stepIn` / `stepOver` / `stepOut` / `continue` / `pause` / `stop` / `setRunInterval` controls unchanged.
 
 ## [7.0.0-alpha.6] - 2026-05-29
