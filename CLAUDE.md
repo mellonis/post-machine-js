@@ -81,7 +81,7 @@ Non-README tests (sentinel-identity checks, internal plumbing) live in separatel
 - **Sentinel singletons** keyed by `Symbol(...)` — `haltState`, `ifOtherSymbol`, the members of `movements`, the members of `symbolCommands`. Equality checks (`=== haltState`, etc.) require the same physical object.
 - **Classes** — `Reference`, `State`, `TapeBlock`, `TuringMachine`, `Tape`, `Alphabet`. `instanceof` checks require shared constructor identity.
 
-The latest peer range is `^7.0.0-alpha.6` (set in `@post-machine-js/machine@7.0.0-alpha.6`). **v4 / v5 / v6 are no longer supported on the v7 line** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped its own v5 and skipped its own v7-alpha.1; v7-alpha.2 is the first post prerelease that crosses to engine v7.)
+The latest peer range is `^7.0.0-alpha.7` (set in `@post-machine-js/machine@7.0.0-alpha.7`). **v4 / v5 / v6 are no longer supported on the v7 line** — a consumer still on those engine majors cannot install this package and must upgrade in lockstep. (post-machine-js skipped its own v5 and skipped its own v7-alpha.1; v7-alpha.2 is the first post prerelease that crosses to engine v7.)
 
 Engine v7 alpha changes adopted in post v7 alphas (chronological):
 
@@ -103,6 +103,9 @@ Engine v7 alpha changes adopted in post v7 alphas (chronological):
 - **Adopted the engine's debug-surface reshape**: `pm.run()` is now sync + callback-free; a new `pm.debugRun()` returns a `PostDebugSession` (wraps the engine `DebugSession`, re-adds `arrivalPath`/`candidatePaths`, applies the breakpoint registry as a pause filter, reads the one-sided `m.pause: {side, cause}` that replaced the per-yield `m.debugBreak`).
 - `#wrapMachineState` switched from spread to in-place mutation so the engine's `MACHINE_STATE_INTERNAL` accessor survives the wrap (detection needs it).
 - Engine [#213](https://github.com/mellonis/turing-machine-js/issues/213) (`CallFrame extends State`) is API-compatible — `instanceof State` preserved — and required no post-side change.
+
+**post alpha.7 (post-only; #101 stepInstruction):**
+- **Added `PostDebugSession.stepInstruction()`** ([#101](https://github.com/mellonis/post-machine-js/issues/101)) — the Post-level program-counter step. Advances to the next numbered Post instruction in the *current* scope; sub-step transitions inside groups (`50.1 → 50.2`) and descents into called scopes (`call('foo') → foo::1`) stay silent because those aren't numbered instructions in the current scope. Two rules: (1) advance until click-time `(scope, instructionIndex)` pair changes; (2) if no next numbered exists in current scope (hit `stop` or fall through end), the natural engine continuation fires — caller's continuation if inside a call/group, halt at top level. Position-independent: same behavior at atomic instructions, call entries, group entries, mid-group, or inside callees. Implementation: drives engine via repeated `stepIn`, filters step-cause pauses by path comparison against the click-time anchor (`#stillInClickTimeInstruction` in `PostDebugSession.ts`). Breakpoints / external `pause()` mid-advance interrupt normally. Peer dep `^7.0.0-alpha.6 → ^7.0.0-alpha.7` widening (semver-prerelease caret already accepted alpha.7+; workspace convention).
 
 Previous v5/v6 engine changes still apply unchanged on v7:
 
