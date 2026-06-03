@@ -1,8 +1,8 @@
 import {
   PostMachine, Tape, alphabet, blankSymbol, call, check, erase, left, mark, markSymbol, right, stop,
   summarizePostMachine,
-} from '../src/index';
-import { getRandomInstructionIndex } from './helpers';
+} from '../index';
+import { getRandomInstructionIndex } from './PostMachine.test-helpers';
 
 describe('PostMachine custom alphabet', () => {
   describe('default behavior (no options)', () => {
@@ -82,7 +82,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['.'],
       }));
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('')).toBe('#');
     });
@@ -98,7 +98,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['#'],
       }));
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('')).toBe('.');
     });
@@ -121,7 +121,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('').replace(/\.+$/, '')).toBe('###');
     });
@@ -141,7 +141,7 @@ describe('PostMachine custom alphabet', () => {
         position: 0,
       }));
 
-      await machine.run();
+      machine.run();
 
       // head moved right by one; tape contents unchanged
       expect(machine.tape.symbols.join('')).toBe('#.#');
@@ -167,7 +167,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('').replace(/\.+$/, '')).toBe('###');
     });
@@ -187,7 +187,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['.', '.'],
       }));
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('')).toBe('#.');
     });
@@ -225,7 +225,7 @@ describe('PostMachine custom alphabet', () => {
         symbols: ['•', '•', '␣'],
       }));
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('').replace(/␣+$/, '')).toBe('•••');
     });
@@ -244,7 +244,7 @@ describe('PostMachine custom alphabet', () => {
         position: 1,
       }));
 
-      await machine.run();
+      machine.run();
 
       // After one left move, head sits at position 0; symbols unchanged.
       expect(machine.tape.symbols.join('')).toBe('##');

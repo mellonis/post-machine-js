@@ -2,9 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { State, ifOtherSymbol, haltState } from '@turing-machine-js/machine';
 import {
   installStateLockdown,
-  installHaltLockdown,
   withLockdownEscape,
-} from '../src/lockdown';
+} from './lockdown';
 
 describe('installStateLockdown', () => {
   function makeState(): State {
@@ -77,35 +76,27 @@ describe('installStateLockdown', () => {
       // After the inner escape ends, the outer is still active.
       s.debug = null;
     });
-    // Engine v6.1+ (#150) returns an empty `DebugConfig` after `state.debug = null`
-    // (filters cleared) rather than literal `null`. Check the public getters
-    // directly — `undefined` is the "no filter set" sentinel.
+    // state.debug after a clear is an empty DebugConfig — read filter getters
+    // directly; `undefined` is the "no filter set" sentinel.
     expect(s.debug.before).toBeUndefined();
     expect(s.debug.after).toBeUndefined();
   });
 });
 
-describe('installHaltLockdown', () => {
-  test('user writes throw a halt-specific error', () => {
-    // Note: installHaltLockdown mutates the engine's haltState singleton. We install
-    // once here; later imports of haltState see the locked-down accessor. Tests in
-    // this file run in sequence within one Vitest worker, so the installation
-    // persists across tests in the same file but does not leak across spec files
-    // (each file gets its own module graph).
-    installHaltLockdown(haltState);
-    expect(() => {
-      haltState.debug = { before: true };
-    }).toThrow(/setBreakpoint\(haltState/);
+describe('haltState writes — no lockdown', () => {
+  test('boolean writes pass through to the engine setter', () => {
+    haltState.debug = true;
+    expect(haltState.debug).toBe(true);
+    haltState.debug = false;
+    expect(haltState.debug).toBe(false);
+    haltState.debug = null;
+    expect(haltState.debug).toBe(false);
   });
 
-  test('escape allows internal writes to haltState', () => {
-    withLockdownEscape(() => {
+  test('object writes throw the engine-level error, not a lockdown error', () => {
+    expect(() => {
+      // @ts-expect-error — HaltState typed alias only accepts boolean | null
       haltState.debug = { before: true };
-    });
-    expect(haltState.debug?.before).toBe(true);
-    // Clear so other tests in this file/run aren't affected.
-    withLockdownEscape(() => {
-      haltState.debug = null;
-    });
+    }).toThrow(/haltState\.debug only accepts boolean/);
   });
 });

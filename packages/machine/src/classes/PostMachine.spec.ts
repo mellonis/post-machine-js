@@ -1,8 +1,21 @@
 import {
   PostMachine, call, check, erase, left, mark, noop, right, stop, Tape,
-} from '../src/index';
-import { subroutineNameValidator } from '../src/validators';
-import { getIxRange, getRandomInstructionIndex } from './helpers';
+} from '../index';
+import { subroutineNameValidator } from '../validators';
+import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
+
+// matchedTransition.id embeds process-global stateIds (turing-machine-js#205)
+// — strip it for cross-machine call-record equality.
+function stripMatchedTransition(calls: unknown[][]): unknown[][] {
+  return calls.map((args) => args.map((arg) => {
+    if (arg && typeof arg === 'object' && 'matchedTransition' in arg) {
+      const { matchedTransition, ...rest } = arg as Record<string, unknown>;
+      void matchedTransition;
+      return rest;
+    }
+    return arg;
+  }));
+}
 
 describe('constructor', () => {
   test('no instructions', () => {
@@ -219,10 +232,8 @@ describe('constructor', () => {
       .toThrow(`invalid subroutine name: '${invalidSubroutineName}'`);
   });
 
-  // Regression: the regex used to be unanchored (/[A-Z$_][A-Z0-9$_]*/i),
-  // accepting any string CONTAINING a valid identifier substring. After the
-  // ^...$ anchor fix, leading-digit and embedded-space names are correctly
-  // rejected.
+  // Regression: subroutine-name regex must be fully anchored — reject
+  // leading-digit and embedded-space names.
   describe('subroutineNameValidator anchor regression', () => {
     ['1abc', 'foo bar', '$$ x', 'a/b', '!name'].forEach((name) => {
       test(`rejects ${JSON.stringify(name)}`, () => {
@@ -374,7 +385,7 @@ describe('run tests', () => {
 
     const exactStepCount = 49;
 
-    await machine.run({ stepsLimit: exactStepCount, onStep: () => onStepMock() });
+    for (const _ of machine.runStepByStep({ stepsLimit: exactStepCount })) { void _; onStepMock(); }
 
     expect(machine.tape.symbols.join('').trim()).toBe('****');
     expect(onStepMock).toHaveBeenCalledTimes(exactStepCount);
@@ -400,14 +411,16 @@ describe('run tests', () => {
         const onStepMock2 = vi.fn();
         const onStepMock3 = vi.fn();
 
-        await expect(machine1.run({ stepsLimit: 1, onStep: (stepData) => onStepMock1(stepData) })).resolves.toBeUndefined();
-        await expect(machine2.run({ stepsLimit: 1, onStep: (stepData) => onStepMock2(stepData) })).resolves.toBeUndefined();
-        await expect(machine3.run({ stepsLimit: 1, onStep: (stepData) => onStepMock3(stepData) })).resolves.toBeUndefined();
+        for (const s of machine1.runStepByStep({ stepsLimit: 1 })) onStepMock1(s);
+        for (const s of machine2.runStepByStep({ stepsLimit: 1 })) onStepMock2(s);
+        for (const s of machine3.runStepByStep({ stepsLimit: 1 })) onStepMock3(s);
         expect(onStepMock1).toHaveBeenCalledTimes(1);
         expect(onStepMock2).toHaveBeenCalledTimes(1);
         expect(onStepMock3).toHaveBeenCalledTimes(1);
-        expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
-        expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+        expect(stripMatchedTransition(onStepMock1.mock.calls))
+          .toEqual(stripMatchedTransition(onStepMock2.mock.calls));
+        expect(stripMatchedTransition(onStepMock2.mock.calls))
+          .toEqual(stripMatchedTransition(onStepMock3.mock.calls));
       });
     });
 
@@ -438,23 +451,19 @@ describe('run tests', () => {
       const onStepMock2 = vi.fn();
       const onStepMock3 = vi.fn();
 
-      await expect(machine1.run({
-        stepsLimit: 3,
-        onStep: (...args) => onStepMock1(...args),
-      })).resolves.toBeUndefined();
-      await expect(machine2.run({
-        stepsLimit: 3,
-        onStep: (...args) => onStepMock2(...args),
-      })).resolves.toBeUndefined();
-      await expect(machine3.run({
-        stepsLimit: 3,
-        onStep: (...args) => onStepMock3(...args),
-      })).resolves.toBeUndefined();
-      expect(onStepMock1).toHaveBeenCalledTimes(3);
-      expect(onStepMock2).toHaveBeenCalledTimes(3);
-      expect(onStepMock3).toHaveBeenCalledTimes(3);
-      expect(onStepMock1.mock.calls).toEqual(onStepMock2.mock.calls);
-      expect(onStepMock2.mock.calls).toEqual(onStepMock3.mock.calls);
+      for (const s of machine1.runStepByStep({ stepsLimit: 3 })) onStepMock1(s);
+      for (const s of machine2.runStepByStep({ stepsLimit: 3 })) onStepMock2(s);
+      for (const s of machine3.runStepByStep({ stepsLimit: 3 })) onStepMock3(s);
+      // 2 iters: wrapper-of-noop fires once, then post-iter halt dispatch.
+      // (Acyclic + plain-first-instruction subroutine wraps the body directly,
+      // no hopper iter.)
+      expect(onStepMock1).toHaveBeenCalledTimes(2);
+      expect(onStepMock2).toHaveBeenCalledTimes(2);
+      expect(onStepMock3).toHaveBeenCalledTimes(2);
+      expect(stripMatchedTransition(onStepMock1.mock.calls))
+        .toEqual(stripMatchedTransition(onStepMock2.mock.calls));
+      expect(stripMatchedTransition(onStepMock2.mock.calls))
+        .toEqual(stripMatchedTransition(onStepMock3.mock.calls));
     });
   });
 
@@ -472,7 +481,7 @@ describe('run tests', () => {
         [ixList[3]]: call(subroutineName),
       });
 
-      await expect(machine.run()).resolves.toBeUndefined();
+      expect(() => machine.run()).not.toThrow();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
@@ -530,7 +539,7 @@ describe('run tests', () => {
           alphabet: machine.tape.alphabet,
           symbols: '***  *'.split(''),
         }));
-        await expect(machine.run()).resolves.toBeUndefined();
+        expect(() => machine.run()).not.toThrow();
       }
       expect(machineList.map((machine) => machine.tape.symbols.join('').trim()))
         .toEqual(machineList.map((_, ix) => (
@@ -560,11 +569,14 @@ describe('run tests', () => {
 
     const onStepMock = vi.fn();
 
-    await expect(machine.run({
-      onStep: (...args) => onStepMock(...args),
-    })).resolves.toBeUndefined();
+    for (const s of machine.runStepByStep()) onStepMock(s);
 
-    expect(onStepMock).toHaveBeenCalledTimes(8);
+    // Outer `subroutineNameList[0]` keeps its hopper — the static analyzer
+    // sees its body calling 'sub0' as a lexical self-reference and
+    // conservatively classifies it as cyclic (runtime would resolve through
+    // shadowing, but the analyzer doesn't model scope shadowing).
+    // The other two subs are acyclic + plain-first-instruction → no hopper.
+    expect(onStepMock).toHaveBeenCalledTimes(6);
     expect(machine.tape.viewport[0]).toEqual(' ');
 
     const nextSymbolHistory = onStepMock.mock.calls.map((aCall) => aCall[0].nextSymbols[0]);
@@ -592,15 +604,12 @@ describe('run tests', () => {
         const machine1OnStepMock = vi.fn();
         const machine2OnStepMock = vi.fn();
 
-        await expect(machine1.run({
-          stepsLimit: 3,
-          onStep: (...args) => machine1OnStepMock(...args),
-        })).rejects.toThrow('Long execution');
-
-        await expect(machine2.run({
-          stepsLimit: 3,
-          onStep: (...args) => machine2OnStepMock(...args),
-        })).rejects.toThrow('Long execution');
+        expect(() => {
+          for (const s of machine1.runStepByStep({ stepsLimit: 3 })) machine1OnStepMock(s);
+        }).toThrow('Long execution');
+        expect(() => {
+          for (const s of machine2.runStepByStep({ stepsLimit: 3 })) machine2OnStepMock(s);
+        }).toThrow('Long execution');
 
         const machine1StateIdList = machine1OnStepMock.mock.calls.map((args) => args[0].state.id);
         const machine2StateIdList = machine2OnStepMock.mock.calls.map((args) => args[0].state.id);
@@ -637,17 +646,14 @@ describe('run tests', () => {
       const machine1OnStepMock = vi.fn();
       const machine2OnStepMock = vi.fn();
 
-      await expect(machine1.run({
-        stepsLimit: 10,
-        onStep: (...args) => machine1OnStepMock(...args),
-      })).rejects.toThrow('Long execution');
+      expect(() => {
+        for (const s of machine1.runStepByStep({ stepsLimit: 10 })) machine1OnStepMock(s);
+      }).toThrow('Long execution');
+      expect(() => {
+        for (const s of machine2.runStepByStep({ stepsLimit: 10 })) machine2OnStepMock(s);
+      }).toThrow('Long execution');
 
-      await expect(machine2.run({
-        stepsLimit: 10,
-        onStep: (...args) => machine2OnStepMock(...args),
-      })).rejects.toThrow('Long execution');
-
-      const regExp = />/;
+      const regExp = /\(/;
       const machine1StateIdList = machine1OnStepMock.mock.calls
         .map((args) => args[0].state.name)
         .filter((name) => regExp.test(name))
@@ -675,10 +681,9 @@ describe('run tests', () => {
       });
       const machineOnStepMock = vi.fn();
 
-      await expect(machine.run({
-        stepsLimit: 10,
-        onStep: (...args) => machineOnStepMock(...args),
-      })).rejects.toThrow('Long execution');
+      expect(() => {
+        for (const s of machine.runStepByStep({ stepsLimit: 10 })) machineOnStepMock(s);
+      }).toThrow('Long execution');
 
       const machine1StateIdList = machineOnStepMock.mock.calls
         .map((args) => args[0].state.id);
@@ -817,7 +822,7 @@ describe('run tests', () => {
         [ixList[2]]: erase,
       });
 
-      await expect(machine.run()).resolves.toBeUndefined();
+      expect(() => machine.run()).not.toThrow();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('**');
@@ -838,7 +843,7 @@ describe('run tests', () => {
         ],
       });
 
-      await expect(machine.run()).resolves.toBeUndefined();
+      expect(() => machine.run()).not.toThrow();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('* *');

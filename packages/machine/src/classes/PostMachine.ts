@@ -1,5 +1,6 @@
 import {
   Alphabet,
+  DebugSession as EngineDebugSession,
   type MachineState as EngineMachineState,
   Reference,
   State,
@@ -9,6 +10,7 @@ import {
   ifOtherSymbol,
   haltState,
 } from '@turing-machine-js/machine';
+import { PostDebugSession } from './PostDebugSession';
 import {
   blankSymbol as defaultBlankSymbol,
   commandsSet,
@@ -19,10 +21,11 @@ import {
 } from '../consts';
 import type { CommandContext, Instructions } from '../commands';
 import {
-  call, check, erase, left, mark, noop, right, stop,
+  $tag, call, check, erase, left, mark, noop, right, stop,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
 import { installStateLockdown, withLockdownEscape } from '../lockdown';
+import { analyzeLocalCallGraph } from '../callGraph';
 import {
   type Breakpoint,
   type BreakpointFilter,
@@ -72,9 +75,9 @@ export class PostMachine extends TuringMachine {
       paths.sort(comparePathsCanonically);
     }
 
-    // Install the lockdown on every constructed State (except haltState, which is
-    // locked module-globally with halt-specific semantics — it's shared across
-    // PostMachine instances, so per-instance lockdown would clobber across runs).
+    // Install the lockdown on every constructed State (except haltState — it's
+    // a process-global singleton; per-instance lockdown would block other
+    // PostMachine instances and turing-only consumers from writing it).
     // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
     // when the State has exactly one candidate path; ambiguous shared States throw.
     // Iterate over the unique-state keyspace so shared States aren't re-installed.
@@ -100,79 +103,37 @@ export class PostMachine extends TuringMachine {
     this.tapeBlock.replaceTape(newTape);
   }
 
-  override async run({
-    stepsLimit = 1e5,
-    onStep,
-    onPause,
-    onIter,
-  }: {
-    stepsLimit?: number;
-    onStep?: (machineState: MachineState) => void;
-    onPause?: (machineState: MachineState) => void | Promise<void>;
-    onIter?: (machineState: MachineState) => void | Promise<void>;
-  } = {}): Promise<void> {
-    let prevState: State | null = null;
-    let prevJsSymbol: symbol | null = null;
-    const entryPath = this.#firstStepArrivalPath();
-
-    // Tracking is owned by the internal onIter wrapper (engine v6.4.0+).
-    // onIter fires at end-of-iter — after both onPause(before, K) and
-    // onPause(after, K) have already read their iter-correct prev — so
-    // advancing here doesn't race those reads. Previously this lived in
-    // the internal onStep wrapper, which ran BETWEEN before- and after-
-    // fires on the same yield, causing after-fire arrivalPath to resolve
-    // against K's prev instead of K-1's. See tests/breakpoints.spec.ts
-    // "arrivalPath in after-fire onPause" for the regression case.
-    const advanceTracking = (raw: EngineMachineState): void => {
-      prevState = raw.state;
-      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
-    };
-
-    // If the user provided any callback, our internal onIter wrapper must
-    // be registered to keep `prev` advancing — every callback (including the
-    // user's own onStep/onPause/onIter) receives the wrapped state which
-    // depends on prev. If no user callback is provided, no one observes
-    // wrapped state and we can skip the internal wrapper too, leaving the
-    // run to halt with zero per-iter await overhead.
-    const isAnyCallbackProvided = !!(onStep || onPause || onIter);
-
-    return super.run({
-      initialState: this.#initialState,
-      stepsLimit,
-      onStep: onStep ? (raw) => {
-        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        onStep(wrapped);
-      } : undefined,
-      onPause: onPause ? async (raw) => {
-        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-        if (this.#shouldFireOnPause(raw, wrapped)) {
-          await onPause(wrapped);
-        }
-      } : undefined,
-      onIter: isAnyCallbackProvided ? async (raw) => {
-        if (onIter) {
-          // Wrap with PRE-advance prev so the user's onIter sees the same
-          // arrivalPath as onPause(after, K) saw — both describing the
-          // arrival at iter K.
-          const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-          await onIter(wrapped);
-        }
-        advanceTracking(raw);
-      } : undefined,
-    });
+  /**
+   * Run the machine to halt — pure execution, no observation. Sync, returns
+   * void. Matches the engine's v7 `run()` contract.
+   *
+   * For interactive debugging (breakpoints, step-in / step-over / step-out,
+   * throttle, click-pause), use `debugRun()` to construct a `PostDebugSession`.
+   */
+  override run({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): void {
+    super.run({ initialState: this.#initialState, stepsLimit });
   }
 
-  #shouldFireOnPause(raw: EngineMachineState, wrapped: MachineState): boolean {
-    // Halt-arrival: engine pauses on the iteration whose nextState is halt,
-    // when haltState.debug is set. Yielded raw.state is the *previous* user
-    // instruction (e.g., 30 in `30: mark; 40: stop`), never haltState itself.
-    const nextIsHalt = raw.nextState instanceof State && raw.nextState.isHalt;
-    if (nextIsHalt && this.#breakpoints.some((bp) => bp.kind === 'halt')) {
-      return true;
-    }
-    const arrivalKey = formatPath(wrapped.arrivalPath);
-    return this.#breakpoints.some((bp) =>
-      bp.kind === 'instruction' && formatPath(bp.path) === arrivalKey);
+  /**
+   * Return a `PostDebugSession` bound to this PostMachine. The session
+   * wraps each engine MachineState with post-specific `arrivalPath` /
+   * `candidatePaths`, and applies the PostMachine's breakpoint registry as
+   * a filter before forwarding pause events.
+   */
+  debugRun({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): PostDebugSession {
+    const entryPath = this.#firstStepArrivalPath();
+    const engineSession = new EngineDebugSession(this, {
+      initialState: this.#initialState,
+      stepsLimit,
+    });
+    return new PostDebugSession({
+      postMachine: this,
+      engineSession,
+      entryPath,
+      wrap: (raw, prev, prevSym) => this.#wrapMachineState(raw, prev, prevSym, entryPath),
+      getBreakpoints: () => this.#breakpoints,
+      tapeBlockSymbol: (pattern) => this.tapeBlock.symbol(pattern),
+    });
   }
 
   override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
@@ -227,7 +188,17 @@ export class PostMachine extends TuringMachine {
       }
     }
     const candidatePaths = this.#stateToCandidatePaths.get(raw.state) ?? [];
-    return { ...raw, arrivalPath, candidatePaths } as MachineState;
+    // Attach post fields IN PLACE rather than spreading into a new object. The
+    // engine stamps a non-enumerable `MACHINE_STATE_INTERNAL` Symbol accessor
+    // on each yield (halt-stack + matched symbol + halt-imminence) that the
+    // engine's DebugSession reads for breakpoint detection. A spread
+    // (`{...raw}`) silently drops that Symbol — and it's package-private, so
+    // we can't re-attach it. Mutating `raw` (a fresh per-iter object the engine
+    // doesn't retain) preserves the accessor while adding our fields.
+    const wrapped = raw as MachineState;
+    wrapped.arrivalPath = arrivalPath;
+    wrapped.candidatePaths = candidatePaths;
+    return wrapped;
   }
 
   #buildInitialState({
@@ -278,32 +249,94 @@ export class PostMachine extends TuringMachine {
       ...subroutinesDataFromUpperScope,
       ...localSubroutinesData,
     };
+    // Cycle-aware hopper construction (#85).
+    //
+    // Subroutines in cycles (mutual recursion / self-loop) get a hopper — a
+    // stub `State` wrapping a `Reference` to the first instruction — to give
+    // `withOverriddenHaltState` a forward-declaration anchor when `call(...)`
+    // is processed.
+    //
+    // Acyclic subroutines skip the hopper: processed in reverse-topological
+    // build order, so by the time `call('X')` runs for acyclic X, X's
+    // first-instruction State already exists and we wrap it directly.
+    // Composite name reflects the wrapped bare: `X::1(continuation)`.
+    const localSubroutineInstructions: Record<string, Instructions> = Object.fromEntries(
+      Object.entries(localSubroutinesData).map(([name, data]) => [name, data.instructions]),
+    );
+    const {cyclicSet, buildOrder} = analyzeLocalCallGraph(localSubroutineInstructions);
+
     const subroutineInitialStates: Record<string, State> = {
       ...subroutineInitialStatesFromUpperScope,
-      ...Object.keys(localSubroutinesData).reduce<Record<string, State>>((result, subroutineName) => ({
-        ...result,
-        [subroutineName]: new State({
+    };
+
+    // Create hoppers only for cyclic local subs. Acyclic entries are filled
+    // in after each acyclic sub's body is recursively built (below).
+    for (const subroutineName of Object.keys(localSubroutinesData)) {
+      if (cyclicSet.has(subroutineName)) {
+        subroutineInitialStates[subroutineName] = new State({
           [ifOtherSymbol]: {
             nextState: localSubroutinesData[subroutineName].reference,
           },
-        }, `${instructionPrefix}${subroutineName}`),
-      }), {}),
-    };
+        }, `${instructionPrefix}${subroutineName}`);
+      }
+    }
 
-    Object.keys(localSubroutinesData).forEach((subroutineName) => {
+    // Build subroutines in reverse-topological order. Tarjan's SCC output
+    // (in `buildOrder`) starts with sinks — local subs with no outgoing
+    // calls to other local subs — so each sub's local callees are built (and
+    // present in `subroutineInitialStates`) before the sub itself is built.
+    for (const subroutineName of buildOrder) {
       const {
         reference,
         instructions: subroutineInstructions,
       } = subroutinesData[subroutineName];
 
-      reference.bind(this.#buildInitialState({
+      const firstInstructionState = this.#buildInitialState({
         instructions: subroutineInstructions,
         subroutinesDataFromUpperScope: subroutinesData,
         subroutineInitialStatesFromUpperScope: subroutineInitialStates,
         instructionPrefix: `${instructionPrefix}${subroutineName}::`,
         scope: [...scope, subroutineName],
-      }));
-    });
+      });
+
+      reference.bind(firstInstructionState);
+
+      // Acyclic — install the first-instruction State as the subroutine's
+      // entry point IF it's safe to wrap. Two cases force a hopper fallback:
+      //
+      //   1. `firstInstructionState === haltState` (degenerate `{ 1: stop }`
+      //      body). Wrapping haltState produces a State with an empty
+      //      `symbolToDataMap`; the engine throws at runtime trying to
+      //      resolve a transition.
+      //
+      //   2. `firstInstructionState` is itself a wrapper (group `[…]` or
+      //      `call('bar')` as the subroutine's first instruction). Engine
+      //      #176 collapses nested `withOverriddenHaltState` chains — the
+      //      inner wrapping (group's own continuation, or the inner `call`'s
+      //      continuation) gets unwrapped and lost when this wrapper is
+      //      applied. Subsequent body instructions become unreachable.
+      //
+      // Both cases are detected by checking whether the first-instruction
+      // State is a plain bare (non-halt, no override). When it isn't, the
+      // hopper restores the invariant — it's a fresh State whose single
+      // `[ifOtherSymbol]` transition points at the first-instruction State,
+      // and wrapping the hopper preserves both the call-site continuation
+      // and any inner wrapping the first instruction already has.
+      if (!cyclicSet.has(subroutineName)) {
+        const canDropHopper = !firstInstructionState.isHalt
+          && firstInstructionState.overriddenHaltState === null;
+
+        if (canDropHopper) {
+          subroutineInitialStates[subroutineName] = firstInstructionState;
+        } else {
+          subroutineInitialStates[subroutineName] = new State({
+            [ifOtherSymbol]: {
+              nextState: firstInstructionState,
+            },
+          }, `${instructionPrefix}${subroutineName}`);
+        }
+      }
+    }
 
     const instructionIndexList = Object.keys(instructionsCopy);
 
@@ -383,6 +416,12 @@ export class PostMachine extends TuringMachine {
           .every((command) => commandsSet.has(command as CommandFn));
 
         if (!areInstructionsInGroupValid) {
+          if (instruction.includes($tag as never)) {
+            throw new Error(
+              'bare `$tag` decorator in a group — `$tag` must be invoked, '
+              + 'e.g. `[$tag(\'hot\', mark), right]`',
+            );
+          }
           throw new Error('invalid command in the group');
         }
 
@@ -413,11 +452,16 @@ export class PostMachine extends TuringMachine {
           : `${instructionPrefix}${list[ix + 1]}`;
         const continuationName = `${callerName}~${targetName}`;
 
-        builtStates.set(String(instructionIndex), groupState.withOverrodeHaltState(new State({
+        builtStates.set(String(instructionIndex), groupState.withOverriddenHaltState(new State({
           [ifOtherSymbol]: {
             nextState,
           },
         }, continuationName)));
+      } else if (instruction === $tag) {
+        throw new Error(
+          'bare `$tag` decorator passed as an instruction — `$tag` must be '
+          + 'invoked, e.g. `10: $tag(\'hot\', mark)`',
+        );
       } else {
         throw new Error('invalid instruction');
       }
@@ -438,6 +482,23 @@ export class PostMachine extends TuringMachine {
           };
 
       this.#recordPath(state, path);
+
+      // Auto-tag policy (#86). Only the ENTRY POINT of each program /
+      // subroutine gets an auto-tag — `1` for main, `alg::1` for subroutine
+      // `alg` — to keep diagrams uncluttered while still anchoring the
+      // structural roles. Group inner states and halt-resolving paths are
+      // skipped (halt is a globally-shared singleton and can't be safely
+      // tagged).
+      if (
+        groupOuterInstructionIndex === undefined
+        && !state.isHalt
+        && Number(instructionIndexStr) === list[0]
+      ) {
+        const tagName = scope.length === 0
+          ? 'main'
+          : scope[scope.length - 1];
+        state.tag(tagName);
+      }
     });
 
     return references[instructionIndexList[0]].ref;
@@ -494,6 +555,31 @@ export class PostMachine extends TuringMachine {
   candidatesFor(target: Path | string): Path[] {
     const { state } = this.#resolveToState(target);
     return this.#stateToCandidatePaths.get(state)!;
+  }
+
+  tag(target: Path | string, ...tags: string[]): void {
+    const { state } = this.#resolveToState(target);
+    state.tag(...tags);
+  }
+
+  untag(target: Path | string, ...tags: string[]): void {
+    const { state } = this.#resolveToState(target);
+    state.untag(...tags);
+  }
+
+  tagsOf(target: Path | string): readonly string[] {
+    const { state } = this.#resolveToState(target);
+    return state.tags;
+  }
+
+  findByTag(tag: string): Path[] {
+    const results: Path[] = [];
+    for (const [state, paths] of this.#stateToCandidatePaths) {
+      if (state.tags.includes(tag)) {
+        results.push(...paths);
+      }
+    }
+    return results;
   }
 
   setBreakpoint(target: BreakpointTarget, filter: BreakpointFilter): void {
@@ -576,12 +662,11 @@ export class PostMachine extends TuringMachine {
   }
 
   #refreshHaltDebug(): void {
-    const filters = this.#breakpoints
-      .filter((bp): bp is Extract<Breakpoint, { kind: 'halt' }> => bp.kind === 'halt')
-      .map((bp) => bp.filter);
-    withLockdownEscape(() => {
-      haltState.debug = (filters.length > 0 ? mergeBreakpointFilters(filters) : null) as State['debug'];
-    });
+    // The per-BP `filter` is decorative for halt entries — it drives
+    // arrival-path filtering in the onPause wrapper, not the engine-level
+    // write. haltState.debug is a boolean (turing-machine-js#207).
+    const hasHaltBP = this.#breakpoints.some((bp) => bp.kind === 'halt');
+    haltState.debug = hasHaltBP;
   }
 
   #onUserDebugWrite(state: State, value: unknown): void {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parsePath, formatPath, comparePathsCanonically } from '../src/path';
+import { parsePath, formatPath, comparePathsCanonically } from './path';
 
 describe('parsePath — happy paths', () => {
   test('top-level instruction', () => {
@@ -36,12 +36,12 @@ describe('parsePath — happy paths', () => {
 });
 
 describe('parsePath — rejections', () => {
-  test('wrapper composite (contains >)', () => {
-    expect(() => parsePath('foo>10~30')).toThrow(/wrapper composite|not an instruction path/i);
+  test('wrapper composite (contains parens)', () => {
+    expect(() => parsePath('foo(10~30)')).toThrow(/wrapper composite|not an instruction path/i);
   });
 
   test('group wrapper composite', () => {
-    expect(() => parsePath('50.1>50~60')).toThrow(/wrapper composite|not an instruction path/i);
+    expect(() => parsePath('50.1(50~60)')).toThrow(/wrapper composite|not an instruction path/i);
   });
 
   test('continuation state (contains ~)', () => {

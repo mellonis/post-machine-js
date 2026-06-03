@@ -104,7 +104,7 @@ function callCommandStateProducer(this: { subroutineName: string; nextInstructio
     : `${instructionPrefix}${String(boundNextInstructionIndex)}`;
   const continuationName = `${callerName}~${targetName}`;
 
-  const state = subroutineInitialStates[subroutineName].withOverrodeHaltState(new State({
+  const state = subroutineInitialStates[subroutineName].withOverriddenHaltState(new State({
     [ifOtherSymbol]: {
       nextState,
     },
@@ -242,6 +242,20 @@ function stopCommandStateProducer(this: null, { calledFromGroup }: CommandContex
   return haltState;
 }
 
+// WeakMap from `call('foo')`-produced state-producers to the subroutine name
+// they reference. Used by the call-graph analyzer (#85 cycle detection — see
+// `callGraph.ts`) to read each producer's target without invoking it.
+const callTargets = new WeakMap<CommandFn, string>();
+
+/**
+ * Returns the subroutine name a `call(...)` producer targets, or `undefined`
+ * if the argument isn't a `call()` producer. Used at construction time to
+ * statically analyze which subroutines participate in cycles.
+ */
+export function callTargetOf(producer: CommandFn): string | undefined {
+  return callTargets.get(producer);
+}
+
 export function call(subroutineName: string, nextInstructionIndex?: number): (context: CommandContext) => State {
   const actualNextInstructionIndex = arguments.length === 1 ? defaultNextInstructionIndex : nextInstructionIndex;
 
@@ -251,6 +265,7 @@ export function call(subroutineName: string, nextInstructionIndex?: number): (co
   });
 
   commandsSet.add(actualCommand as CommandFn);
+  callTargets.set(actualCommand as CommandFn, subroutineName);
 
   return actualCommand as (context: CommandContext) => State;
 }
@@ -339,3 +354,83 @@ commandsSet.add(mark as CommandFn);
 commandsSet.add(noop as CommandFn);
 commandsSet.add(right as CommandFn);
 commandsSet.add(stop as CommandFn);
+
+/**
+ * Inline `$tag` decorator (#86). Wraps a command (bare constructor like
+ * `mark` or already-bound producer like `mark(20)` / `call('foo')`) with
+ * one or more tags; tags are applied to the resulting State via the
+ * engine's `state.tag(...)` API (engine #186). The wrapped command's
+ * runtime behavior is unchanged — `$tag` is a decorator, not a primitive.
+ * The `$` prefix flags it as a decorator at the call site.
+ *
+ * Usage:
+ *   - Wrap a bare command:    `$tag('hot', mark)`
+ *   - Wrap an indexed command:`$tag('loop-head', check(20, 40))`
+ *   - Variadic tags:          `$tag('hot', 'sampled', 'entry', mark)`
+ *   - Compose with call:      `$tag('subroutine-entry', call('foo'))`
+ *
+ * Does NOT compose with groups — `$tag('foo', [mark, right])` throws at
+ * construction. Tag each member individually instead:
+ *   `10: [$tag('lift', mark), $tag('descend', right)]`.
+ */
+export function $tag(...args: unknown[]): CommandStateProducer {
+  if (args.length < 2) {
+    throw new Error('$tag() requires at least one tag and a command');
+  }
+
+  const tags = args.slice(0, -1);
+  const wrapped = args[args.length - 1];
+
+  for (const t of tags) {
+    if (typeof t !== 'string') {
+      throw new Error(`$tag() tags must be strings, got ${typeof t}: ${String(t)}`);
+    }
+  }
+
+  if (Array.isArray(wrapped)) {
+    throw new Error(
+      '$tag() cannot wrap a group — groups and tags are incompatible. '
+      + 'Tag each group member individually instead: `[$tag("lift", mark), $tag("descend", right)]`.',
+    );
+  }
+
+  if (typeof wrapped !== 'function') {
+    throw new Error(
+      `$tag() final argument must be a command, got ${typeof wrapped}`,
+    );
+  }
+
+  const stringTags = tags as string[];
+  const wrappedFn = wrapped as CommandStateProducer | CommandConstructor;
+
+  // Dispatch: if `wrappedFn` is a bare command constructor (mark/right/etc.),
+  // call it with `defaultNextInstructionIndex` to get the bound producer —
+  // same conversion PostMachine does at instruction-build time (see the
+  // `case erase: case left: …` switch in PostMachine.#buildInitialState).
+  // Producers already in `commandsSet` (mark(20), call('foo'), check(20, 30),
+  // $tag(...)) are invoked directly with context. `call`/`check` are excluded
+  // — bare references throw at PostMachine's dispatch, so they can't reach
+  // here without first being bound by the caller.
+  const isBareConstructor = wrappedFn === erase
+    || wrappedFn === left
+    || wrappedFn === mark
+    || wrappedFn === noop
+    || wrappedFn === right
+    || wrappedFn === stop;
+
+  const taggedProducer: CommandStateProducer = (context) => {
+    const producer: CommandStateProducer = isBareConstructor
+      ? (wrappedFn as CommandConstructor)(defaultNextInstructionIndex)
+      : wrappedFn as CommandStateProducer;
+
+    const state = producer(context);
+
+    state.tag(...stringTags);
+
+    return state;
+  };
+
+  commandsSet.add(taggedProducer as CommandFn);
+
+  return taggedProducer;
+}

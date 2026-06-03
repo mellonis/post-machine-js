@@ -31,7 +31,7 @@ describe('README.md', () => {
       expect(machine.tape.symbols.join('').trim())
         .toBe('***   *');
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('****');
@@ -77,7 +77,7 @@ describe('README.md', () => {
       expect(machine.tape.symbols.join('').trim())
         .toBe('*');
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('**');
@@ -92,7 +92,7 @@ describe('README.md', () => {
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
 
-      await machine.run();
+      machine.run();
 
       expect(machine.tape.symbols.join('').trim())
         .toBe('******');

@@ -15,7 +15,7 @@ import {
   summarizePostMachine,
   equivalentPostMachines,
   check, mark, right, stop,
-} from '../src/index';
+} from './index';
 import {
   State as TuringState,
   toMermaid as turingToMermaid,

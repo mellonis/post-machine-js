@@ -5,7 +5,7 @@ import {
   alphabet,
   blankSymbol,
   markSymbol,
-  call, check, left, mark, right, stop,
+  $tag, call, check, left, mark, noop, right, stop,
   toMermaid,
   summarizePostMachine,
   equivalentPostMachines,
@@ -13,7 +13,7 @@ import {
   formatPath,
   type MachineState,
   type Path,
-} from '../src/index';
+} from '../index';
 
 describe('packages/machine/README.md', () => {
   describe('Constants', () => {
@@ -53,11 +53,86 @@ describe('packages/machine/README.md', () => {
         symbols: ['*', '*', ' '],
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
         .toBe('***');
+    });
+  });
+
+  describe('Commands', () => {
+    describe('noop in the graph — fall-through and unconditional jump', () => {
+      test('noop in a chain produces a single [K]/[S] state', () => {
+        const machine = new PostMachine({
+          10: mark,
+          20: noop,
+          30: mark,
+          40: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        // 3 reachable instructions (`40: stop` is elided — see trailing-stop test below).
+        // Entry-point auto-tag (#86) appends `<br>main` to the top-level entry's label.
+        expect(mermaid).toContain('["10<br>main"]');
+        expect(mermaid).toContain('["20"]');
+        expect(mermaid).toContain('["30"]');
+        // noop's signature: `[K]/[S]` — keep, stay. Marks have `['*']/[S]`.
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s\d+/); // noop
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/); // mark
+      });
+
+      test('noop(40) jumps directly; unreachable instructions are dropped', () => {
+        const machine = new PostMachine({
+          10: noop(40),
+          20: mark,
+          30: mark,
+          40: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        // Only instruction 10 appears; 20/30 are unreachable, 40 = trailing stop.
+        // Entry-point auto-tag (#86) appends `<br>main` to the top-level entry's label.
+        expect(mermaid).toContain('["10<br>main"]');
+        expect(mermaid).not.toContain('"20"');
+        expect(mermaid).not.toContain('"30"');
+        // 10's transition is noop's `[K]/[S]` straight to halt (s0).
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s0/);
+      });
+    });
+
+    describe('Trailing stop doesn\'t get its own node', () => {
+      test('{ 10: mark, 20: stop } emits one state, not two', () => {
+        const machine = new PostMachine({
+          10: mark,
+          20: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        // Entry-point auto-tag (#86) appends `<br>main` to the top-level entry's label.
+        expect(mermaid).toContain('["10<br>main"]');
+        // No "20" label — the trailing stop is elided as a halt routing
+        // convention; instruction 10 transitions straight to s0(((halt))).
+        expect(mermaid).not.toContain('"20"');
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s0/);
+      });
+
+      test('pm.stateAt for a trailing-stop index resolves to haltState', () => {
+        const machine = new PostMachine({
+          10: mark,
+          20: stop,
+        });
+
+        const stopState = machine.stateAt({instructionIndex: 20});
+
+        // Graph doesn't render `s20`, but the lookup API still resolves the
+        // path to the canonical haltState singleton.
+        expect(stopState).toBeDefined();
+        expect(stopState!.isHalt).toBe(true);
+      });
     });
   });
 
@@ -74,7 +149,7 @@ describe('packages/machine/README.md', () => {
         position: 0,
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // **
       expect(machine.tape.symbols.join('').trim())
@@ -146,24 +221,33 @@ describe('packages/machine/README.md', () => {
       expect(mermaid).toContain('flowchart TD');
       expect(mermaid).toContain('%% alphabets: [[" ","*"]]');
 
-      // Halt + the entry-state with composite name. The wrapper at top-level instruction 1
-      // is `call('rightToBlank')`, so the composite reads as `<hopper>><continuation>` —
-      // here `"rightToBlank>1~2"` (subroutine hopper named after the subroutine, continuation
-      // forwards from instr 1 to instr 2).
+      // Acyclic + plain-first-instruction → wrapper wraps `rightToBlank::1`
+      // directly; subgraph label and composite name reflect the bare's identity.
       expect(mermaid).toContain('(((halt)))');
-      expect(mermaid).toContain('(("rightToBlank>1~2"))');
+      expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank::1"\]/);
+      // Top-level entry auto-tag `main` (#86).
+      expect(mermaid).toContain('[["rightToBlank::1(1~2)<br>main"]]');
+      // Subroutine-entry auto-tag (#86).
+      expect(mermaid).toContain('["rightToBlank::1<br>rightToBlank"]');
+      // No bare `rightToBlank` (without `::1`) node label.
+      expect(mermaid).not.toMatch(/s\d+\["rightToBlank"\]/);
 
-      // The dotted onHalt edge — the override path back from the subroutine.
-      expect(mermaid).toMatch(/s\d+ -\. onHalt \.-> s\d+/);
+      // Bold `== "call" ==>` wrapper→bare + dotted `-. "return" .->`
+      // subgraph→wrapper. Wrapper-to-override is a regular solid arrow.
+      expect(mermaid).toMatch(/s\d+ == "call" ==> s\d+/);
+      expect(mermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+      expect(mermaid).not.toMatch(/onHalt/);
 
       // The subroutine's internal cycle: a right-move state and a check state
-      // that loops back on '*' and exits on the blank.
-      expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);   // right (keep + R)
-      expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/); // check on '*'
-      expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);    // check on blank (ifOtherSymbol)
+      // that loops back on '*' and exits on the blank. Engine v7 label vocabulary.
+      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);    // right (keep + R)
+      expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);  // check on '*'
+      // Body's halt-bound transition is retargeted to the frame's halt marker (c\d+),
+      // not the real s0 — that's the callable-subtree contract.
+      expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> c\d+/);     // check on blank
 
       // The mark instruction's edge: write '*', stay, transition to halt.
-      expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
     });
 
     test('** → marks first blank to make *** (single subroutine, single call)', async () => {
@@ -183,7 +267,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['*', '*', ' '],
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').trim()); // ***
       expect(machine.tape.symbols.join('').trim())
@@ -215,7 +299,7 @@ describe('packages/machine/README.md', () => {
         position: 1,
       }));
 
-      await extend.run();
+      extend.run();
 
       // console.log(extend.tape.symbols.join('')); // ***
       expect(extend.tape.symbols.join(''))
@@ -240,7 +324,7 @@ describe('packages/machine/README.md', () => {
         symbols: ['#', '#', '.'],
       }));
 
-      await machine.run();
+      machine.run();
 
       // console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
       expect(machine.tape.symbols.join('').replace(/\.+$/, ''))
@@ -249,7 +333,7 @@ describe('packages/machine/README.md', () => {
   });
 
   describe('Naming convention', () => {
-    test('Quick example: machine.initialState.name === "foo>10~30"', () => {
+    test('Quick example: machine.initialState.name === "foo(10~30)"', () => {
       const m = new PostMachine({
         10: call('foo', 30),
         20: stop,
@@ -257,12 +341,12 @@ describe('packages/machine/README.md', () => {
         foo: { 1: stop },
       });
 
-      // m.initialState.name === "foo>10~30"
-      expect(m.initialState.name).toBe('foo>10~30');
+      // m.initialState.name === "foo(10~30)"
+      expect(m.initialState.name).toBe('foo(10~30)');
     });
   });
 
-  describe('MachineState shape (v6.1.0+)', () => {
+  describe('MachineState shape', () => {
     test('onStep receives arrivalPath and candidatePaths for a simple machine', async () => {
       const m = new PostMachine({
         10: mark,
@@ -270,12 +354,10 @@ describe('packages/machine/README.md', () => {
       });
 
       const steps: { arrivalPath: Path; candidatePaths: Path[] }[] = [];
-      await m.run({
-        onStep: (s: MachineState) => {
-          // console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
-          steps.push({ arrivalPath: s.arrivalPath, candidatePaths: s.candidatePaths });
-        },
-      });
+      for (const s of m.runStepByStep()) {
+        // console.log('at:', s.arrivalPath, 'shared with:', s.candidatePaths);
+        steps.push({ arrivalPath: s.arrivalPath, candidatePaths: s.candidatePaths });
+      }
 
       // onStep fires once — for the `mark` transition at instruction 10.
       expect(steps).toHaveLength(1);
@@ -290,6 +372,54 @@ describe('packages/machine/README.md', () => {
       // candidatePaths: only one path shares this state (no hash-cache dedup here).
       expect(steps[0].candidatePaths).toHaveLength(1);
       expect(steps[0].candidatePaths[0]).toEqual({ instructionIndex: 10 });
+    });
+  });
+
+  describe('Tags', () => {
+    describe('Inline $tag decorator', () => {
+      test('$tag wraps a command and accumulates with the auto-tag', () => {
+        const machine = new PostMachine({
+          10: $tag('hot', check(20, 30)),
+          20: $tag('loop-body', 'sampled', right(10)),
+          30: mark,
+          40: stop,
+        });
+
+        // Insertion order: inline tag applied at producer time, auto-tag last.
+        expect(machine.tagsOf({ instructionIndex: 10 })).toEqual(['hot', 'main']);
+        // Non-entry instruction — no auto-tag, just the two inline tags.
+        expect(machine.tagsOf({ instructionIndex: 20 })).toEqual(['loop-body', 'sampled']);
+      });
+    });
+
+    describe('Post-construction registry', () => {
+      test('pm.tag / pm.untag / pm.tagsOf / pm.findByTag', () => {
+        const machine = new PostMachine({ 10: mark, 20: mark, 30: stop });
+        machine.tag('10', 'checkpoint');
+        machine.tag('20', 'checkpoint', 'hot');
+
+        // 20 is not the entry, so no 'main' — just user tags.
+        expect(machine.tagsOf('20')).toEqual(['checkpoint', 'hot']);
+        expect(machine.findByTag('checkpoint')).toHaveLength(2);
+
+        machine.untag('20', 'hot');
+        expect(machine.tagsOf('20')).toEqual(['checkpoint']);
+      });
+    });
+
+    describe('Auto-tag policy', () => {
+      test('entry-only auto-tagging: top-level entry → "main", subroutine entry → sub name', () => {
+        const machine = new PostMachine({
+          10: call('rightToBlank'),
+          20: stop,
+          rightToBlank: { 1: check(2, 99), 2: right(1), 99: stop },
+        });
+
+        expect(machine.tagsOf('10')).toEqual(['main']);
+        expect(machine.tagsOf('rightToBlank::1')).toEqual(['rightToBlank']);
+        expect(machine.tagsOf('rightToBlank::2')).toEqual([]);
+        expect(machine.findByTag('main').map((p) => p.instructionIndex)).toEqual([10]);
+      });
     });
   });
 
@@ -327,18 +457,24 @@ describe('packages/machine/README.md', () => {
         // Halt node (always literal "halt").
         expect(mermaid).toContain('(((halt)))');
 
-        // Initial state — double-paren entry shape with instruction-derived name.
-        expect(mermaid).toContain('(("10"))');
+        // Initial state — square-bracket node shape; under engine v7 the entry is
+        // marked by a separate idle sentinel + dotted enter edge, not a double-paren shape.
+        // Entry-point auto-tag (#86) appends `<br>main`.
+        expect(mermaid).toContain('["10<br>main"]');
+        expect(mermaid).toContain('idle([idle])');
+        expect(mermaid).toMatch(/idle -\. enter \.-> s\d+/);
         // Two intermediate states — square-bracket node shape with instruction-derived names.
+        // Non-entry instructions carry no auto-tag.
         expect(mermaid).toContain('["20"]');
         expect(mermaid).toContain('["30"]');
 
         // Each of the 4 transitions described in the README's reading guide.
-        // Edge labels are exact as emitted; node IDs (s\d+) are not pinned.
-        expect(mermaid).toMatch(/s\d+ -- "\\\* → ·\/S" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "- → ·\/S" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\* → ·\/R" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\* → \*\/S" --> s\d+/);
+        // Engine v7 edge-label vocabulary: ['x'] = literal symbol, [B] = blank, [*] = any-other,
+        // [K] = keep, [E] = erase; movements [L]/[R]/[S].
+        expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);
+        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
       });
     });
 
@@ -370,10 +506,42 @@ describe('packages/machine/README.md', () => {
         expect(a.compositionEdgeCount).toBe(0);
         expect(a.maxCompositionDepth).toBe(0);
 
+        // `walkToBlank` is acyclic + plain first instruction (check), so no
+        // hopper. 6 nodes: 2 body (walkToBlank::1, walkToBlank::2) + 1
+        // continuation + wrapper at instruction 10 + top-level mark.
         // console.log(b.stateCount, b.compositionEdgeCount, b.maxCompositionDepth); // 6 1 1
         expect(b.stateCount).toBe(6);
         expect(b.compositionEdgeCount).toBe(1);
         expect(b.maxCompositionDepth).toBe(1);
+
+        // The README's Structural summary section shows both machines'
+        // toMermaid emits in <details> blocks alongside the counts. Pin the
+        // salient shape features so the doc claim "this is what the engine
+        // emits" doesn't go stale (looser-shape checks per existing repo
+        // convention; the engine repo has stricter normalized snapshots).
+        const inlineMermaid = toMermaid(State.toGraph(inline.initialState, inline.tapeBlock));
+        const subMermaid = toMermaid(State.toGraph(withSubroutine.initialState, withSubroutine.tapeBlock));
+
+        // inline: flat graph, no subgraph, no wrapper (no `sN[[…]]` shape; the
+        // `[[` in `%% alphabets: [[" ","*"]]` is the JSON-stringified header).
+        expect(inlineMermaid).not.toMatch(/subgraph w_/);
+        expect(inlineMermaid).not.toMatch(/s\d+\[\[/);
+        expect(inlineMermaid).not.toMatch(/== "call" ==>/);
+        expect(inlineMermaid).toMatch(/idle -\. enter \.-> s\d+/);
+
+        // withSubroutine: wrapper outside the subgraph + callable-subtree shape.
+        // Under #85 the hopper is dropped — the wrapper wraps walkToBlank::1
+        // directly, not a bare named 'walkToBlank'. Under #86 the wrapper bears
+        // the top-level entry-point auto-tag `main`; the bare bears the
+        // subroutine-entry auto-tag `walkToBlank`.
+        expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank::1"\]/);
+        expect(subMermaid).toContain('[["walkToBlank::1(10~20)<br>main"]]'); // wrapper composite
+        expect(subMermaid).toContain('["walkToBlank::1<br>walkToBlank"]');   // bare, inside subgraph
+        expect(subMermaid).not.toMatch(/s\d+\["walkToBlank"\]/);             // hopper dropped
+        expect(subMermaid).toContain('["10~20"]');                // continuation
+        expect(subMermaid).toMatch(/s\d+ == "call" ==> s\d+/);    // wrapper → bare
+        expect(subMermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+        expect(subMermaid).not.toMatch(/onHalt/);
       });
     });
 
@@ -394,7 +562,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Path-based resolver (v6.1.0+)', () => {
+  describe('Path-based resolver', () => {
     test('top-level instruction is reachable by string and object path', () => {
       const pm = new PostMachine({ 10: mark, 20: stop });
 
@@ -417,7 +585,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Breakpoints (v6.1.0+)', () => {
+  describe('Breakpoints', () => {
     test('registered breakpoint fires onPause with arrivalPath', async () => {
       const pm = new PostMachine({
         10: check(20, 30),
@@ -431,11 +599,12 @@ describe('packages/machine/README.md', () => {
       pm.setBreakpoint('30', { before: true });
 
       const paused: number[] = [];
-      await pm.run({
-        onPause: (m: MachineState) => {
-          paused.push(m.arrivalPath.instructionIndex);
-        },
+      const session = pm.debugRun();
+      session.on('pause', (m: MachineState) => {
+        paused.push(m.arrivalPath.instructionIndex);
+        session.continue();
       });
+      await session.start();
 
       expect(paused).toContain(30);
     });
@@ -455,7 +624,7 @@ describe('packages/machine/README.md', () => {
     });
   });
 
-  describe('Lockdown semantics (v6.1.0+)', () => {
+  describe('Lockdown semantics', () => {
     test('direct write on un-shared State redirects to setBreakpoint', () => {
       const pm = new PostMachine({ 10: mark, 20: stop });
 

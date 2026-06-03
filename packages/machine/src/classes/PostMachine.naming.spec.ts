@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 import {
   PostMachine, State,
   call, check, erase, left, mark, noop, right, stop,
-} from '../src/index';
-import type { Graph } from '../src/index';
+} from '../index';
+import type { Graph } from '../index';
 
 describe('PostMachine — top-level atomic-command names', () => {
   test('initialState has instruction-derived name "10"', () => {
@@ -34,14 +34,14 @@ describe('PostMachine — top-level atomic-command names', () => {
 });
 
 describe('PostMachine — top-level call wrapper names', () => {
-  test('call wrapper composite reads as "<sub>><caller>~<target>"', () => {
+  test('call wrapper composite reads as "<sub>(<caller>~<target>)"', () => {
     const machine = new PostMachine({
       10: call('foo', 30),
       20: stop,
       30: stop,
       foo: { 1: stop },
     });
-    expect(machine.initialState.name).toBe('foo>10~30');
+    expect(machine.initialState.name).toBe('foo(10~30)');
   });
 
   test('tail-position call wrapper composite uses "halt"', () => {
@@ -49,7 +49,7 @@ describe('PostMachine — top-level call wrapper names', () => {
       10: call('foo'),
       foo: { 1: stop },
     });
-    expect(machine.initialState.name).toBe('foo>10~halt');
+    expect(machine.initialState.name).toBe('foo(10~halt)');
   });
 
   test('call falling through to the next sequential instruction', () => {
@@ -58,7 +58,7 @@ describe('PostMachine — top-level call wrapper names', () => {
       20: stop,
       foo: { 1: stop },
     });
-    expect(machine.initialState.name).toBe('foo>10~20');
+    expect(machine.initialState.name).toBe('foo(10~20)');
   });
 });
 
@@ -78,13 +78,14 @@ describe('PostMachine — group states and wrapper composite', () => {
       60: stop,
     });
     // The initialState is the group wrapper at instr 50.
-    // Composite: "50.1>50~60" (first inner of group ">" continuation from 50 to 60).
-    expect(machine.initialState.name).toBe('50.1>50~60');
+    // Composite: "50.1(50~60)" (first inner of group wrapping continuation from 50 to 60).
+    expect(machine.initialState.name).toBe('50.1(50~60)');
 
     const names = collectNames(machine);
-    // '50.1' is subsumed into the composite wrapper name '50.1>50~60' and
-    // does not appear as a separate graph node.
-    expect(names.has('50.1>50~60')).toBe(true);
+    // Under engine v7's flatter emit, the wrapper appears as the bare '50.1' node
+    // with an onHalt edge to the continuation '50~60'; the composite '50.1(50~60)'
+    // lives only on state.name, not as a graph node.
+    expect(names.has('50.1')).toBe(true);
     expect(names.has('50.2')).toBe(true);
     expect(names.has('50.3')).toBe(true);
     // 'stop' maps to haltState singleton — no separate named node for instruction 60.
@@ -95,7 +96,7 @@ describe('PostMachine — group states and wrapper composite', () => {
     const machine = new PostMachine({
       50: [right, mark],
     });
-    expect(machine.initialState.name).toBe('50.1>50~halt');
+    expect(machine.initialState.name).toBe('50.1(50~halt)');
   });
 
   test('group inside a subroutine uses fully-qualified prefix', () => {
@@ -107,14 +108,18 @@ describe('PostMachine — group states and wrapper composite', () => {
       },
     });
     const names = collectNames(machine);
-    // 'foo::1.1' is subsumed into the composite wrapper name — not a separate node.
-    expect(names.has('foo::1.1>foo::1~foo::2')).toBe(true);  // group wrapper composite
+    // Under engine v7, the group wrapper appears as bare 'foo::1.1' with a separate
+    // continuation node 'foo::1~foo::2'; the composite name 'foo::1.1(foo::1~foo::2)'
+    // is only on state.name.
+    expect(names.has('foo::1.1')).toBe(true);
     expect(names.has('foo::1.2')).toBe(true);
     expect(names.has('foo::2')).toBe(true);
     expect(names.has('foo::1~foo::2')).toBe(true);  // continuation
   });
 });
 
+// Hopper-drop spec (#85): acyclic subroutines with a plain first instruction
+// skip the hopper and wrap their first-instruction State directly.
 describe('PostMachine — subroutine body and hopper names', () => {
   test('subroutine inner states use fully-qualified names', () => {
     // Use mark/right/mark so all three instructions produce real (non-halt) states.
@@ -126,20 +131,22 @@ describe('PostMachine — subroutine body and hopper names', () => {
         3: mark,
       },
     });
-    // Wrapper composite at top — hopper now named "foo".
-    expect(machine.initialState.name).toBe('foo>10~halt');
+    // Wrapper's bare is foo's first-instruction State (foo::1) directly;
+    // composite name reflects that.
+    expect(machine.initialState.name).toBe('foo::1(10~halt)');
 
     // Subroutine body instructions are fully-qualified.
     const names = collectNames(machine);
     expect(names.has('foo::1')).toBe(true);
     expect(names.has('foo::2')).toBe(true);
     expect(names.has('foo::3')).toBe(true);
+    // No bare 'foo' node in the graph.
+    expect(names.has('foo')).toBe(false);
   });
 
-  test('nested subroutines use fully-qualified hopper names', () => {
-    // outer::1 is a call (produces a wrapper composite, not a plain "outer::1" node);
-    // outer::2 is mark (produces a real state named "outer::2").
-    // inner::1 is mark (produces a real state named "outer::inner::1").
+  test('nested subroutines use fully-qualified instruction names', () => {
+    // outer::1 is a call (the inner call wraps a wrapper, so outer keeps its
+    // hopper); outer::2 is a plain mark; inner::1 is a plain mark.
     const machine = new PostMachine({
       10: call('outer'),
       outer: {
@@ -148,16 +155,21 @@ describe('PostMachine — subroutine body and hopper names', () => {
         inner: { 1: mark },
       },
     });
-    // Top wrapper composite uses the top-level hopper name "outer".
-    expect(machine.initialState.name).toBe('outer>10~halt');
+    // outer's first instruction is `call('inner')` — that produces a wrapper,
+    // so the hopper-drop is blocked (engine #176 would unwrap the inner
+    // wrapping). outer keeps its hopper named "outer".
+    expect(machine.initialState.name).toBe('outer(10~halt)');
 
     const names = collectNames(machine);
-    // The nested call wrapper uses the fully-qualified hopper name "outer::inner".
-    expect(names.has('outer::inner>outer::1~outer::2')).toBe(true);
+    // inner is acyclic with a plain first instruction (mark) → hopper dropped.
+    // No bare 'outer::inner' node; the inner-call wrapper composite is
+    // 'outer::inner::1(outer::1~outer::2)' and inner's body states have FQ names.
+    expect(names.has('outer::inner')).toBe(false);
+    expect(names.has('outer::inner::1')).toBe(true);
     // outer::2 is a plain mark instruction — it has its own named state.
     expect(names.has('outer::2')).toBe(true);
-    // Body states of inner subroutine are fully-qualified.
-    expect(names.has('outer::inner::1')).toBe(true);
+    // outer keeps its hopper (acyclic but first instr is a wrapper).
+    expect(names.has('outer')).toBe(true);
   });
 });
 
@@ -172,13 +184,13 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // The wrapper inside foo for call('bar') has composite "foo::bar>foo::1~foo::2".
-    // This proves: foo::bar is the hopper name (fq-prefixed nested hopper),
-    // and the continuation foo::1~foo::2 uses foo's prefix for both caller and target.
-    expect(names.has('foo::bar>foo::1~foo::2')).toBe(true);
+    // `bar` is acyclic + plain first instruction → no bare 'foo::bar' node.
+    // The inner-call wrapper composite is 'foo::bar::1(foo::1~foo::2)' on
+    // state.name, with body state 'foo::bar::1' appearing as a node.
+    expect(names.has('foo::bar')).toBe(false);
+    expect(names.has('foo::bar::1')).toBe(true);
     expect(names.has('foo::1~foo::2')).toBe(true);
     expect(names.has('foo::2')).toBe(true);
-    expect(names.has('foo::bar::1')).toBe(true);
   });
 
   test('group inside subroutine — inner indices namespaced', () => {
@@ -190,8 +202,9 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Group wrapper at foo::1: composite "foo::1.1>foo::1~foo::2".
-    expect(names.has('foo::1.1>foo::1~foo::2')).toBe(true);
+    // Group wrapper at foo::1 appears as bare 'foo::1.1' under v7; composite
+    // 'foo::1.1(foo::1~foo::2)' lives only on state.name.
+    expect(names.has('foo::1.1')).toBe(true);
     expect(names.has('foo::1.2')).toBe(true);    // non-first inner — standalone
     expect(names.has('foo::1~foo::2')).toBe(true); // continuation
     expect(names.has('foo::2')).toBe(true);      // next instruction in subroutine
@@ -206,8 +219,10 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Wrapper at foo::1: "foo::bar>foo::1~halt" (tail position inside foo).
-    expect(names.has('foo::bar>foo::1~halt')).toBe(true);
+    // `bar` is acyclic + plain first instruction → no bare 'foo::bar' node.
+    // The bare 'foo::bar::1' is the wrapper's target; tail continuation
+    // is 'foo::1~halt'.
+    expect(names.has('foo::bar')).toBe(false);
     expect(names.has('foo::1~halt')).toBe(true);
     expect(names.has('foo::bar::1')).toBe(true);
   });
@@ -225,9 +240,10 @@ describe('PostMachine — combined naming scenarios', () => {
       },
     });
     const names = collectNames(machine);
-    // Each scope hops accumulate in the prefix.
+    // Each scope hop accumulates in the prefix. `deepest` is acyclic with
+    // a plain first instruction — no bare 'outer::inner::deepest' node,
+    // only its body state 'outer::inner::deepest::1' appears.
     expect(names.has('outer::inner::deepest::1')).toBe(true);
-    // Body inner at outer::inner::1 calls deepest; the call composite there:
-    expect(names.has('outer::inner::deepest>outer::inner::1~halt')).toBe(true);
+    expect(names.has('outer::inner::deepest')).toBe(false);
   });
 });

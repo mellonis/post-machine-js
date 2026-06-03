@@ -5,12 +5,12 @@ import {
   Tape,
   haltState,
   mark, right, check, stop,
-} from '../src/index';
+} from './index';
 import {
   mergeBreakpointFilters,
   validateBreakpointFilter,
   type BreakpointFilter,
-} from '../src/breakpoints';
+} from './breakpoints';
 
 describe('mergeBreakpointFilters', () => {
   test('two `before: true` filters merge to `before: true`', () => {
@@ -149,9 +149,9 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.setBreakpoint('10', { before: true });
     pm.clearBreakpoint('10');
     expect(pm.listBreakpoints()).toEqual([]);
-    // Engine v6.1+ (#150) returns an empty `DebugConfig` after a filters
-    // reset rather than `null`. Check the public getters directly — `undefined`
-    // is the "no filter set" sentinel (field type: `symbol[] | true | undefined`).
+    // state.debug after a clear is an empty DebugConfig — read filter getters
+    // directly; `undefined` is the "no filter set" sentinel
+    // (field type: `symbol[] | true | undefined`).
     const dbg = pm.stateAt('10').debug;
     expect(dbg.before).toBeUndefined();
     expect(dbg.after).toBeUndefined();
@@ -184,7 +184,7 @@ describe('pm.clearBreakpoint / clearBreakpoints', () => {
     pm.setBreakpoint(haltState, { before: true });
     pm.clearBreakpoints();
     expect(pm.listBreakpoints()).toEqual([]);
-    // Engine v6.1+ (#150) — see clearBreakpoint test above.
+    // Empty DebugConfig after clear — see clearBreakpoint test above.
     const dbg = pm.stateAt('10').debug;
     expect(dbg.before).toBeUndefined();
     expect(dbg.after).toBeUndefined();
@@ -203,25 +203,20 @@ describe('onPause — registry-aware filtering', () => {
     pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
     pm.setBreakpoint('30', { before: true });
     const paused: number[] = [];
-    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    const session = pm.debugRun();
+    session.on('pause', (s) => { paused.push(s.arrivalPath.instructionIndex); session.continue(); });
+    await session.start();
     expect(paused).toContain(30);
     pm.clearBreakpoints();
   });
 
   test('arrivalPath in after-fire onPause is the iter that just fired, not the next one', async () => {
-    // Regression test for the v6.1.0-v6.3.0 `advanceTracking` ordering bug.
-    // Before v6.4.0, PostMachine advanced `prev` inside its `onStep` wrapper,
-    // which runs BETWEEN engine v6's `onPause(before, K)` and `onPause(after, K)`
-    // dispatches on the same yield. So `onPause(after, K)` saw `prev = K`
-    // (advanced by onStep on the same iter) instead of `K-1` — and the path
-    // resolver "from K, with K's symbol, to ..." returned K+1's instruction,
-    // not K's. In this program, instruction 30's after-fire would have
-    // resolved to 40 (the next-fall-through instruction) instead of 30.
-    //
-    // Fixed in v6.4.0 by moving advanceTracking from the internal onStep
-    // wrapper to a new internal onIter wrapper, which fires at end-of-iter
-    // — after both onPause dispatches have already read their iter-correct
-    // prev. Engine onIter hook landed in turing-machine-js v6.4.0 (#163).
+    // Regression: after-fire onPause must see arrivalPath of the iter that
+    // fired, not the next one. Without end-of-iter prev advance,
+    // onPause(after, K) reads prev = K (advanced by onStep mid-iter) instead
+    // of K-1 — the path resolver then returns K+1's instruction.
+    // In this program, instruction 30's after-fire would resolve to 40
+    // (next fall-through) instead of 30.
     const pm = new PostMachine({
       10: check(20, 30),
       20: right(10),
@@ -231,7 +226,9 @@ describe('onPause — registry-aware filtering', () => {
     pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
     pm.setBreakpoint('30', { after: true });
     const paused: number[] = [];
-    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    const session = pm.debugRun();
+    session.on('pause', (s) => { paused.push(s.arrivalPath.instructionIndex); session.continue(); });
+    await session.start();
     expect(paused).toEqual([30]);
     pm.clearBreakpoints();
   });
@@ -250,7 +247,9 @@ describe('onPause — registry-aware filtering', () => {
     // but PostMachine's wrapper sees arrival=10, no registered match → silent.
     pm.setBreakpoint('30', { before: true });
     const paused: number[] = [];
-    await pm.run({ onPause: (s) => { paused.push(s.arrivalPath.instructionIndex); } });
+    const session = pm.debugRun();
+    session.on('pause', (s) => { paused.push(s.arrivalPath.instructionIndex); session.continue(); });
+    await session.start();
     expect(paused).toEqual([]);
     pm.clearBreakpoints();
   });
@@ -266,7 +265,9 @@ describe('onPause — registry-aware filtering', () => {
     pm.replaceTapeWith(new Tape({ alphabet: pm.tape.alphabet, symbols: ['*', '*', ' '] }));
     pm.setBreakpoint(haltState, { before: true });
     const paused: number[] = [];
-    await pm.run({ onPause: () => { paused.push(1); } });
+    const session = pm.debugRun();
+    session.on('pause', () => { paused.push(1); session.continue(); });
+    await session.start();
     expect(paused.length).toBeGreaterThan(0);
     pm.clearBreakpoints();
   });
@@ -295,9 +296,13 @@ describe('lockdown redirect — direct state.debug writes', () => {
     }).toThrow(/ambiguous.*'10'.*'30'/);
   });
 
-  test('haltState debug write throws (no PostMachine context for redirect)', () => {
+  test('haltState writes go to the engine setter — boolean OK, object throws', () => {
+    haltState.debug = true;
+    expect(haltState.debug).toBe(true);
+    haltState.debug = false;
     expect(() => {
+      // @ts-expect-error — HaltState typed alias narrows to boolean | null
       haltState.debug = { before: true };
-    }).toThrow(/setBreakpoint\(haltState/);
+    }).toThrow(/haltState\.debug only accepts boolean/);
   });
 });

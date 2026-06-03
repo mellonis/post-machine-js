@@ -17,8 +17,8 @@ export function parsePath(s: string): Path {
     throw new Error(`invalid path: empty string`);
   }
 
-  if (s.includes('>')) {
-    throw new Error(`invalid path '${s}': contains '>', which is the engine's wrapper composite separator (not an instruction path)`);
+  if (s.includes('(') || s.includes(')')) {
+    throw new Error(`invalid path '${s}': contains '(' or ')', which marks the engine's wrapper composite (not an instruction path)`);
   }
 
   if (s.includes('~')) {

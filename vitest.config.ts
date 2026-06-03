@@ -9,7 +9,7 @@ export default defineConfig({
     globals: true,
     clearMocks: true,
     include: [
-      'packages/*/test/**/*.spec.ts',
+      'packages/*/src/**/*.spec.ts',
       'test/**/*.spec.ts',
     ],
     coverage: {
