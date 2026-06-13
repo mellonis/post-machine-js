@@ -13,7 +13,7 @@ A Post machine — a 2-symbol Turing-machine variant with a numbered-instruction
 - [Classes](#classes) — [`PostMachine`](#postmachine) · [`Tape`](#tape)
 - [Constants](#constants)
 - [Custom symbols](#custom-symbols)
-- [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions)
+- [Commands](#commands) — [Classical](#classical-commands) · [Author's extensions](#authors-extensions) · [Scope rules](#scope-rules-for-indexed-forms)
 - [Grouped instructions](#grouped-instructions)
 - [Subroutines](#subroutines)
 - [MachineState shape](#machinestate-shape)
@@ -180,6 +180,22 @@ The first table is the **canonical instruction set** of a Post(–Turing) machin
 | `noop` | `noop` | `noop(ix)` | Do nothing; fall through / jump to `ix` |
 
 `call` and the [Subroutines](#subroutines) feature add procedure-like reuse to the classical numbered-instruction model. `noop` is the placeholder of choice: useful for reserving instruction numbers in a worked example, padding a sketch, or as a labelled jump target. (Bare `noop` has no classical analog; `noop(ix)` corresponds to Post's unconditional jump.)
+
+### Scope rules for indexed forms
+
+The `ix` in any indexed form (`mark(ix)`, `erase(ix)`, `noop(ix)`, `left(ix)`, `right(ix)`, `check(ix1, ix0)`, and `call(name, ix)`'s second arg) always references **the scope the call is written in** — top-level when at the top of the instructions map, the surrounding [subroutine](#subroutines)'s local indices when inside a subroutine body. The post engine resolves indexed jumps lexically; there is no implicit jump to top-level from inside a subroutine.
+
+`call(name)`'s `name` argument is resolved by walking the **lexical scope chain from the current scope outward**, first match wins. Subroutines can nest (a subroutine body may itself contain string-keyed subroutines), and `call('foo')` from inside `outer` finds `outer.foo` before checking the top-level program. This mirrors how identifiers resolve in lexically-scoped languages.
+
+| Construct | Scope of the literal arg |
+|---|---|
+| Top-level `mark(20)` | top-level instruction indices |
+| Inside `subA`: `mark(2)` | `subA`'s local indices |
+| Top-level `call('foo')` | searches top-level subroutines |
+| Inside `subA`: `call('foo')` | searches `subA`'s local subroutines first, then walks outward to top-level |
+| Inside `subA`: `call('foo', 5)` | second arg `5` is in `subA`'s local indices (where to jump after `foo` returns) |
+
+The [Subroutines](#subroutines) section shows nesting and call-site examples; the canonical path notation (`foo::bar::1`) reflects this lexical nesting directly.
 
 <details>
 <summary><code>noop</code> in the graph — fall-through and unconditional jump</summary>
