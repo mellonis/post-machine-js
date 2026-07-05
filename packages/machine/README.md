@@ -377,7 +377,9 @@ flowchart TD
   classDef abortSentinel stroke:#c0392b,stroke-width:2px,stroke-dasharray:4 3
   class s1 abortSentinel
   classDef tag_main fill:#dbeafe,stroke:#1e40af
+  classDef tag_sub fill:#fef3c7,stroke:#92400e
   class u2 tag_main
+  class u3 tag_sub
 ```
 
 Compare this to the [ordinary subroutine diagram](#subroutines): there, the subgraph has a dotted `w_N -. "return" .-> …` arrow feeding back to the wrapper. Here there ISN'T one — `u4`'s (`sub::2`, the `abort` instruction) only outgoing edge goes straight to `s1(((abort)))`, bypassing the wrapper's overridden-halt machinery entirely. The call-site continuation `u1["10~20"]` is never reached at runtime — and that's exactly what `result.stack` reports: `['10~20']` is the continuation that was PENDING (not popped) when `abort` fired, because `abort` short-circuited past it instead of returning through it the way a natural `stop`-triggered return would.
