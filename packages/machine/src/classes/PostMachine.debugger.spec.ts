@@ -5,10 +5,13 @@
 import {
   PostMachine,
   Tape,
+  abort,
+  abortState,
   haltState,
   call, check, mark, right, stop,
   formatPath,
   type Path,
+  type RunResult,
 } from '../index';
 
 function formatArrival(p: Path): string {
@@ -25,7 +28,7 @@ describe('PostMachine — async run', () => {
     });
   }
 
-  test('run() returns a Promise', () => {
+  test('run() returns the RunResult synchronously', () => {
     const machine = buildWalkAndMark();
 
     machine.replaceTapeWith(new Tape({
@@ -34,8 +37,9 @@ describe('PostMachine — async run', () => {
     }));
 
     const result = machine.run();
-    // v7: run() is sync, returns void.
-    expect(result).toBeUndefined();
+    // v7: run() is sync and returns the engine's call-scoped RunResult.
+    expect(result.outcome).toBe('halted');
+    expect(result.stack).toEqual([]);
   });
 
   test('run() is synchronous — tape is final immediately after the call', () => {
@@ -450,5 +454,137 @@ describe('PostDebugSession — step controls and lifecycle', () => {
 
     expect(steps).toBeGreaterThan(0);
     expect(halted).toBe(true);
+  });
+});
+
+describe('PostDebugSession — abort terminal event', () => {
+  test('abort event fires with the RunResult payload; halt listeners stay silent', async () => {
+    const machine = new PostMachine({ 10: mark, 20: abort });
+    const session = machine.debugRun();
+
+    let haltFired = false;
+    let abortResult: RunResult | null = null;
+    session.on('halt', () => { haltFired = true; });
+    session.on('abort', (result) => { abortResult = result; });
+    await session.start();
+
+    expect(haltFired).toBe(false);
+    expect(abortResult).not.toBeNull();
+    expect(abortResult!.outcome).toBe('aborted');
+    expect(abortResult!.state.name).toBe('20');
+  });
+
+  test('halt event fires with the RunResult payload on a halting run; abort listeners stay silent', async () => {
+    const machine = new PostMachine({ 10: mark, 20: stop });
+    const session = machine.debugRun();
+
+    let abortFired = false;
+    let haltResult: RunResult | null = null;
+    session.on('abort', () => { abortFired = true; });
+    session.on('halt', (result) => { haltResult = result; });
+    await session.start();
+
+    expect(abortFired).toBe(false);
+    expect(haltResult).not.toBeNull();
+    expect(haltResult!.outcome).toBe('halted');
+    expect(haltResult!.stack).toEqual([]);
+  });
+
+  test('direct abortState.debug = true pauses (side after, cause breakpoint) before the abort event, with arrivalPath', async () => {
+    const machine = new PostMachine({ 10: mark, 20: abort });
+    abortState.debug = true;
+
+    try {
+      const events: string[] = [];
+      const pauses: Array<{ side: string; cause: string; arrival: string }> = [];
+      const session = machine.debugRun();
+      session.on('pause', (m) => {
+        events.push('pause');
+        pauses.push({ side: m.pause.side, cause: m.pause.cause, arrival: formatPath(m.arrivalPath) });
+        session.continue();
+      });
+      session.on('abort', () => { events.push('abort'); });
+      await session.start();
+
+      expect(pauses).toEqual([{ side: 'after', cause: 'breakpoint', arrival: '20' }]);
+      expect(events).toEqual(['pause', 'abort']);
+    } finally {
+      // The engine flag is a process-global singleton — always reset.
+      abortState.debug = false;
+    }
+  });
+
+  test('pm.setBreakpoint(abortState, …) pauses through the registry path too', async () => {
+    const machine = new PostMachine({ 10: mark, 20: abort });
+    machine.setBreakpoint(abortState, { before: true });
+
+    try {
+      const causes: string[] = [];
+      const session = machine.debugRun();
+      session.on('pause', (m) => { causes.push(m.pause.cause); session.continue(); });
+      await session.start();
+
+      expect(causes).toEqual(['breakpoint']);
+    } finally {
+      machine.clearBreakpoints();
+    }
+  });
+
+  test('an instruction breakpoint ON the abort instruction pauses before it executes', async () => {
+    // Exercises the registry filter on an abort-imminent iter with the
+    // engine's abortState.debug flag OFF — the pause comes from the named
+    // abort-instruction state's own before-filter.
+    const machine = new PostMachine({ 10: mark, 20: abort });
+    machine.setBreakpoint('20', { before: true });
+
+    const pauses: Array<{ side: string; arrival: string }> = [];
+    const session = machine.debugRun();
+    session.on('pause', (m) => {
+      pauses.push({ side: m.pause.side, arrival: formatPath(m.arrivalPath) });
+      session.continue();
+    });
+    await session.start();
+
+    expect(pauses).toEqual([{ side: 'before', arrival: '20' }]);
+    machine.clearBreakpoints();
+  });
+
+  test('abort from inside a subroutine ends the session with a non-empty backtrace stack', async () => {
+    const machine = new PostMachine({
+      10: call('foo'),
+      20: mark,
+      foo: { 1: abort },
+    });
+    const session = machine.debugRun();
+
+    let abortResult: RunResult | null = null;
+    session.on('abort', (result) => { abortResult = result; });
+    await session.start();
+
+    expect(abortResult!.outcome).toBe('aborted');
+    expect(abortResult!.stack.length).toBeGreaterThan(0);
+    expect(abortResult!.state.name).toBe('foo::1');
+  });
+
+  test('stepInstruction over an aborting instruction resolves via the abort event without hanging', async () => {
+    const machine = new PostMachine({ 10: mark, 20: abort });
+    machine.setBreakpoint('10', { before: true });
+
+    const paths: string[] = [];
+    let aborted = false;
+    const session = machine.debugRun();
+    session.on('pause', (m) => {
+      paths.push(formatPath(m.arrivalPath));
+      session.stepInstruction();
+    });
+    session.on('abort', () => { aborted = true; });
+    await session.start();
+
+    // stepInstruction from 10 lands on 20 (the abort instruction), the
+    // second stepInstruction call runs off the end of the program — the
+    // abort terminal fires and start() resolves.
+    expect(paths[0]).toBe('10');
+    expect(aborted).toBe(true);
+    machine.clearBreakpoints();
   });
 });

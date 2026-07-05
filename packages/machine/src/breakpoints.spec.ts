@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { haltState as engineHaltState } from '@turing-machine-js/machine';
+import { abortState as engineAbortState, haltState as engineHaltState } from '@turing-machine-js/machine';
 import {
   PostMachine,
   Tape,
+  abort,
+  abortState,
   haltState,
   mark, right, check, stop,
 } from './index';
@@ -90,11 +92,11 @@ describe('pm.setBreakpoint / listBreakpoints', () => {
     expect(() => pm.setBreakpoint('10', {})).toThrow(/at least one/i);
   });
 
-  test('rejects a non-halt State target', () => {
+  test('rejects a non-sentinel State target', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
     const some = pm.stateAt('10');
     expect(() => pm.setBreakpoint(some, { before: true }))
-      .toThrow(/only for the haltState singleton/i);
+      .toThrow(/only for the haltState \/ abortState singletons/i);
   });
 
   test('a path that resolves to a stop instruction is treated as a halt breakpoint', () => {
@@ -304,5 +306,72 @@ describe('lockdown redirect — direct state.debug writes', () => {
       // @ts-expect-error — HaltState typed alias narrows to boolean | null
       haltState.debug = { before: true };
     }).toThrow(/haltState\.debug only accepts boolean/);
+  });
+});
+
+describe('abort breakpoints — registry + engine-flag passthrough', () => {
+  test('registers an abort breakpoint via the abortState re-export; listBreakpoints round-trips', () => {
+    const pm = new PostMachine({ 10: mark, 20: abort });
+    pm.setBreakpoint(abortState, { before: true });
+    expect(pm.listBreakpoints()).toEqual([{ kind: 'abort', filter: { before: true } }]);
+    expect(abortState.debug).toBe(true);
+    pm.clearBreakpoints();
+    expect(abortState.debug).toBe(false);
+  });
+
+  test('registers an abort breakpoint via the bare engine singleton too', () => {
+    const pm = new PostMachine({ 10: mark, 20: abort });
+    pm.setBreakpoint(engineAbortState, { before: true });
+    expect(pm.listBreakpoints()).toEqual([{ kind: 'abort', filter: { before: true } }]);
+    pm.clearBreakpoints();
+  });
+
+  test('clearBreakpoint(abortState) removes only abort entries and resets the engine flag', () => {
+    const pm = new PostMachine({ 10: mark, 20: abort });
+    pm.setBreakpoint('10', { before: true });
+    pm.setBreakpoint(abortState, { before: true });
+    pm.clearBreakpoint(abortState);
+    expect(pm.listBreakpoints()).toEqual([
+      { kind: 'instruction', path: { instructionIndex: 10 }, filter: { before: true } },
+    ]);
+    expect(abortState.debug).toBe(false);
+    pm.clearBreakpoints();
+  });
+
+  test('an abort instruction path is an ORDINARY instruction breakpoint (named state, not the sentinel)', () => {
+    // Contrast with stop: a stop instruction's path resolves to haltState and
+    // becomes a halt breakpoint; an abort instruction's path resolves to its
+    // named per-instruction state and keeps per-path before/after filters.
+    const pm = new PostMachine({ 10: mark, 20: abort });
+    pm.setBreakpoint('20', { before: true });
+    expect(pm.listBreakpoints()).toEqual([
+      { kind: 'instruction', path: { instructionIndex: 20 }, filter: { before: true } },
+    ]);
+    expect(pm.stateAt('20').debug?.before).toBe(true);
+    pm.clearBreakpoints();
+  });
+
+  test('direct abortState.debug writes pass through to the engine setter — boolean OK, object throws', () => {
+    // No lockdown funnel on the sentinel: the named-state producer keeps
+    // abortState out of the per-machine candidate-path map, so the
+    // constructor's lockdown loop never touches it.
+    new PostMachine({ 10: mark, 20: abort });
+    abortState.debug = true;
+    expect(abortState.debug).toBe(true);
+    abortState.debug = false;
+    expect(() => {
+      // @ts-expect-error — AbortState typed alias narrows to boolean | null
+      abortState.debug = { before: true };
+    }).toThrow(/abortState\.debug only accepts boolean/);
+  });
+
+  test('lockdown still applies to post-created instruction states on an aborting machine', () => {
+    const pm = new PostMachine({ 10: mark, 20: abort });
+    // Un-shared instruction state → direct write redirects into the registry.
+    pm.stateAt('20').debug = { before: true };
+    expect(pm.listBreakpoints()).toEqual([
+      { kind: 'instruction', path: { instructionIndex: 20 }, filter: { before: true } },
+    ]);
+    pm.clearBreakpoints();
   });
 });

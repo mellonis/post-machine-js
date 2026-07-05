@@ -3,10 +3,12 @@ import {
   DebugSession as EngineDebugSession,
   type MachineState as EngineMachineState,
   Reference,
+  type RunResult,
   State,
   Tape,
   TapeBlock,
   TuringMachine,
+  abortState,
   ifOtherSymbol,
   haltState,
 } from '@turing-machine-js/machine';
@@ -21,7 +23,8 @@ import {
 } from '../consts';
 import type { CommandContext, Instructions } from '../commands';
 import {
-  $tag, call, check, erase, left, mark, noop, right, stop,
+  $tag, abort, abortCommandStateProducer, call, check, erase, left, mark, noop, right,
+  stop, stopCommandStateProducer,
 } from '../commands';
 import { instructionIndexValidator, subroutineNameValidator, validateSymbolPair } from '../validators';
 import { installStateLockdown, withLockdownEscape } from '../lockdown';
@@ -78,6 +81,10 @@ export class PostMachine extends TuringMachine {
     // Install the lockdown on every constructed State (except haltState — it's
     // a process-global singleton; per-instance lockdown would block other
     // PostMachine instances and turing-only consumers from writing it).
+    // abortState needs no exclusion here: an `abort` instruction records its
+    // NAMED per-instruction State (see abortCommandStateProducer), so the
+    // abortState singleton never enters #stateToCandidatePaths and direct
+    // `abortState.debug = boolean` writes pass through to the engine setter.
     // Direct `state.debug = X` writes are redirected to setBreakpoint/clearBreakpoint
     // when the State has exactly one candidate path; ambiguous shared States throw.
     // Iterate over the unique-state keyspace so shared States aren't re-installed.
@@ -104,14 +111,20 @@ export class PostMachine extends TuringMachine {
   }
 
   /**
-   * Run the machine to halt — pure execution, no observation. Sync, returns
-   * void. Matches the engine's v7 `run()` contract.
+   * Run the machine to termination — pure execution, no observation. Sync.
+   * Matches the engine's v7 `run()` contract and returns the engine's
+   * call-scoped `RunResult` outcome:
+   * `{outcome: 'halted' | 'aborted', state, stack, step}` — `'halted'` for a
+   * normal `stop` / fall-through ending (`stack` is `[]` by construction),
+   * `'aborted'` when an `abort` instruction punched through to the engine's
+   * `abortState` (`stack` is the frozen backtrace of continuations the abort
+   * short-circuited past).
    *
    * For interactive debugging (breakpoints, step-in / step-over / step-out,
    * throttle, click-pause), use `debugRun()` to construct a `PostDebugSession`.
    */
-  override run({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): void {
-    super.run({ initialState: this.#initialState, stepsLimit });
+  override run({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): RunResult {
+    return super.run({ initialState: this.#initialState, stepsLimit });
   }
 
   /**
@@ -136,17 +149,39 @@ export class PostMachine extends TuringMachine {
     });
   }
 
-  override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState> {
+  override * runStepByStep({ stepsLimit = 1e5 }: { stepsLimit?: number } = {}): Generator<MachineState, RunResult> {
     let prevState: State | null = null;
     let prevJsSymbol: symbol | null = null;
     const entryPath = this.#firstStepArrivalPath();
 
-    for (const raw of super.runStepByStep({ initialState: this.#initialState, stepsLimit })) {
-      const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
-      prevState = raw.state;
-      prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
-      yield wrapped;
+    // Manual iteration instead of `for...of`: a for-of discards the engine
+    // generator's `return` value — the terminal `RunResult` that tells
+    // `halted` from `aborted` — so post's generator would silently swallow
+    // the engine's termination outcome.
+    const gen = super.runStepByStep({ initialState: this.#initialState, stepsLimit });
+    let r = gen.next();
+
+    try {
+      while (!r.done) {
+        const raw = r.value;
+        const wrapped = this.#wrapMachineState(raw, prevState, prevJsSymbol, entryPath);
+        prevState = raw.state;
+        prevJsSymbol = this.tapeBlock.symbol([raw.currentSymbols[0]]);
+        yield wrapped;
+        r = gen.next();
+      }
+    } finally {
+      // An early consumer exit (`gen.return()` / abandoned iteration) leaves
+      // the engine generator suspended mid-iter; the for-of this replaced
+      // closed it implicitly (IteratorClose), releasing the TapeBlock lock.
+      // Manual iteration reproduces that explicitly. No-op on natural
+      // completion, where `r.done` is already true.
+      if (!r.done) {
+        gen.return(undefined as unknown as RunResult);
+      }
     }
+
+    return r.value;
   }
 
   #firstStepArrivalPath(): Path {
@@ -377,8 +412,15 @@ export class PostMachine extends TuringMachine {
         case mark:
         case noop:
         case right:
-        case stop:
           (instructionsCopy as Record<string, unknown>)[String(instructionIndex)] = (cmd as (ix?: number | symbol) => unknown)(defaultNextInstructionIndex);
+          break;
+        // `stop` / `abort` are non-callable tokens — map each to its
+        // shared, stateless producer (already registered in `commandsSet`).
+        case stop:
+          (instructionsCopy as Record<string, unknown>)[String(instructionIndex)] = stopCommandStateProducer;
+          break;
+        case abort:
+          (instructionsCopy as Record<string, unknown>)[String(instructionIndex)] = abortCommandStateProducer;
           break;
         case call:
         case check:
@@ -412,8 +454,13 @@ export class PostMachine extends TuringMachine {
           throw new Error('empty group');
         }
 
+        // Terminal tokens are valid group MEMBERS at this layer: the
+        // token dispatch happens in the recursive build's switch, and `stop`'s
+        // group rejection lives in its producer (fires with the precise "the
+        // 'stop' command cannot be used in a group" message). `abort` is
+        // group-legal by design — no continuation, no ambiguity.
         const areInstructionsInGroupValid = instruction
-          .every((command) => commandsSet.has(command as CommandFn));
+          .every((command) => commandsSet.has(command as CommandFn) || command === stop || command === abort);
 
         if (!areInstructionsInGroupValid) {
           if (instruction.includes($tag as never)) {
@@ -588,9 +635,12 @@ export class PostMachine extends TuringMachine {
     if (resolved.kind === 'instruction') {
       this.#breakpoints.push({ kind: 'instruction', path: resolved.path, filter });
       this.#refreshStateDebug(resolved.state);
-    } else {
+    } else if (resolved.kind === 'halt') {
       this.#breakpoints.push({ kind: 'halt', filter });
       this.#refreshHaltDebug();
+    } else {
+      this.#breakpoints.push({ kind: 'abort', filter });
+      this.#refreshAbortDebug();
     }
   }
 
@@ -602,49 +652,69 @@ export class PostMachine extends TuringMachine {
         (bp) => !(bp.kind === 'instruction' && formatPath(bp.path) === key),
       );
       this.#refreshStateDebug(resolved.state);
-    } else {
+    } else if (resolved.kind === 'halt') {
       this.#breakpoints = this.#breakpoints.filter((bp) => bp.kind !== 'halt');
       this.#refreshHaltDebug();
+    } else {
+      this.#breakpoints = this.#breakpoints.filter((bp) => bp.kind !== 'abort');
+      this.#refreshAbortDebug();
     }
   }
 
   clearBreakpoints(): void {
     const instructionStates = new Set<State>();
     let hadHalt = false;
+    let hadAbort = false;
     for (const bp of this.#breakpoints) {
       if (bp.kind === 'instruction') {
         instructionStates.add(this.#pathToState.get(formatPath(bp.path))!);
-      } else {
+      } else if (bp.kind === 'halt') {
         hadHalt = true;
+      } else {
+        hadAbort = true;
       }
     }
     this.#breakpoints = [];
     for (const s of instructionStates) this.#refreshStateDebug(s);
     if (hadHalt) this.#refreshHaltDebug();
+    if (hadAbort) this.#refreshAbortDebug();
   }
 
   listBreakpoints(): Breakpoint[] {
-    return this.#breakpoints.map((bp) => (bp.kind === 'instruction'
-      ? { kind: 'instruction', path: { ...bp.path }, filter: { ...bp.filter } }
-      : { kind: 'halt', filter: { ...bp.filter } }));
+    return this.#breakpoints.map((bp): Breakpoint => {
+      if (bp.kind === 'instruction') {
+        return { kind: 'instruction', path: { ...bp.path }, filter: { ...bp.filter } };
+      }
+      if (bp.kind === 'halt') {
+        return { kind: 'halt', filter: { ...bp.filter } };
+      }
+      return { kind: 'abort', filter: { ...bp.filter } };
+    });
   }
 
   #resolveBreakpointTarget(target: BreakpointTarget):
     | { kind: 'instruction'; path: Path; state: State }
     | { kind: 'halt' }
+    | { kind: 'abort' }
   {
     if (target instanceof State) {
       if (target.isHalt) {
         return { kind: 'halt' };
       }
+      if (target.isAbort) {
+        return { kind: 'abort' };
+      }
       throw new Error(
-        'setBreakpoint accepts a State only for the haltState singleton. '
+        'setBreakpoint accepts a State only for the haltState / abortState singletons. '
         + 'Use a Path or path string for instruction breakpoints.',
       );
     }
     const { path, state } = this.#resolveToState(target);
     // A path that resolves to haltState (e.g., a `stop` instruction) is treated as
-    // a halt breakpoint — halt is singular, no per-path discrimination.
+    // a halt breakpoint — halt is singular, no per-path discrimination. An `abort`
+    // instruction's path resolves to its NAMED per-instruction State (never the
+    // abortState singleton — see abortCommandStateProducer), so it lands in the
+    // ordinary instruction branch below with per-path before/after filters.
     if (state.isHalt) {
       return { kind: 'halt' };
     }
@@ -667,6 +737,14 @@ export class PostMachine extends TuringMachine {
     // write. haltState.debug is a boolean (turing-machine-js#207).
     const hasHaltBP = this.#breakpoints.some((bp) => bp.kind === 'halt');
     haltState.debug = hasHaltBP;
+  }
+
+  #refreshAbortDebug(): void {
+    // Mirrors #refreshHaltDebug: abortState.debug is the engine's boolean
+    // abort-imminent breakpoint flag; the per-BP filter is decorative for
+    // abort entries too.
+    const hasAbortBP = this.#breakpoints.some((bp) => bp.kind === 'abort');
+    abortState.debug = hasAbortBP;
   }
 
   #onUserDebugWrite(state: State, value: unknown): void {

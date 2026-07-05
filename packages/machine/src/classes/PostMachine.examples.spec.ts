@@ -79,8 +79,8 @@ describe('packages/machine/README.md', () => {
         expect(mermaid).toContain('["20"]');
         expect(mermaid).toContain('["30"]');
         // noop's signature: `[K]/[S]` — keep, stay. Marks have `['*']/[S]`.
-        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s\d+/); // noop
-        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/); // mark
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \[K\]\/\[S\]" --> u\d+/); // noop
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> u\d+/); // mark
       });
 
       test('noop(40) jumps directly; unreachable instructions are dropped', () => {
@@ -99,7 +99,7 @@ describe('packages/machine/README.md', () => {
         expect(mermaid).not.toContain('"20"');
         expect(mermaid).not.toContain('"30"');
         // 10's transition is noop's `[K]/[S]` straight to halt (s0).
-        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s0/);
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s0/);
       });
     });
 
@@ -117,7 +117,7 @@ describe('packages/machine/README.md', () => {
         // No "20" label — the trailing stop is elided as a halt routing
         // convention; instruction 10 transitions straight to s0(((halt))).
         expect(mermaid).not.toContain('"20"');
-        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s0/);
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s0/);
       });
 
       test('pm.stateAt for a trailing-stop index resolves to haltState', () => {
@@ -230,24 +230,24 @@ describe('packages/machine/README.md', () => {
       // Subroutine-entry auto-tag (#86).
       expect(mermaid).toContain('["rightToBlank::1<br>rightToBlank"]');
       // No bare `rightToBlank` (without `::1`) node label.
-      expect(mermaid).not.toMatch(/s\d+\["rightToBlank"\]/);
+      expect(mermaid).not.toMatch(/u\d+\["rightToBlank"\]/);
 
       // Bold `== "call" ==>` wrapper→bare + dotted `-. "return" .->`
       // subgraph→wrapper. Wrapper-to-override is a regular solid arrow.
-      expect(mermaid).toMatch(/s\d+ == "call" ==> s\d+/);
-      expect(mermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+      expect(mermaid).toMatch(/u\d+ == "call" ==> u\d+/);
+      expect(mermaid).toMatch(/w_\d+ -\. "return" \.-> u\d+/);
       expect(mermaid).not.toMatch(/onHalt/);
 
       // The subroutine's internal cycle: a right-move state and a check state
       // that loops back on '*' and exits on the blank. Engine v7 label vocabulary.
-      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);    // right (keep + R)
-      expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);  // check on '*'
-      // Body's halt-bound transition is retargeted to the frame's halt marker (c\d+),
-      // not the real s0 — that's the callable-subtree contract.
-      expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> c\d+/);     // check on blank
+      expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \[K\]\/\[R\]" --> u\d+/);    // right (keep + R)
+      expect(mermaid).toMatch(/u\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> u\d+/);  // check on '*'
+      // Body's halt-bound transition is retargeted to the frame's halt marker
+      // (s0-{frame}), not the real s0 — that's the callable-subtree contract.
+      expect(mermaid).toMatch(/u\d+ -- "\[B\] → \[K\]\/\[S\]" --> s0-\d+/);     // check on blank
 
       // The mark instruction's edge: write '*', stay, transition to halt.
-      expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
+      expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s0/);
     });
 
     test('** → marks first blank to make *** (single subroutine, single call)', async () => {
@@ -444,7 +444,7 @@ describe('packages/machine/README.md', () => {
       });
 
       // Pins the README's <details> engine-source block. State names are now deterministic
-      // (instruction-derived); node IDs (s\d+) are still auto-generated and shift between
+      // (instruction-derived); node IDs (u\d+) are still auto-generated and shift between
       // runs, so we pin the labels via `toContain(...)`.
       test('Quick Start engine output matches README <details> block', () => {
         const machine = buildQuickStart();
@@ -462,7 +462,7 @@ describe('packages/machine/README.md', () => {
         // Entry-point auto-tag (#86) appends `<br>main`.
         expect(mermaid).toContain('["10<br>main"]');
         expect(mermaid).toContain('idle([idle])');
-        expect(mermaid).toMatch(/idle -\. enter \.-> s\d+/);
+        expect(mermaid).toMatch(/idle -\. enter \.-> u\d+/);
         // Two intermediate states — square-bracket node shape with instruction-derived names.
         // Non-entry instructions carry no auto-tag.
         expect(mermaid).toContain('["20"]');
@@ -471,10 +471,11 @@ describe('packages/machine/README.md', () => {
         // Each of the 4 transitions described in the README's reading guide.
         // Engine v7 edge-label vocabulary: ['x'] = literal symbol, [B] = blank, [*] = any-other,
         // [K] = keep, [E] = erase; movements [L]/[R]/[S].
-        expect(mermaid).toMatch(/s\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\[B\] → \[K\]\/\[S\]" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \[K\]\/\[R\]" --> s\d+/);
-        expect(mermaid).toMatch(/s\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s\d+/);
+        expect(mermaid).toMatch(/u\d+ -- "\['\*'\] → \[K\]\/\[S\]" --> u\d+/);
+        expect(mermaid).toMatch(/u\d+ -- "\[B\] → \[K\]\/\[S\]" --> u\d+/);
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \[K\]\/\[R\]" --> u\d+/);
+        // The mark's halt-bound edge targets the halt sentinel (s0) directly.
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \['\*'\]\/\[S\]" --> s0/);
       });
     });
 
@@ -525,9 +526,9 @@ describe('packages/machine/README.md', () => {
         // inline: flat graph, no subgraph, no wrapper (no `sN[[…]]` shape; the
         // `[[` in `%% alphabets: [[" ","*"]]` is the JSON-stringified header).
         expect(inlineMermaid).not.toMatch(/subgraph w_/);
-        expect(inlineMermaid).not.toMatch(/s\d+\[\[/);
+        expect(inlineMermaid).not.toMatch(/u\d+\[\[/);
         expect(inlineMermaid).not.toMatch(/== "call" ==>/);
-        expect(inlineMermaid).toMatch(/idle -\. enter \.-> s\d+/);
+        expect(inlineMermaid).toMatch(/idle -\. enter \.-> u\d+/);
 
         // withSubroutine: wrapper outside the subgraph + callable-subtree shape.
         // Under #85 the hopper is dropped — the wrapper wraps walkToBlank::1
@@ -537,10 +538,10 @@ describe('packages/machine/README.md', () => {
         expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank::1"\]/);
         expect(subMermaid).toContain('[["walkToBlank::1(10~20)<br>main"]]'); // wrapper composite
         expect(subMermaid).toContain('["walkToBlank::1<br>walkToBlank"]');   // bare, inside subgraph
-        expect(subMermaid).not.toMatch(/s\d+\["walkToBlank"\]/);             // hopper dropped
+        expect(subMermaid).not.toMatch(/u\d+\["walkToBlank"\]/);             // hopper dropped
         expect(subMermaid).toContain('["10~20"]');                // continuation
-        expect(subMermaid).toMatch(/s\d+ == "call" ==> s\d+/);    // wrapper → bare
-        expect(subMermaid).toMatch(/w_\d+ -\. "return" \.-> s\d+/);
+        expect(subMermaid).toMatch(/u\d+ == "call" ==> u\d+/);    // wrapper → bare
+        expect(subMermaid).toMatch(/w_\d+ -\. "return" \.-> u\d+/);
         expect(subMermaid).not.toMatch(/onHalt/);
       });
     });

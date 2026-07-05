@@ -3,7 +3,9 @@ import {
   type MachineState as EngineMachineState,
   type PauseInfo,
   type PausedMachineState as EnginePausedMachineState,
+  type RunResult,
   State,
+  abortState,
   haltState,
 } from '@turing-machine-js/machine';
 import { formatPath, normalizeScope, type Path } from '../path';
@@ -11,15 +13,22 @@ import type { MachineState } from '../index';
 import type { Breakpoint } from '../breakpoints';
 import type { PostMachine } from './PostMachine';
 
-export type PostDebugSessionEvent = 'pause' | 'step' | 'iter' | 'halt';
+export type PostDebugSessionEvent = 'pause' | 'step' | 'iter' | 'halt' | 'abort';
 
 /** A post-wrapped `MachineState` (arrivalPath / candidatePaths) plus the
  *  engine's one-sided pause descriptor — the payload of a `pause` event. */
 export type PostPausedMachineState = MachineState & { pause: PauseInfo };
 
+/**
+ * `halt` / `abort` are terminal and mutually exclusive — a run ends in
+ * exactly one of the two (never both), and neither fires if `stop()` ended
+ * the session first. Both carry the engine's `RunResult`
+ * (`{outcome, state, stack, step}`) — additive for `halt` listeners, which
+ * previously received no payload.
+ */
 export type PostDebugSessionListener<E extends PostDebugSessionEvent> =
-  E extends 'halt'
-    ? () => void | Promise<void>
+  E extends 'halt' | 'abort'
+    ? (result: RunResult) => void | Promise<void>
     : E extends 'pause'
       ? (machineState: PostPausedMachineState) => void | Promise<void>
       : (machineState: MachineState) => void | Promise<void>;
@@ -28,7 +37,8 @@ type ListenerMap = {
   pause: Array<(m: PostPausedMachineState) => void | Promise<void>>;
   step: Array<(m: MachineState) => void | Promise<void>>;
   iter: Array<(m: MachineState) => void | Promise<void>>;
-  halt: Array<() => void | Promise<void>>;
+  halt: Array<(result: RunResult) => void | Promise<void>>;
+  abort: Array<(result: RunResult) => void | Promise<void>>;
 };
 
 export type PostDebugSessionParameter = {
@@ -52,6 +62,7 @@ export class PostDebugSession {
     step: [],
     iter: [],
     halt: [],
+    abort: [],
   };
   #prevState: State | null = null;
   #prevJsSymbol: symbol | null = null;
@@ -138,10 +149,19 @@ export class PostDebugSession {
       this.#prevState = raw.state;
       this.#prevJsSymbol = this.#tapeBlockSymbol([raw.currentSymbols[0]]);
     });
-    this.#engineSession.on('halt', () => {
+    this.#engineSession.on('halt', (result) => {
       this.#pendingStepInstruction = null;
       this.#lastPausedPath = null;
-      for (const fn of this.#listeners.halt) void fn();
+      for (const fn of this.#listeners.halt) void fn(result);
+    });
+    this.#engineSession.on('abort', (result) => {
+      // Terminal like halt: consume any in-flight stepInstruction intent
+      // and forward the engine's RunResult. Halt listeners stay silent on
+      // aborting runs and vice versa — the engine fires exactly one of the
+      // two terminal events.
+      this.#pendingStepInstruction = null;
+      this.#lastPausedPath = null;
+      for (const fn of this.#listeners.abort) void fn(result);
     });
 
     // Touch unused fields to satisfy the noUnusedLocals heuristic — they exist
@@ -287,6 +307,19 @@ export class PostDebugSession {
     const breakpoints = this.#getBreakpoints();
     const nextIsHalt = raw.nextState instanceof State && raw.nextState.isHalt;
     if (nextIsHalt && breakpoints.some((bp) => bp.kind === 'halt')) {
+      return true;
+    }
+    // Abort-imminent pause: the engine fires it when
+    // `abortState.debug === true` (after side of the abort-triggering iter).
+    // Read the engine flag directly rather than the registry — it covers
+    // BOTH `pm.setBreakpoint(abortState, …)` (the registry refresh writes
+    // this flag) and a direct `abortState.debug = true` (no lockdown funnel
+    // on the sentinel), which must surface through the post session too.
+    // Unlike halt, `raw.nextState` on an abort-bound iter is always the
+    // sentinel itself (abort never pops the halt-stack), so the yielded
+    // shape is a reliable imminence signal.
+    const nextIsAbort = raw.nextState instanceof State && raw.nextState.isAbort;
+    if (nextIsAbort && abortState.debug === true) {
       return true;
     }
     const arrivalKey = formatPath(wrapped.arrivalPath);
