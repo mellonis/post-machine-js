@@ -5,7 +5,7 @@ import {
   alphabet,
   blankSymbol,
   markSymbol,
-  $tag, call, check, left, mark, noop, right, stop,
+  $tag, abort, call, check, left, mark, noop, right, stop,
   toMermaid,
   summarizePostMachine,
   equivalentPostMachines,
@@ -132,6 +132,109 @@ describe('packages/machine/README.md', () => {
         // path to the canonical haltState singleton.
         expect(stopState).toBeDefined();
         expect(stopState!.isHalt).toBe(true);
+      });
+    });
+
+    describe('abort — ends the run immediately, from any depth', () => {
+      test('top-level abort: RunResult outcome/state/stack/step', () => {
+        const machine = new PostMachine({
+          10: check(20, 30),
+          20: abort,
+          30: stop,
+        });
+
+        machine.replaceTapeWith(new Tape({
+          alphabet: machine.tape.alphabet,
+          symbols: ['*'],
+        }));
+
+        const result = machine.run();
+
+        // console.log(result.outcome);      // 'aborted'
+        expect(result.outcome).toBe('aborted');
+        // console.log(result.state.name);   // '20'
+        expect(result.state.name).toBe('20');
+        // console.log(result.stack.length); // 0 — nothing was pending; this is top-level code
+        expect(result.stack.length).toBe(0);
+        // console.log(result.step);         // 2
+        expect(result.step).toBe(2);
+      });
+
+      test('engine Mermaid output matches the README <details> block', () => {
+        const machine = new PostMachine({
+          10: check(20, 30),
+          20: abort,
+          30: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        expect(mermaid).toContain('(((abort)))');
+        expect(mermaid).toContain('["10<br>main"]');
+        expect(mermaid).toContain('["20"]');
+        // The abort instruction's edge targets the abort sentinel, not halt.
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s1/);
+      });
+    });
+
+    describe('abort inside a subroutine — the pending continuation freezes in RunResult.stack', () => {
+      test('subroutine abort: RunResult outcome/state/stack/step', () => {
+        const machine = new PostMachine({
+          sub: {
+            1: mark,
+            2: abort,
+          },
+          10: call('sub'),
+          20: stop,
+        });
+
+        const result = machine.run();
+
+        // console.log(result.outcome);                   // 'aborted'
+        expect(result.outcome).toBe('aborted');
+        // console.log(result.state.name);                // 'sub::2'
+        expect(result.state.name).toBe('sub::2');
+        // console.log(result.stack.map((s) => s.name));   // ['10~20']
+        expect(result.stack.map((s) => s.name)).toEqual(['10~20']);
+        // console.log(result.step);                       // 2
+        expect(result.step).toBe(2);
+      });
+
+      test('contrast: subroutine ending in stop halts normally with an empty stack', () => {
+        const machine = new PostMachine({
+          sub: {
+            1: mark,
+            2: stop,
+          },
+          10: call('sub'),
+          20: stop,
+        });
+
+        const result = machine.run();
+
+        expect(result.outcome).toBe('halted');
+        expect(result.stack).toEqual([]);
+      });
+
+      test('engine Mermaid output has no "return" arrow — abort bypasses the wrapper', () => {
+        const machine = new PostMachine({
+          sub: {
+            1: mark,
+            2: abort,
+          },
+          10: call('sub'),
+          20: stop,
+        });
+
+        const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
+
+        expect(mermaid).toContain('(((abort)))');
+        expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of sub::1"\]/);
+        // No dotted "return" arrow back to the wrapper — abort never resolves
+        // the overridden-halt continuation.
+        expect(mermaid).not.toMatch(/-\. "return" \.->/);
+        // The abort instruction's edge targets the abort sentinel directly.
+        expect(mermaid).toMatch(/u\d+ -- "\[\*\] → \[K\]\/\[S\]" --> s1/);
       });
     });
   });
