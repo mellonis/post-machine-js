@@ -74,7 +74,7 @@ describe('packages/machine/README.md', () => {
         const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
 
         // 3 reachable instructions (`40: stop` is elided — see trailing-stop test below).
-        // Entry-point auto-tag (#86) appends `<br>main` to the top-level entry's label.
+        // Entry-point auto-tag appends `<br>main` to the top-level entry's label.
         expect(mermaid).toContain('["10<br>main"]');
         expect(mermaid).toContain('["20"]');
         expect(mermaid).toContain('["30"]');
@@ -94,7 +94,7 @@ describe('packages/machine/README.md', () => {
         const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
 
         // Only instruction 10 appears; 20/30 are unreachable, 40 = trailing stop.
-        // Entry-point auto-tag (#86) appends `<br>main` to the top-level entry's label.
+        // Entry-point auto-tag appends `<br>main` to the top-level entry's label.
         expect(mermaid).toContain('["10<br>main"]');
         expect(mermaid).not.toContain('"20"');
         expect(mermaid).not.toContain('"30"');
@@ -112,7 +112,7 @@ describe('packages/machine/README.md', () => {
 
         const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
 
-        // Entry-point auto-tag (#86) appends `<br>main` to the top-level entry's label.
+        // Entry-point auto-tag appends `<br>main` to the top-level entry's label.
         expect(mermaid).toContain('["10<br>main"]');
         // No "20" label — the trailing stop is elided as a halt routing
         // convention; instruction 10 transitions straight to s0(((halt))).
@@ -328,9 +328,9 @@ describe('packages/machine/README.md', () => {
       // directly; subgraph label and composite name reflect the bare's identity.
       expect(mermaid).toContain('(((halt)))');
       expect(mermaid).toMatch(/subgraph w_\d+\["callable subtree of rightToBlank::1"\]/);
-      // Top-level entry auto-tag `main` (#86).
+      // Top-level entry auto-tag `main`.
       expect(mermaid).toContain('[["rightToBlank::1(1~2)<br>main"]]');
-      // Subroutine-entry auto-tag (#86).
+      // Subroutine-entry auto-tag.
       expect(mermaid).toContain('["rightToBlank::1<br>rightToBlank"]');
       // No bare `rightToBlank` (without `::1`) node label.
       expect(mermaid).not.toMatch(/u\d+\["rightToBlank"\]/);
@@ -562,7 +562,7 @@ describe('packages/machine/README.md', () => {
 
         // Initial state — square-bracket node shape; under engine v7 the entry is
         // marked by a separate idle sentinel + dotted enter edge, not a double-paren shape.
-        // Entry-point auto-tag (#86) appends `<br>main`.
+        // Entry-point auto-tag appends `<br>main`.
         expect(mermaid).toContain('["10<br>main"]');
         expect(mermaid).toContain('idle([idle])');
         expect(mermaid).toMatch(/idle -\. enter \.-> u\d+/);
@@ -634,8 +634,8 @@ describe('packages/machine/README.md', () => {
         expect(inlineMermaid).toMatch(/idle -\. enter \.-> u\d+/);
 
         // withSubroutine: wrapper outside the subgraph + callable-subtree shape.
-        // Under #85 the hopper is dropped — the wrapper wraps walkToBlank::1
-        // directly, not a bare named 'walkToBlank'. Under #86 the wrapper bears
+        // The hopper-drop rule applies — the wrapper wraps walkToBlank::1
+        // directly, not a bare named 'walkToBlank'. The wrapper bears
         // the top-level entry-point auto-tag `main`; the bare bears the
         // subroutine-entry auto-tag `walkToBlank`.
         expect(subMermaid).toMatch(/subgraph w_\d+\["callable subtree of walkToBlank::1"\]/);

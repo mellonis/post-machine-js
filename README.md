@@ -9,11 +9,11 @@ A Post machine for JavaScript — a 2-symbol Turing-machine variant with a numbe
 The `PostMachine` class translates a numbered instruction list into a state graph for the upstream `TuringMachine` and delegates execution to it.
 
 This repository contains the following packages:
-* [@post-machine-js/machine](https://github.com/mellonis/post-machine-js/tree/master/packages/machine)
+* [@post-machine-js/machine](packages/machine/README.md)
 
 ## Installation
 
-`@post-machine-js/machine` declares [@turing-machine-js/machine](https://github.com/mellonis/turing-machine-js) as a **peer dependency**, so both use the same Turing machine implementation (one instance in the bundle). Install:
+`@post-machine-js/machine` declares `@turing-machine-js/machine` as a **peer dependency**, so both use the same Turing machine implementation (one instance in the bundle). Install:
 
 ```bash
 npm install @turing-machine-js/machine @post-machine-js/machine

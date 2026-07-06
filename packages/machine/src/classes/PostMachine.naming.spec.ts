@@ -118,7 +118,7 @@ describe('PostMachine — group states and wrapper composite', () => {
   });
 });
 
-// Hopper-drop spec (#85): acyclic subroutines with a plain first instruction
+// Hopper-drop spec: acyclic subroutines with a plain first instruction
 // skip the hopper and wrap their first-instruction State directly.
 describe('PostMachine — subroutine body and hopper names', () => {
   test('subroutine inner states use fully-qualified names', () => {
@@ -156,8 +156,8 @@ describe('PostMachine — subroutine body and hopper names', () => {
       },
     });
     // outer's first instruction is `call('inner')` — that produces a wrapper,
-    // so the hopper-drop is blocked (engine #176 would unwrap the inner
-    // wrapping). outer keeps its hopper named "outer".
+    // so the hopper-drop is blocked (the engine's nested-wrapper collapse
+    // would unwrap the inner wrapping). outer keeps its hopper named "outer".
     expect(machine.initialState.name).toBe('outer(10~halt)');
 
     const names = collectNames(machine);

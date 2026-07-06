@@ -293,7 +293,7 @@ export function abortCommandStateProducer({
 }
 
 // WeakMap from `call('foo')`-produced state-producers to the subroutine name
-// they reference. Used by the call-graph analyzer (#85 cycle detection — see
+// they reference. Used by the call-graph analyzer (cycle detection — see
 // `callGraph.ts`) to read each producer's target without invoking it.
 const callTargets = new WeakMap<CommandFn, string>();
 
@@ -399,10 +399,10 @@ commandsSet.add(stopCommandStateProducer as CommandFn);
 commandsSet.add(abortCommandStateProducer as CommandFn);
 
 /**
- * Inline `$tag` decorator (#86). Wraps a command (bare constructor like
+ * Inline `$tag` decorator. Wraps a command (bare constructor like
  * `mark` or already-bound producer like `mark(20)` / `call('foo')`) with
  * one or more tags; tags are applied to the resulting State via the
- * engine's `state.tag(...)` API (engine #186). The wrapped command's
+ * engine's `state.tag(...)` API. The wrapped command's
  * runtime behavior is unchanged — `$tag` is a decorator, not a primitive.
  * The `$` prefix flags it as a decorator at the call site.
  *

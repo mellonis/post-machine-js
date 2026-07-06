@@ -243,8 +243,7 @@ export class PostDebugSession {
    * descended into a call/group) keep stepping — the engine call stack
    * guarantees a return to the click scope. Same-scope pauses surface
    * unless `instructionIndex` matches the anchor (group sub-step
-   * `10.2 → 10.3` is silent). Resolves
-   * [post-machine-js#101](https://github.com/mellonis/post-machine-js/issues/101).
+   * `10.2 → 10.3` is silent).
    */
   stepInstruction(): void {
     if (this.#lastPausedPath === null) {

@@ -4,7 +4,7 @@ import {
   $tag, check, mark, right, stop,
 } from '../index';
 
-// Path-based tag registry + auto-tag policy (post-machine-js #86).
+// Path-based tag registry + auto-tag policy.
 //
 // API:
 //   pm.tag(path, ...tags)       — add one or more tags to the state at path
@@ -13,7 +13,7 @@ import {
 //   pm.findByTag(tag)           — all paths whose state carries that tag
 //
 // All four forward to the engine's `state.tag(...) / .untag(...) / .tags`
-// API (engine #186). PostMachine does NOT maintain its own tag storage.
+// API. PostMachine does NOT maintain its own tag storage.
 //
 // Auto-tag policy (applied at construction):
 //   - The ENTRY POINT of the top-level program → tagged 'main'  (e.g. path '1')
@@ -23,7 +23,7 @@ import {
 // Other top-level instructions and subroutine body instructions stay clean,
 // keeping diagrams uncluttered while still anchoring the structural roles.
 
-describe('pm.tag / pm.untag / pm.tagsOf / pm.findByTag — registry API (#86)', () => {
+describe('pm.tag / pm.untag / pm.tagsOf / pm.findByTag — registry API', () => {
   test('pm.tag adds a tag to the state at path (string form)', () => {
     const pm = new PostMachine({ 10: mark, 20: stop });
     pm.tag('10', 'hot');
@@ -91,7 +91,7 @@ describe('pm.tag / pm.untag / pm.tagsOf / pm.findByTag — registry API (#86)', 
   });
 });
 
-describe('auto-tag policy at construction (#86)', () => {
+describe('auto-tag policy at construction', () => {
   test('the top-level entry point is tagged "main"', () => {
     const pm = new PostMachine({ 10: mark, 20: mark, 30: stop });
     expect(pm.tagsOf('10')).toContain('main');

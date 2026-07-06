@@ -1,4 +1,5 @@
-// Static call-graph analysis for PostMachine subroutines (#85).
+// Static call-graph analysis for PostMachine subroutines (the hopper-drop
+// optimization for acyclic subroutines).
 //
 // At construction time, PostMachine creates a "hopper" State per subroutine —
 // a stub State that wraps a `Reference` to the subroutine's first instruction.

@@ -3,7 +3,7 @@ import {describe, expect, test} from 'vitest';
 import {analyzeLocalCallGraph} from './callGraph';
 import {call, mark, stop} from './commands';
 
-// Direct unit tests for the call-graph analyzer (#85). The full PostMachine
+// Direct unit tests for the call-graph analyzer. The full PostMachine
 // integration tests (`machine.spec.ts`, `naming.spec.ts`, `examples.spec.ts`)
 // exercise the analyzer indirectly through `new PostMachine(...)`, but those
 // fixtures rarely hit the cyclic-SCC paths. These tests poke the algorithm
