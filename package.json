@@ -30,6 +30,6 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@turing-machine-js/machine": "^7.0.0"
+    "@turing-machine-js/machine": "^7.1.0"
   }
 }
