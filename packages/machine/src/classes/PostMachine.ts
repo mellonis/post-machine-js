@@ -284,7 +284,7 @@ export class PostMachine extends TuringMachine {
       ...subroutinesDataFromUpperScope,
       ...localSubroutinesData,
     };
-    // Cycle-aware hopper construction (#85).
+    // Cycle-aware hopper construction.
     //
     // Subroutines in cycles (mutual recursion / self-loop) get a hopper — a
     // stub `State` wrapping a `Reference` to the first instruction — to give
@@ -345,8 +345,8 @@ export class PostMachine extends TuringMachine {
       //      resolve a transition.
       //
       //   2. `firstInstructionState` is itself a wrapper (group `[…]` or
-      //      `call('bar')` as the subroutine's first instruction). Engine
-      //      #176 collapses nested `withOverriddenHaltState` chains — the
+      //      `call('bar')` as the subroutine's first instruction). The
+      //      engine collapses nested `withOverriddenHaltState` chains — the
       //      inner wrapping (group's own continuation, or the inner `call`'s
       //      continuation) gets unwrapped and lost when this wrapper is
       //      applied. Subsequent body instructions become unreachable.
@@ -530,7 +530,7 @@ export class PostMachine extends TuringMachine {
 
       this.#recordPath(state, path);
 
-      // Auto-tag policy (#86). Only the ENTRY POINT of each program /
+      // Auto-tag policy. Only the ENTRY POINT of each program /
       // subroutine gets an auto-tag — `1` for main, `alg::1` for subroutine
       // `alg` — to keep diagrams uncluttered while still anchoring the
       // structural roles. Group inner states and halt-resolving paths are
@@ -734,7 +734,7 @@ export class PostMachine extends TuringMachine {
   #refreshHaltDebug(): void {
     // The per-BP `filter` is decorative for halt entries — it drives
     // arrival-path filtering in the onPause wrapper, not the engine-level
-    // write. haltState.debug is a boolean (turing-machine-js#207).
+    // write. haltState.debug is a boolean under the engine's v7 contract.
     const hasHaltBP = this.#breakpoints.some((bp) => bp.kind === 'halt');
     haltState.debug = hasHaltBP;
   }

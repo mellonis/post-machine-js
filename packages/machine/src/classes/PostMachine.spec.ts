@@ -4,8 +4,8 @@ import {
 import { subroutineNameValidator } from '../validators';
 import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
 
-// matchedTransition.id embeds process-global stateIds (turing-machine-js#205)
-// — strip it for cross-machine call-record equality.
+// matchedTransition.id embeds process-global stateIds — strip it for
+// cross-machine call-record equality.
 function stripMatchedTransition(calls: unknown[][]): unknown[][] {
   return calls.map((args) => args.map((arg) => {
     if (arg && typeof arg === 'object' && 'matchedTransition' in arg) {

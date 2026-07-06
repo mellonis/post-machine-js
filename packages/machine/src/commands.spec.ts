@@ -3,16 +3,16 @@ import {describe, expect, test} from 'vitest';
 import {PostMachine, $tag, abort, mark, noop, right, stop} from './index';
 import {State, toMermaid} from '@turing-machine-js/machine';
 
-// Tests for the `$tag('label', command)` inline decorator (#86).
+// Tests for the `$tag('label', command)` inline decorator.
 //
 // The `$tag` decorator wraps a command producer (or bare constructor) with
 // one or more tags. Tags get applied to the resulting State via the engine's
-// `state.tag(...)` API (engine #186). Composes with indexed commands
+// `state.tag(...)` API. Composes with indexed commands
 // (`$tag('hot', check(20, 30))`), rejects groups (`$tag('foo', [mark, right])`
 // throws — tag the inner commands individually instead). The `$` prefix
 // flags it as a decorator (not a primitive command) at the call site.
 
-describe('$tag — inline tag decorator (#86)', () => {
+describe('$tag — inline tag decorator', () => {
   test('tags a bare command (constructor form)', () => {
     const machine = new PostMachine({
       10: $tag('hot', mark),
@@ -121,7 +121,7 @@ describe('$tag — inline tag decorator (#86)', () => {
     })).toThrow(/\$tag/);
   });
 
-  test('tags appear in toMermaid output (engine #186 emit)', () => {
+  test('tags appear in toMermaid output (engine tag emit)', () => {
     const machine = new PostMachine({
       10: $tag('hot', mark),
       20: stop,
@@ -129,7 +129,7 @@ describe('$tag — inline tag decorator (#86)', () => {
 
     const mermaid = toMermaid(State.toGraph(machine.initialState, machine.tapeBlock));
 
-    // Engine #186 emits tags inline in node labels via `<br>` and as
+    // The engine emits tags inline in node labels via `<br>` and as
     // classDef/class lines for color grouping. Both should appear.
     expect(mermaid).toContain('<br>');
     expect(mermaid).toContain('hot');

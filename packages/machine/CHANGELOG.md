@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [7.1.0] - 2026-07-06
 
-The `abort` command ([#112](https://github.com/mellonis/post-machine-js/issues/112)) — machine-wide abnormal termination adopting the engine's `abortState` sentinel (turing-machine-js 7.1.0) — plus the run/session surface around it.
+The `abort` command — machine-wide abnormal termination adopting the engine's `abortState` sentinel (turing-machine-js 7.1.0) — plus the run/session surface around it.
 
 ### Added
 
@@ -34,24 +34,24 @@ Stable v7. Adopts engine v7's composition-representation overhaul and reshaped d
 
 ### Added
 
-- **Instruction-derived state names** (alpha.2-onwards, baseline from [#67](https://github.com/mellonis/post-machine-js/issues/67) in v6.1.0). Top-level instructions are labeled `"10"`, subroutine body instructions `"foo::1"`, group inners `"50.2"`, continuation states `"foo>10~30"`. Replaces the `id:N` global-counter placeholders.
-- **`MachineState.arrivalPath` + `MachineState.candidatePaths`** ([#70](https://github.com/mellonis/post-machine-js/issues/70)) — runtime instruction-level context on every yield. `arrivalPath` reports the specific instruction the engine just transitioned through; `candidatePaths` exposes the full set of paths sharing the current State.
-- **Path-based State resolver** ([#63](https://github.com/mellonis/post-machine-js/issues/63)) — `pm.stateAt(path)`, `pm.hasState(path)`, `pm.candidatesFor(path)`. Accepts string (`'foo::10.2'`) and object forms.
-- **Per-instruction breakpoint registry** ([#59](https://github.com/mellonis/post-machine-js/issues/59)) — `pm.setBreakpoint(target, filter)`, `pm.clearBreakpoint(target)`, `pm.clearBreakpoints()`, `pm.listBreakpoints()`.
-- **Path-based `pm.tag(...)` registry + inline `$tag(...)` decorator + auto-tag policy** ([#86](https://github.com/mellonis/post-machine-js/issues/86)) on top of engine [#186](https://github.com/mellonis/turing-machine-js/issues/186)'s state-tags surface. `pm.tag(path, ...tags)` / `pm.untag(path, ...tags)` / `pm.tagsOf(path)` / `pm.findByTag(tag)`. `$tag('hot', 'sampled', mark)` inline decorator. Auto-tags entry of each program (`'main'`) and subroutine (the subroutine name).
-- **`pm.debugRun({ stepsLimit? })` → `PostDebugSession`** (engine [#102](https://github.com/mellonis/turing-machine-js/issues/102) adoption) — the interactive debugger surface. Wraps the engine's `DebugSession`, re-adds the post-level `MachineState` fields, and applies the per-instruction breakpoint registry as a pause filter. Emits `pause` / `step` / `iter` / `halt` events; drive with `continue()` / `stepIn()` / `stepOver()` / `stepOut()` / `pause()` / `stop()` / `setRunInterval(ms)`.
+- **Instruction-derived state names** (alpha.2-onwards, baseline from v6.1.0). Top-level instructions are labeled `"10"`, subroutine body instructions `"foo::1"`, group inners `"50.2"`, continuation states `"foo>10~30"`. Replaces the `id:N` global-counter placeholders.
+- **`MachineState.arrivalPath` + `MachineState.candidatePaths`** — runtime instruction-level context on every yield. `arrivalPath` reports the specific instruction the engine just transitioned through; `candidatePaths` exposes the full set of paths sharing the current State.
+- **Path-based State resolver** — `pm.stateAt(path)`, `pm.hasState(path)`, `pm.candidatesFor(path)`. Accepts string (`'foo::10.2'`) and object forms.
+- **Per-instruction breakpoint registry** — `pm.setBreakpoint(target, filter)`, `pm.clearBreakpoint(target)`, `pm.clearBreakpoints()`, `pm.listBreakpoints()`.
+- **Path-based `pm.tag(...)` registry + inline `$tag(...)` decorator + auto-tag policy** on top of the engine's state-tags surface. `pm.tag(path, ...tags)` / `pm.untag(path, ...tags)` / `pm.tagsOf(path)` / `pm.findByTag(tag)`. `$tag('hot', 'sampled', mark)` inline decorator. Auto-tags entry of each program (`'main'`) and subroutine (the subroutine name).
+- **`pm.debugRun({ stepsLimit? })` → `PostDebugSession`** (adopting the engine's `DebugSession`) — the interactive debugger surface. Wraps the engine's `DebugSession`, re-adds the post-level `MachineState` fields, and applies the per-instruction breakpoint registry as a pause filter. Emits `pause` / `step` / `iter` / `halt` events; drive with `continue()` / `stepIn()` / `stepOver()` / `stepOut()` / `pause()` / `stop()` / `setRunInterval(ms)`.
 - **`PostPausedMachineState`** — `MachineState & { pause: PauseInfo }`, the `pause`-event payload. `PauseInfo = { side: 'before' | 'after', cause: 'breakpoint' | 'step' | 'manual' }`.
-- **`PostDebugSession.stepInstruction()`** ([#101](https://github.com/mellonis/post-machine-js/issues/101)) — the Post-level program-counter step. Advances to the next numbered instruction in the *current* scope; sub-step transitions inside groups (`50.1 → 50.2`) and descents into called scopes (`call('foo') → foo::1`) stay silent.
+- **`PostDebugSession.stepInstruction()`** — the Post-level program-counter step. Advances to the next numbered instruction in the *current* scope; sub-step transitions inside groups (`50.1 → 50.2`) and descents into called scopes (`call('foo') → foo::1`) stay silent.
 
 ### Changed
 
-- **`withOverrodeHaltState` → `withOverriddenHaltState`** (engine [#149](https://github.com/mellonis/turing-machine-js/issues/149), post [#82](https://github.com/mellonis/post-machine-js/issues/82)). Consumer-side rename; hard cutover, no deprecated alias.
-- **Wrapper composite shape `A>B` → `A(B)`** (engine [#148](https://github.com/mellonis/turing-machine-js/issues/148), post [#83](https://github.com/mellonis/post-machine-js/issues/83)). `parsePath` now rejects `(`/`)` in user-provided state names. Post's `Path` separators (`::`, `.`, `~`) survive unchanged.
-- **Subroutine "hopper" State dropped for acyclic subroutines with plain leading instructions** ([#85](https://github.com/mellonis/post-machine-js/issues/85)). Common case wraps `foo::1` directly, saving one State per call site. Composite wrapper name shifts `foo(continuation)` → `foo::1(continuation)`. Hopper retained for cyclic subs (Tarjan SCC), degenerate `{ 1: stop }` bodies, and leading-group / leading-call cases.
-- **`toMermaid` callable-subtree emit** (engine [#174](https://github.com/mellonis/turing-machine-js/issues/174)). The wrapper composite is a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the bare + body live INSIDE `subgraph w_N["callable subtree of NAME"]`. Bold `==> "call"` / dotted `-. "return" .->` arrows; retired `-. onHalt .->`.
+- **`withOverrodeHaltState` → `withOverriddenHaltState`** (engine v7 rename adoption). Consumer-side rename; hard cutover, no deprecated alias.
+- **Wrapper composite shape `A>B` → `A(B)`** (engine v7 naming adoption). `parsePath` now rejects `(`/`)` in user-provided state names. Post's `Path` separators (`::`, `.`, `~`) survive unchanged.
+- **Subroutine "hopper" State dropped for acyclic subroutines with plain leading instructions**. Common case wraps `foo::1` directly, saving one State per call site. Composite wrapper name shifts `foo(continuation)` → `foo::1(continuation)`. Hopper retained for cyclic subs (Tarjan SCC), degenerate `{ 1: stop }` bodies, and leading-group / leading-call cases.
+- **`toMermaid` callable-subtree emit** (engine v7 emit adoption). The wrapper composite is a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the bare + body live INSIDE `subgraph w_N["callable subtree of NAME"]`. Bold `==> "call"` / dotted `-. "return" .->` arrows; retired `-. onHalt .->`.
 - **`PostMachine.run()` is synchronous and callback-free** — `run({ stepsLimit? }): void` (was `async … : Promise<void>` accepting `onStep` / `onPause`). Mirrors the engine's `run()` change.
 - **`runStepByStep()` is the pure-iteration observation path** — unchanged in shape (`Generator<MachineState>`), but it's now where you read `arrivalPath` / `candidatePaths` per step.
-- **Module-load `haltState` lockdown dropped** ([PR #94](https://github.com/mellonis/post-machine-js/pull/94)) now that engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) collapsed `haltState.debug` to a boolean. Direct `haltState.debug = boolean` writes go straight to the engine setter; `pm.setBreakpoint(haltState, …)` still works for registry-aware halt pauses.
+- **Module-load `haltState` lockdown dropped** now that the engine collapsed `haltState.debug` to a boolean. Direct `haltState.debug = boolean` writes go straight to the engine setter; `pm.setBreakpoint(haltState, …)` still works for registry-aware halt pauses.
 - **Engine peer dependency widened** `^6.4.0` → `^7.0.0`. v4 / v5 / v6 engine majors are no longer supported.
 
 ### Removed
@@ -87,17 +87,17 @@ npm install @turing-machine-js/machine@^7.0.0 @post-machine-js/machine@^7.0.0
 
 ### Out of v7.0.0 (deferred to v7.1)
 
-- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states (continuations, hoppers, group wrappers).
+- Extending the `defineProperty` lockdown to intermediate engine-graph states (continuations, hoppers, group wrappers).
 
 ## [7.0.0-alpha.7] - 2026-06-02
 
-Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that advances to the next numbered instruction in the current scope. Resolves [#101](https://github.com/mellonis/post-machine-js/issues/101). Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.8`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that advances to the next numbered instruction in the current scope. Peer dep `@turing-machine-js/machine` widened `^7.0.0-alpha.6` → `^7.0.0-alpha.8`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 **Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.7`.
 
 ### Added
 
-- **`PostDebugSession.stepInstruction()`** ([#101](https://github.com/mellonis/post-machine-js/issues/101)) — advance to the next numbered Post instruction in the current scope. Skips sub-step transitions inside groups (`50.1` → `50.2`) and descents into called scopes (`call('foo')` → `foo::1`) because those aren't numbered instructions in the *current* scope. Two rules cover the full semantics: (1) advance until the click-time `(scope, instructionIndex)` pair changes — sub-step transitions and sub-scope descents stay silent; (2) if there's no next numbered instruction in the current scope (you hit `stop` or fall through the end), the natural engine continuation fires — return to caller's continuation if inside a call/group, halt if at top level. Position-independent: same behavior whether paused at an atomic instruction, a `call(...)` entry, a group entry, mid-group, or inside a called scope. Mirrors `stepIn`/`stepOver`/`stepOut` naming axis. If a registered breakpoint or external `pause()` fires mid-advance, it surfaces normally and consumes the stepInstruction intent. Internally drives the engine via repeated `stepIn`; filters the resulting step-cause pauses via path comparison against the click-time anchor. Throws if called without a paused state.
+- **`PostDebugSession.stepInstruction()`** — advance to the next numbered Post instruction in the current scope. Skips sub-step transitions inside groups (`50.1` → `50.2`) and descents into called scopes (`call('foo')` → `foo::1`) because those aren't numbered instructions in the *current* scope. Two rules cover the full semantics: (1) advance until the click-time `(scope, instructionIndex)` pair changes — sub-step transitions and sub-scope descents stay silent; (2) if there's no next numbered instruction in the current scope (you hit `stop` or fall through the end), the natural engine continuation fires — return to caller's continuation if inside a call/group, halt if at top level. Position-independent: same behavior whether paused at an atomic instruction, a `call(...)` entry, a group entry, mid-group, or inside a called scope. Mirrors `stepIn`/`stepOver`/`stepOut` naming axis. If a registered breakpoint or external `pause()` fires mid-advance, it surfaces normally and consumes the stepInstruction intent. Internally drives the engine via repeated `stepIn`; filters the resulting step-cause pauses via path comparison against the click-time anchor. Throws if called without a paused state.
 
 ### Compatibility
 
@@ -106,7 +106,7 @@ Adds **`PostDebugSession.stepInstruction()`** — a Post-level step control that
 
 ## [7.0.0-alpha.6] - 2026-05-29
 
-Adopts engine **v7.0.0-alpha.6** ([turing-machine-js#102](https://github.com/mellonis/turing-machine-js/issues/102)) — the debug-surface reshape. `PostMachine.run()` becomes synchronous and callback-free, a new `PostMachine.debugRun()` returns an interactive `PostDebugSession`, and the per-yield `m.debugBreak` is replaced by the engine's one-sided `m.pause: { side, cause }`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Adopts engine **v7.0.0-alpha.6** — the debug-surface reshape. `PostMachine.run()` becomes synchronous and callback-free, a new `PostMachine.debugRun()` returns an interactive `PostDebugSession`, and the per-yield `m.debugBreak` is replaced by the engine's one-sided `m.pause: { side, cause }`. Published under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 > **Post alpha numbering is independent from the engine.** This `alpha.6` happens to match the engine `alpha.6` it adopts, but the two cycles are not lockstep — this is the second number coincidence after `alpha.5` (2026-05-25). Don't infer a lockstep relationship from the matching numbers.
 
@@ -151,19 +151,19 @@ Adopts engine **v7.0.0-alpha.6** ([turing-machine-js#102](https://github.com/mel
 
 ## [7.0.0-alpha.5] - 2026-05-25
 
-Fifth v7 pre-release. Drops the module-load haltState lockdown in lockstep with engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) — the lockdown was funneling per-side `DebugConfig` writes through `withLockdownEscape`, but with engine alpha.5 collapsing `haltState.debug` to a `boolean`, there's nothing to mediate. Engine peer-dep widened `^7.0.0-alpha.4` → `^7.0.0-alpha.5`; consumers inherit per-iter `MachineState.matchedTransition` ([engine #205](https://github.com/mellonis/turing-machine-js/issues/205)) and the `GraphTransition.id` separator change (`-` → `.`, same issue) transparently. Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Fifth v7 pre-release. Drops the module-load haltState lockdown — the lockdown was funneling per-side `DebugConfig` writes through `withLockdownEscape`, but with engine alpha.5 collapsing `haltState.debug` to a `boolean`, there's nothing to mediate. Engine peer-dep widened `^7.0.0-alpha.4` → `^7.0.0-alpha.5`; consumers inherit per-iter `MachineState.matchedTransition` (engine alpha.5) and the `GraphTransition.id` separator change (`-` → `.`, same engine release) transparently. Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 **Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.5`.
 
 ### Removed
 
-- **Module-load `installHaltLockdown(haltState)` from `src/index.ts`** ([PR #94](https://github.com/mellonis/post-machine-js/pull/94)). Direct `haltState.debug = boolean` writes from user code now go straight to the engine setter (which under engine #207 accepts boolean and throws on object shapes). The "per-PostMachine routing" benefit was syntactic only — `haltState` is a process-global singleton, so `pm.setBreakpoint(haltState, …)` wrote the same global flag regardless of instance. The module-load side-effect also leaked into turing-only consumers that imported `@post-machine-js/machine` for shared APIs but never constructed a PostMachine — they were blocked from writing `haltState.debug` for no benefit.
+- **Module-load `installHaltLockdown(haltState)` from `src/index.ts`**. Direct `haltState.debug = boolean` writes from user code now go straight to the engine setter (which under engine alpha.5 accepts boolean and throws on object shapes). The "per-PostMachine routing" benefit was syntactic only — `haltState` is a process-global singleton, so `pm.setBreakpoint(haltState, …)` wrote the same global flag regardless of instance. The module-load side-effect also leaked into turing-only consumers that imported `@post-machine-js/machine` for shared APIs but never constructed a PostMachine — they were blocked from writing `haltState.debug` for no benefit.
 
 - **`installHaltLockdown` + `HALT_LOCKDOWN_ERROR` exports from `src/lockdown.ts`**. State-side `installStateLockdown` + `withLockdownEscape` are unaffected — those guard a real per-PostMachine registry (`#stateToCandidatePaths` + `#breakpoints`) where direct writes would bypass arrival-path filtering.
 
 ### Changed
 
-- **`PostMachine.#refreshHaltDebug` writes the boolean directly** ([PR #94](https://github.com/mellonis/post-machine-js/pull/94)). No `withLockdownEscape` needed — the engine setter accepts the write. The per-BP `filter` shape kept in `#breakpoints` is now decorative for halt entries (it still drives arrival-path filtering in the `onPause` wrapper but doesn't shape the engine-level write).
+- **`PostMachine.#refreshHaltDebug` writes the boolean directly**. No `withLockdownEscape` needed — the engine setter accepts the write. The per-BP `filter` shape kept in `#breakpoints` is now decorative for halt entries (it still drives arrival-path filtering in the `onPause` wrapper but doesn't shape the engine-level write).
 
 - **`pm.setBreakpoint(haltState, filter)` filter shape is decorative**. Any registered halt-BP collapses to `haltState.debug = true`; absence collapses to `false`. The `filter` is kept for API stability and continues to drive the registry's arrival-path filtering, but no longer maps to a per-side write.
 
@@ -173,7 +173,7 @@ Fifth v7 pre-release. Drops the module-load haltState lockdown in lockstep with 
 
 - **`CLAUDE.md`** — Subtlety 6 + debugger-primitives section updated to reflect "haltState is NO LONGER locked", split halt vs non-halt lockdown coverage.
 
-- **Source-comment audit** ([PR #95](https://github.com/mellonis/post-machine-js/pull/95)). 11 files, -43 lines net. Removed "was X / pre-vN / v6.x hopper / Under #N" historical narratives that belonged in commits/PRs/CHANGELOG. Fixed two stale references: `callGraph.ts` mentioned a non-existent `extractCallTargets` function, and `PostMachine.debugger.spec.ts` called `onPause` "experimental" though it's been stable since v6.1.0.
+- **Source-comment audit**. 11 files, -43 lines net. Removed "was X / pre-vN / v6.x hopper / Under #N" historical narratives that belonged in commits/PRs/CHANGELOG. Fixed two stale references: `callGraph.ts` mentioned a non-existent `extractCallTargets` function, and `PostMachine.debugger.spec.ts` called `onPause` "experimental" though it's been stable since v6.1.0.
 
 ### Compatibility
 
@@ -181,23 +181,23 @@ Fifth v7 pre-release. Drops the module-load haltState lockdown in lockstep with 
 
 - **Breaking for consumers that relied on the lockdown throw.** Pre-alpha.5 post code that did `haltState.debug = { before: true }` from user code received a post-side "Direct haltState.debug assignment is disabled" error. That throw is gone; the same write now reaches the engine and throws the engine's "haltState.debug only accepts boolean" error instead. Whole-object boolean writes (`haltState.debug = true`) that previously threw the lockdown error now succeed.
 
-- **Behavior changes inherited from engine alpha.5**: halt-imminent pause moved from BEFORE side to AFTER side of the halt-triggering iter (engine #207); `MachineState.matchedTransition` added on every yield (engine #205); `GraphTransition.id` separator changed from `-` to `.` (engine #205).
+- **Behavior changes inherited from engine alpha.5**: halt-imminent pause moved from BEFORE side to AFTER side of the halt-triggering iter; `MachineState.matchedTransition` added on every yield; `GraphTransition.id` separator changed from `-` to `.`.
 
 ### Out of v7-alpha.5 (still pending for stable v7.0.0)
 
-- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states.
+- Extending the `defineProperty` lockdown to intermediate engine-graph states.
 
 ## [7.0.0-alpha.4] - 2026-05-23
 
-Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.com/mellonis/post-machine-js/issues/86)) — both an inline decorator at construction and a path-based registry post-construction — plus an auto-tag policy that marks each program's/subroutine's entry state. Engine peer-dep widened `^7.0.0-alpha.2` → `^7.0.0-alpha.4` — alpha.3 added the `state.tag(...)` API this release builds on, and alpha.4 ships two upstream bug fixes that post inherits transparently (`toMermaid` HTML-entity-escapes user content in labels — fixes alphabet-with-`"` parse errors, [engine #194](https://github.com/mellonis/turing-machine-js/issues/194); `runStepByStep` halt stack scoped to the call, fixes a memory leak / ghost-iteration when the same machine is reused across calls, [engine #196](https://github.com/mellonis/turing-machine-js/issues/196)). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Fourth v7 pre-release. Adds user-supplied tags on states — both an inline decorator at construction and a path-based registry post-construction — plus an auto-tag policy that marks each program's/subroutine's entry state. Engine peer-dep widened `^7.0.0-alpha.2` → `^7.0.0-alpha.4` — alpha.3 added the `state.tag(...)` API this release builds on, and alpha.4 ships two upstream bug fixes that post inherits transparently (`toMermaid` HTML-entity-escapes user content in labels — fixes alphabet-with-`"` parse errors; `runStepByStep` halt stack scoped to the call, fixes a memory leak / ghost-iteration when the same machine is reused across calls). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 **Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.4`.
 
 ### Added
 
-- **`$tag(...tags, command)` inline decorator** ([#86](https://github.com/mellonis/post-machine-js/issues/86)). Wraps a command with one or more tags; tags apply to the resulting State via the engine's `state.tag(...)` API. The leading `$` flags it visually as a decorator (not a primitive command). Variadic — `$tag('hot', 'sampled', mark)` adds both tags. Rejects groups — `$tag('foo', [mark, right])` throws ("tag each member individually"). Rejects bare `$tag` (uninvoked) as an instruction with a message pointing at the correct form. Composes with indexed commands: `$tag('loop-head', check(20, 40))`, `$tag('subroutine-entry', call('foo'))`.
+- **`$tag(...tags, command)` inline decorator**. Wraps a command with one or more tags; tags apply to the resulting State via the engine's `state.tag(...)` API. The leading `$` flags it visually as a decorator (not a primitive command). Variadic — `$tag('hot', 'sampled', mark)` adds both tags. Rejects groups — `$tag('foo', [mark, right])` throws ("tag each member individually"). Rejects bare `$tag` (uninvoked) as an instruction with a message pointing at the correct form. Composes with indexed commands: `$tag('loop-head', check(20, 40))`, `$tag('subroutine-entry', call('foo'))`.
 
-- **Path-based tag registry on `PostMachine`** ([#86](https://github.com/mellonis/post-machine-js/issues/86)):
+- **Path-based tag registry on `PostMachine`**:
   - `pm.tag(path, ...tags)` — add tags to the state at path
   - `pm.untag(path, ...tags)` — remove tags (no-op if absent)
   - `pm.tagsOf(path)` — frozen snapshot of the state's tags
@@ -205,7 +205,7 @@ Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.c
 
   All four resolve `path` the same way as `pm.stateAt` (string `'10'` / `'sub::1'` or object `{ instructionIndex: 10 }`). Throws on an unknown path. PostMachine does not maintain its own tag storage — all four forward to the engine's `state.tag(...)` / `.untag(...)` / `.tags` API.
 
-- **Auto-tag policy at construction** ([#86](https://github.com/mellonis/post-machine-js/issues/86)). PostMachine auto-tags the **entry point** of each program/subroutine:
+- **Auto-tag policy at construction**. PostMachine auto-tags the **entry point** of each program/subroutine:
   - Top-level entry (first numbered instruction) → tag `'main'`
   - Subroutine entry (first instruction of each subroutine body) → tag matching the subroutine name (`'sub'`, `'rightToBlank'`, …)
 
@@ -224,22 +224,22 @@ Fourth v7 pre-release. Adds user-supplied tags on states ([#86](https://github.c
 
 ### Out of v7-alpha.4 (still pending for stable v7.0.0)
 
-- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states.
+- Extending the `defineProperty` lockdown to intermediate engine-graph states.
 
 ## [7.0.0-alpha.3] - 2026-05-21
 
-Third v7 pre-release. Drops the v6.x subroutine "hopper" State for the common case where it's not needed for forward-declaration ([#85](https://github.com/mellonis/post-machine-js/issues/85)). Engine peer-dep unchanged (`^7.0.0-alpha.2`). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
+Third v7 pre-release. Drops the v6.x subroutine "hopper" State for the common case where it's not needed for forward-declaration. Engine peer-dep unchanged (`^7.0.0-alpha.2`). Published to npm under the `next` dist-tag: `npm install @post-machine-js/machine@next`.
 
 **Pre-release — the API surface may still shift before stable v7.0.0.** Pin to a specific alpha for reproducibility: `@post-machine-js/machine@7.0.0-alpha.3`.
 
 ### Changed
 
-- **Subroutine hopper dropped for acyclic subroutines with plain first instruction** ([#85](https://github.com/mellonis/post-machine-js/issues/85)). PostMachine used to create a "hopper" State per subroutine — a stub State that wrapped a `Reference` to the subroutine's first instruction, providing a forward-declaration anchor for `withOverriddenHaltState`. For the common case, the hopper is now dropped: `call('foo')` wraps `foo::1` directly, saving one State per call site.
+- **Subroutine hopper dropped for acyclic subroutines with plain first instruction**. PostMachine used to create a "hopper" State per subroutine — a stub State that wrapped a `Reference` to the subroutine's first instruction, providing a forward-declaration anchor for `withOverriddenHaltState`. For the common case, the hopper is now dropped: `call('foo')` wraps `foo::1` directly, saving one State per call site.
 
   The hopper is **retained** in three cases where dropping it would break the runtime:
   - **Cyclic subroutines** (self-recursion or mutual recursion). Static call-graph analysis (Tarjan's SCC) identifies subroutines participating in cycles; the hopper provides the forward-declaration needed for `call('foo')` to wrap something at the moment of construction. Mutual recursion `foo → bar → foo` continues to work.
   - **Degenerate body `{ 1: stop }`**. The first-instruction "State" would be `haltState` itself; wrapping `haltState` produces an empty `symbolToDataMap` and the engine throws at runtime. Hopper provides a meaningful intermediate.
-  - **Leading group `[…]` or leading `call(...)`**. The first-instruction State is itself a wrapper; engine's nested-wohs collapse (#176) would unwrap the inner wrapping when the outer wrapper applies, losing the group's or inner call's continuation. Hopper preserves the chain.
+  - **Leading group `[…]` or leading `call(...)`**. The first-instruction State is itself a wrapper; the engine's nested-wohs collapse would unwrap the inner wrapping when the outer wrapper applies, losing the group's or inner call's continuation. Hopper preserves the chain.
 
   Subroutines satisfying NONE of these — by far the common case — drop the hopper.
 
@@ -247,23 +247,23 @@ Third v7 pre-release. Drops the v6.x subroutine "hopper" State for the common ca
   - **Composite wrapper name**: `foo(continuation)` → `foo::1(continuation)` for hopper-dropped subs. Accurately reflects the bare's identity.
   - **`summarizePostMachine().stateCount`**: −1 per hopper-dropped subroutine. The "Structural summary" README example shifts from `7 1 1` (alpha.2) to `6 1 1`.
   - **`toMermaid` subgraph label**: `"callable subtree of foo"` → `"callable subtree of foo::1"` for hopper-dropped subs.
-  - **`onStep` callbacks per subroutine entry**: −1 iteration (the hopper used to fire its own `[*] → body₁` transition as a separate step; under #85, the wrapper-of-body₁ executes body₁'s transitions directly).
+  - **`onStep` callbacks per subroutine entry**: −1 iteration (the hopper used to fire its own `[*] → body₁` transition as a separate step; with the hopper dropped, the wrapper-of-body₁ executes body₁'s transitions directly).
 
 ### Migration from alpha.2
 
-**1. Wrapper composite name parser** — code that does `state.name.match(/^(\w+)\(/)` to extract the bare's name now sees `foo::1` for hopper-dropped subs (and still `foo` for hopper-retained ones). Use `state.bareStateId` (engine #174's GraphNode field) to identify the bare without parsing the name.
+**1. Wrapper composite name parser** — code that does `state.name.match(/^(\w+)\(/)` to extract the bare's name now sees `foo::1` for hopper-dropped subs (and still `foo` for hopper-retained ones). Use `state.bareStateId` (the engine v7 GraphNode field) to identify the bare without parsing the name.
 
 **2. Test fixtures asserting `pm.initialState.name === 'foo(...)'`** — update to `'foo::1(...)'` for the hopper-dropped case. Or use a non-trivial body (multiple instructions) and assert on body-state names directly.
 
 **3. Test fixtures asserting exact `stateCount` or onStep call counts** — recompute under the new hopper-drop rules.
 
-**4. `pm.stateAt({ scope: ['foo'] })` or similar path lookups by subroutine name only** — under #85 there's no longer a graph node for the bare name in the hopper-dropped case. Lookups still resolve via the registry; behavior unchanged from a runtime perspective.
+**4. `pm.stateAt({ scope: ['foo'] })` or similar path lookups by subroutine name only** — there's no longer a graph node for the bare name in the hopper-dropped case. Lookups still resolve via the registry; behavior unchanged from a runtime perspective.
 
 ### Out of v7-alpha.3 (still pending for stable v7.0.0)
 
-- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states.
-- **[#86](https://github.com/mellonis/post-machine-js/issues/86)** — user-supplied tags/labels on states (Mermaid + debugger surfaces).
-- **[#87](https://github.com/mellonis/post-machine-js/issues/87)** — README diagrams for `noop` and trailing-stop behaviors.
+- Extending the `defineProperty` lockdown to intermediate engine-graph states.
+- User-supplied tags/labels on states (Mermaid + debugger surfaces).
+- README diagrams for `noop` and trailing-stop behaviors.
 
 ### Compatibility
 
@@ -277,11 +277,11 @@ First post-machine-js v7 pre-release — adopts engine `@turing-machine-js/machi
 
 ### Changed
 
-- **Engine `withOverrodeHaltState` → `withOverriddenHaltState` adoption** ([#82](https://github.com/mellonis/post-machine-js/issues/82) — engine [#149](https://github.com/mellonis/turing-machine-js/issues/149)). Consumer-side references in `src/commands.ts`, `src/classes/PostMachine.ts`, README narrative, and root CLAUDE.md all switched to the renamed identifier. Hard cutover — no deprecated alias.
+- **Engine `withOverrodeHaltState` → `withOverriddenHaltState` adoption**. Consumer-side references in `src/commands.ts`, `src/classes/PostMachine.ts`, README narrative, and root CLAUDE.md all switched to the renamed identifier. Hard cutover — no deprecated alias.
 
-- **Wrapper composite name format `>` → `(…)` adoption** ([#83](https://github.com/mellonis/post-machine-js/issues/83) — engine [#148](https://github.com/mellonis/turing-machine-js/issues/148)). Engine v7 changed wrapper composite shape from `A>B` to `A(B)`. PostMachine's `Path` separators (`::`, `.`, `~`) survive unchanged. `parsePath` now rejects `(`/`)` in user-provided state names (previously rejected `>`). Test assertions on `initialState.name` and graph node-name checks updated; README naming-convention table + "Reading a wrapper composite" section + "Reading the engine output" guide rewritten.
+- **Wrapper composite name format `>` → `(…)` adoption**. Engine v7 changed wrapper composite shape from `A>B` to `A(B)`. PostMachine's `Path` separators (`::`, `.`, `~`) survive unchanged. `parsePath` now rejects `(`/`)` in user-provided state names (previously rejected `>`). Test assertions on `initialState.name` and graph node-name checks updated; README naming-convention table + "Reading a wrapper composite" section + "Reading the engine output" guide rewritten.
 
-- **`toMermaid` callable-subtree emit adoption** (engine [#174](https://github.com/mellonis/turing-machine-js/issues/174); no separate post-side issue — engine alpha.2 forced this). The wrapper composite is now a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the callable subtree (`subgraph w_N["callable subtree of NAME"]`) contains the bare hopper + body states + a frame-local halt marker. Bold `==> "call"` arrow from wrapper to bare; dotted `-. "return" .->` from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->` keyword no longer appears — wrapper-to-override is just a solid `-->` arrow. README's engine-emit Mermaid block regenerated. Test expectations updated.
+- **`toMermaid` callable-subtree emit adoption** (engine alpha.2 forced this). The wrapper composite is now a `[[bare(continuation)]]` call site OUTSIDE the subgraph; the callable subtree (`subgraph w_N["callable subtree of NAME"]`) contains the bare hopper + body states + a frame-local halt marker. Bold `==> "call"` arrow from wrapper to bare; dotted `-. "return" .->` from subgraph back to wrapper. The retired alpha.1 `-. onHalt .->` keyword no longer appears — wrapper-to-override is just a solid `-->` arrow. README's engine-emit Mermaid block regenerated. Test expectations updated.
 
   As a knock-on effect of separating wrapper/bare nodes, `summarizePostMachine` reports +1 `stateCount` per subroutine call site vs alpha.1. The example in the "Structural summary" section reports `7 1 1` (was `6 1 1` under alpha.1's collapsed-bare emit).
 
@@ -291,7 +291,7 @@ First post-machine-js v7 pre-release — adopts engine `@turing-machine-js/machi
 
 ### Out of v7-alpha.2 (still pending for stable v7.0.0)
 
-- **[#72](https://github.com/mellonis/post-machine-js/issues/72)** — extend `defineProperty` lockdown to intermediate engine-graph states (continuations, hoppers, group wrappers). Construction-time tightening; doesn't affect runtime semantics for existing programs.
+- Extending the `defineProperty` lockdown to intermediate engine-graph states (continuations, hoppers, group wrappers). Construction-time tightening; doesn't affect runtime semantics for existing programs.
 
 ### Migration
 
@@ -309,11 +309,11 @@ For consumers updating from v6.x:
 
 ## [6.4.0] - 2026-05-19
 
-Adopts the engine's new [`onIter`](https://github.com/mellonis/turing-machine-js/pull/164) hook to fix a pre-existing `arrivalPath` ordering bug. **Version skips 6.2.0 and 6.3.0** — both were prepared but neither was published (see history note below).
+Adopts the engine's new `onIter` hook to fix a pre-existing `arrivalPath` ordering bug. **Version skips 6.2.0 and 6.3.0** — both were prepared but neither was published (see history note below).
 
 ### Fixed
 
-- **`arrivalPath` ordering bug in `onPause(after, K)`** ([turing-machine-js#163](https://github.com/mellonis/turing-machine-js/issues/163) on the engine side; regression test in [`test/breakpoints.spec.ts`](packages/machine/test/breakpoints.spec.ts)). Since v6.1.0, the internal `onStep` wrapper advanced `prev` mid-iter, which raced engine v6.0.0+'s per-iter `before → step → after` dispatch order. By the time `onPause(after, K)` fired on the same yield, `prev` had already advanced to iter K's own state — so `m.arrivalPath` resolved to iter K+1's instruction instead of K's. Worse: the registry-aware `#shouldFireOnPause` filter then saw the wrong path and **silently dropped** user-registered `{ after: true }` breakpoints rather than firing them with a wrong field.
+- **`arrivalPath` ordering bug in `onPause(after, K)`** (regression test in [`src/breakpoints.spec.ts`](src/breakpoints.spec.ts)). Since v6.1.0, the internal `onStep` wrapper advanced `prev` mid-iter, which raced engine v6.0.0+'s per-iter `before → step → after` dispatch order. By the time `onPause(after, K)` fired on the same yield, `prev` had already advanced to iter K's own state — so `m.arrivalPath` resolved to iter K+1's instruction instead of K's. Worse: the registry-aware `#shouldFireOnPause` filter then saw the wrong path and **silently dropped** user-registered `{ after: true }` breakpoints rather than firing them with a wrong field.
 
   Fixed by moving `advanceTracking` from the internal `onStep` wrapper to a new internal `onIter` wrapper. `onIter` fires at end-of-iter — after both `onPause` dispatches on the same yield have already read their iter-correct `prev` — so the advance no longer races them. Required engine v6.4.0 (the new `onIter` hook itself).
 
@@ -330,8 +330,8 @@ Adopts the engine's new [`onIter`](https://github.com/mellonis/turing-machine-js
 
 Both versions were prepared but neither shipped to npm:
 
-- **v6.2.0** ([PR #77](https://github.com/mellonis/post-machine-js/pull/77), closed unmerged) — bumped engine peer-dep to `^6.2.0` to ride the engine's brief `await onStep` widening. Closed after engine v6.2.0 was identified as a mistake and reverted in engine v6.3.0.
-- **v6.3.0** ([PR #78](https://github.com/mellonis/post-machine-js/pull/78), merged without version bump) — reverted PostMachine's matching `async` wrapper to sync, but didn't ship a new release on its own. Merged into master as a deferred-release fix; this v6.4.0 PR is the first release shipping that change.
+- **v6.2.0** (release preparation abandoned) — bumped engine peer-dep to `^6.2.0` to ride the engine's brief `await onStep` widening. Dropped after engine v6.2.0 was identified as a mistake and reverted in engine v6.3.0.
+- **v6.3.0** (merged without version bump) — reverted PostMachine's matching `async` wrapper to sync, but didn't ship a new release on its own. Merged into master as a deferred-release fix; v6.4.0 is the first release shipping that change.
 
 ### Compatibility
 
@@ -339,27 +339,27 @@ Both versions were prepared but neither shipped to npm:
 
 ## [6.1.0] - 2026-05-18
 
-The v6 debugger surface lands, plus the naming foundation it builds on. Bundles three threads of work that landed on master between v6.0.0 and this release: instruction-derived state names ([#67](https://github.com/mellonis/post-machine-js/issues/67)), runtime-callback instruction context ([#70](https://github.com/mellonis/post-machine-js/issues/70)), and per-instruction breakpoints + path-based State resolver + per-State lockdown ([#59](https://github.com/mellonis/post-machine-js/issues/59), [#63](https://github.com/mellonis/post-machine-js/issues/63)).
+The v6 debugger surface lands, plus the naming foundation it builds on. Bundles three threads of work that landed on master between v6.0.0 and this release: instruction-derived state names, runtime-callback instruction context, and per-instruction breakpoints + path-based State resolver + per-State lockdown.
 
 ### Added
 
-#### State naming (#67)
+#### State naming
 
 - All states constructed inside `PostMachine#buildInitialState` now carry an instruction-derived `name`. Previously every state was labeled `id:N` (engine-default auto-counter); now top-level instructions are labeled `"N"`, subroutine body instructions `"<sub>::N"`, group inners `"<outer>.<inner>"`, continuation states `"<caller>~<target>"`, and `withOverrodeHaltState` wrappers compose to e.g. `"foo>10~30"`.
 - This makes `toMermaid` output, `summarize` output, and `MachineState.name` readable without an external translation step. See the README's "[Naming convention](#naming-convention)" section for the full reference.
 
-#### Path type and runtime-callback context (#70)
+#### Path type and runtime-callback context
 
 - New exports: type `Path`, function `parsePath(s: string): Path`, function `formatPath(p: Path): string`. The path-string format mirrors the naming convention above — `'10'`, `'foo::1'`, `'50.2'`, `'outer::inner::10.2'`, etc.
 - `MachineState` (re-exported from `@post-machine-js/machine`) now resolves to the engine's `MachineState` extended with two PostMachine-flavored fields: `arrivalPath: Path` and `candidatePaths: Path[]`. The `onStep` and `onPause` callbacks for `pm.run()` and `pm.runStepByStep()` receive the extended shape.
 - `arrivalPath` disambiguates the state-sharing UX gap noted in the "State sharing across structurally-identical instructions" subsection. When two instructions share a State, `arrivalPath` reports the specific instruction the engine just transitioned through (not the canonical first-named one).
 - `candidatePaths` exposes the full set of paths sharing the current State, sorted deterministically (scope lex, then instruction index, then group inner index).
 
-#### Path-based State resolver (#63)
+#### Path-based State resolver
 
 - `pm.stateAt(path)`, `pm.hasState(path)`, `pm.candidatesFor(path)`. Accepts both path strings (`'foo::10.2'`) and object form (`{ scope, instructionIndex, groupInstructionIndex }`). Both `string` and `string[]` scope forms work for the object variant.
 
-#### Per-instruction breakpoint registry + lockdown (#59)
+#### Per-instruction breakpoint registry + lockdown
 
 - `pm.setBreakpoint(target, filter)`, `pm.clearBreakpoint(target)`, `pm.clearBreakpoints()`, `pm.listBreakpoints()`. `target` is `Path | string | State` (the State form is accepted only for `haltState`). Filters mirror the engine's `DebugConfig` shape.
 - **Construction-time lockdown:** `state.debug = X` on a State returned by `pm.stateAt(...)` or `pm.initialState` is intercepted. For un-shared States (one candidate path), the write transparently redirects to `pm.setBreakpoint(thatPath, X)` (or `pm.clearBreakpoint` when X is `null`). For shared States (multiple candidate paths), the write throws with the candidate-path list, since the assignment is ambiguous.
@@ -384,9 +384,9 @@ The v6 debugger surface lands, plus the naming foundation it builds on. Bundles 
 - The `Path` type uses a `scope?: string | string[]` union so consumers can write either `{ scope: 'foo::bar', ... }` (dotted-string form) or `{ scope: ['foo', 'bar'], ... }` (array form). `parsePath` returns the array form (canonical); both are accepted by every API that takes a Path.
 - For state-sharing: the canonical `candidatePaths[0]` is the canonical Path (first by scope, then instruction index); `arrivalPath` may differ when the engine arrived via a non-canonical reference.
 - The `id:N` → instruction-derived naming changes Mermaid output string shapes. Consumers parsing names literally (e.g., `state.name === "some>composite"`) need to update their expectations.
-- Forward-compatibility with engine v7: PostMachine's chosen separators (`::`, `.`, `~`) survive engine v7's planned paren-based wrapper composite ([turing-machine-js#148](https://github.com/mellonis/turing-machine-js/issues/148)) and the likely ban on `(`, `)`, `>` in user-provided names. When the v7 peer-dep bump lands, only the engine-emitted wrapper composite changes shape (`"foo>10~40"` → `"foo(10~40)"`); PostMachine's internally-constructed names stay the same.
-- Round-trip name accumulation through `State.fromGraph` (upstream [turing-machine-js#138](https://github.com/mellonis/turing-machine-js/issues/138) / [#139](https://github.com/mellonis/turing-machine-js/issues/139)) is more visible now because composite names are user-meaningful (`"foo>10~20"` accumulating into `"foo>10~20>20"` after a graph round-trip reads as a real bug rather than `id:N` noise). The upstream fix lands in engine v7.
-- The graph-walk escape (`pm.stateAt('10').getNextStateForSymbol(...)` reaches an un-locked intermediate State — continuation, hopper, or group wrapper) remains, tracked in [#72](https://github.com/mellonis/post-machine-js/issues/72) (v7 territory alongside the engine peer-bump).
+- Forward-compatibility with engine v7: PostMachine's chosen separators (`::`, `.`, `~`) survive engine v7's planned paren-based wrapper composite and the likely ban on `(`, `)`, `>` in user-provided names. When the v7 peer-dep bump lands, only the engine-emitted wrapper composite changes shape (`"foo>10~40"` → `"foo(10~40)"`); PostMachine's internally-constructed names stay the same.
+- Round-trip name accumulation through `State.fromGraph` (a known upstream engine bug) is more visible now because composite names are user-meaningful (`"foo>10~20"` accumulating into `"foo>10~20>20"` after a graph round-trip reads as a real bug rather than `id:N` noise). The upstream fix lands in engine v7.
+- The graph-walk escape (`pm.stateAt('10').getNextStateForSymbol(...)` reaches an un-locked intermediate State — continuation, hopper, or group wrapper) remains — v7 territory alongside the engine peer-bump.
 
 ### Migration
 
@@ -407,13 +407,13 @@ Lockstep release with `@turing-machine-js/machine` v6 (post-machine-js skipped v
 ### Changed
 
 - **BREAKING** — `peerDependencies['@turing-machine-js/machine']` raised from `^4.0.0` to `^6.0.0`. Engine v4 and v5 are no longer supported; consumers must upgrade in lockstep.
-- **BREAKING** — Experimental `__onDebugBreak` callback on `pm.run()` renamed to `__onPause`, mirroring engine v5's `onDebugBreak` → `onPause` rename (turing-machine-js#109/#110). The `__` prefix was the explicit contract that this surface might rename without warning. Behavior is unchanged (still forwards the callback to the upstream debugger; still `(machineState: MachineState) => void | Promise<void>`).
+- **BREAKING** — Experimental `__onDebugBreak` callback on `pm.run()` renamed to `__onPause`, mirroring engine v5's `onDebugBreak` → `onPause` rename. The `__` prefix was the explicit contract that this surface might rename without warning. Behavior is unchanged (still forwards the callback to the upstream debugger; still `(machineState: MachineState) => void | Promise<void>`).
 
 ### Engine v5/v6 surface relevant when consumers reach past PostMachine
 
-- The engine's `state.debug` per-iter lifecycle is now `before → step → after` on the same yield (engine v6/#119) — was v4's "after fires on iter K+1's yield" via a `prevYield` substitution dance. Tests that observed cross-hook ordering at the lifecycle level need a v6-aware shape; PostMachine's own tests don't observe ordering and pass unchanged.
-- `haltState.debug.after = …` is rejected at write-time in engine v5+ (turing-machine-js#108 part 2) — halt is terminal, no iteration-after-halt to anchor on. Use `haltState.debug.before = true` instead.
-- `run({ debug: boolean })` master switch on the engine (turing-machine-js#106) suppresses all `onPause` dispatches without editing `state.debug` assignments. Reachable via the upstream API; not wrapped at the PostMachine level.
+- The engine's `state.debug` per-iter lifecycle is now `before → step → after` on the same yield (engine v6) — was v4's "after fires on iter K+1's yield" via a `prevYield` substitution dance. Tests that observed cross-hook ordering at the lifecycle level need a v6-aware shape; PostMachine's own tests don't observe ordering and pass unchanged.
+- `haltState.debug.after = …` is rejected at write-time in engine v5+ — halt is terminal, no iteration-after-halt to anchor on. Use `haltState.debug.before = true` instead.
+- `run({ debug: boolean })` master switch on the engine (engine v5) suppresses all `onPause` dispatches without editing `state.debug` assignments. Reachable via the upstream API; not wrapped at the PostMachine level.
 
 ### Migration
 
@@ -431,7 +431,7 @@ No call-site changes for consumers using only `pm.run()` / `pm.runStepByStep()` 
 ### Internal (consumer-invisible — does not affect the published tarball's runtime)
 
 - **Test runner migrated Jest → Vitest.** Single root `vitest.config.ts` with `resolve.alias` for source-vs-built imports, replaces the per-package `jest.config.mjs` plus root `jest.config.mjs`. The babel toolchain (`@babel/core`, `@babel/preset-env`, `@babel/preset-typescript`, `babel-jest`) is dropped — vitest uses esbuild for TypeScript, no babel needed. `jest.fn()` calls renamed to `vi.fn()`. Coverage thresholds set in config (95 / 90 / 95 / 95).
-- **CI:** Node 22.x → 24, dropped single-value matrix (required check name `build (22.x)` → `build`), removed vestigial `next` from triggers, normalized `actions/add-to-project@v1.0.2` → `@v2`. Mirrors turing-machine-js#142.
+- **CI:** Node 22.x → 24, dropped single-value matrix (required check name `build (22.x)` → `build`), removed vestigial `next` from triggers, normalized `actions/add-to-project@v1.0.2` → `@v2`. Mirrors the same modernization in the engine repo.
 - **Deps refreshed to latest** (`eslint`, `rollup`, `typescript-eslint`, etc.) before the vitest migration so each step started from a clean baseline.
 - **README:** dual-layer Mermaid pattern added for the Quick Start example — hand-drawn diagram with friendly instruction labels (`10:` / `20:` / `30:`) plus a `<details>` block showing the engine-emitted source via `toMermaid(State.toGraph(...))`. Doc-test added pinning the engine output's structural shape (regex on node syntax, exact edge labels) so the README and engine output stay aligned.
 - **Author email** in `package.json` updated `mellonis14@gmain.com` → `mellonis@yandex.ru`.
@@ -440,12 +440,12 @@ No call-site changes for consumers using only `pm.run()` / `pm.runStepByStep()` 
 
 ### Changed
 
-- **BREAKING** — `peerDependencies['@turing-machine-js/machine']` raised from `^3.0.1` to `^4.0.0`. v3 is no longer supported; consumers must upgrade in lockstep. ([#58](https://github.com/mellonis/post-machine-js/issues/58))
+- **BREAKING** — `peerDependencies['@turing-machine-js/machine']` raised from `^3.0.1` to `^4.0.0`. v3 is no longer supported; consumers must upgrade in lockstep.
 - **BREAKING** — `PostMachine.prototype.run` is now `async` and returns `Promise<void>`. Mirrors turing v4's async `TuringMachine.run`. Callers must `await` it (or chain `.then`); previously-synchronous callers will silently drop work otherwise.
 
 ### Added
 
-- **Experimental `__onDebugBreak` callback** on `PostMachine.prototype.run` — `(machineState: MachineState) => void | Promise<void>`. Forwarded to turing v4's `onDebugBreak` hook and fires when a state with `state.debug` set is reached. The `__` prefix marks the surface unstable: a higher-level per-instruction breakpoint API is being designed and may rename or restructure this parameter without another major bump. ([#59](https://github.com/mellonis/post-machine-js/issues/59))
+- **Experimental `__onDebugBreak` callback** on `PostMachine.prototype.run` — `(machineState: MachineState) => void | Promise<void>`. Forwarded to turing v4's `onDebugBreak` hook and fires when a state with `state.debug` set is reached. The `__` prefix marks the surface unstable: a higher-level per-instruction breakpoint API is being designed and may rename or restructure this parameter without another major bump.
 - **`MachineState`** type re-exported from the package entry so consumers can annotate `onStep` / `__onDebugBreak` callbacks without taking a direct dependency on `@turing-machine-js/machine`.
 
 ### Migration
@@ -465,7 +465,7 @@ npm install @turing-machine-js/machine@^4.0.0 @post-machine-js/machine@^4.0.0
 
 ### Added
 
-- **`PostMachine` constructor accepts an optional second argument** `{ blankSymbol?: string; markSymbol?: string }` that selects the two glyphs used by the per-instance alphabet. Defaults to `' '` / `'*'` so existing callers are unaffected. Each must be a single character and distinct from the other; `null` / `undefined` fall back to the default. ([#55](https://github.com/mellonis/post-machine-js/issues/55))
+- **`PostMachine` constructor accepts an optional second argument** `{ blankSymbol?: string; markSymbol?: string }` that selects the two glyphs used by the per-instance alphabet. Defaults to `' '` / `'*'` so existing callers are unaffected. Each must be a single character and distinct from the other; `null` / `undefined` fall back to the default.
 - **`PostMachineOptions`** type re-exported from the package entry for callers that want to factor out the options bag.
 
 ### Changed (internal)

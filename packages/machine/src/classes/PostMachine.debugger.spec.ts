@@ -197,7 +197,7 @@ describe('PostDebugSession — step controls and lifecycle', () => {
     expect(causes.slice(1)).toContain('step');
   });
 
-  describe('stepInstruction() — next-numbered-instruction in current scope (#101)', () => {
+  describe('stepInstruction() — next-numbered-instruction in current scope', () => {
     test('atomic → next numbered atomic in same scope', async () => {
       const machine = new PostMachine({ 10: mark, 20: mark, 30: stop });
       machine.setBreakpoint('10', { before: true });
