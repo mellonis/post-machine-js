@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] - 2026-07-06
+
+The `abort` command ([#112](https://github.com/mellonis/post-machine-js/issues/112)) — machine-wide abnormal termination adopting the engine's `abortState` sentinel (turing-machine-js 7.1.0) — plus the run/session surface around it.
+
+### Added
+
+- **`abort` command** — ends the *entire run* from any depth, with no continuation. Deliberately NOT a variant of `stop`: `stop` ends the *current scope* (inside a subroutine it means return-to-caller) and stays illegal in groups; `abort` IS legal in groups (it has no continuation, so there's no fall-through ambiguity), including as the first group member or the first instruction of a subroutine. The producer builds a NAMED per-instruction `State` targeting `abortState`, so the final iter's `arrivalPath` is the abort site's instruction-level path and `abortState` itself never enters any machine's path/lockdown maps.
+- **`RunResult` from runs** — `pm.run()` returns the engine `RunResult` `{ outcome: 'halted' | 'aborted', state, stack, step }` (was `void`); `pm.runStepByStep()` is `Generator<MachineState, RunResult>`. `stack` is `[]` for `'halted'` and the frozen backtrace of pending continuations for `'aborted'`. `RunResult`, `abort`, and `abortState` are exported from the package root.
+- **`PostDebugSession` `'abort'` terminal event** — payload is the `RunResult`, mutually exclusive with `'halt'` (a run fires exactly one; `'halt'`'s payload is additive — it previously fired with no arguments). `abortState.debug = true` and `pm.setBreakpoint(abortState, …)` arm an abort-imminent pause (`{ side: 'after', cause: 'breakpoint' }`) delivered before the terminal event; the breakpoint registry handles the third `{ kind: 'abort' }` entry across set / clear / clearAll / list.
+
+### Changed
+
+- **`stop` and `abort` are non-callable `unique symbol` tokens** — commands with no parameterized form are no longer functions with throw-on-call guards; calling one (`stop()`, `abort(1)`) throws a native `TypeError`. Every bare-`stop` usage is source-compatible. Parameterized commands (`mark`, `erase`, `left`, `right`, `noop`, `call`, `check`) remain functions. `CommandToken` type exported.
+- **`$tag(name, stop)` / `$tag(name, abort)` now throw** — previously `$tag(name, stop)` was accepted and silently tagged the global `haltState` singleton, leaking the tag into every machine's diagrams in the process. Tag the surrounding instruction instead.
+- Peer + dev dep `@turing-machine-js/machine` widened `^7.0.0` → `^7.1.0` (hard floor — this package imports `abortState`, absent from 7.0.0).
+
+### Fixed
+
+- **`runStepByStep` forwards the engine generator's return value** — the previous `for...of` re-yield discarded it, which on engine 7.1.0 would have crashed every `debugRun()` session at natural termination (the engine's terminal dispatch reads the `RunResult`). The manual drain preserves the `for...of`'s IteratorClose semantics (tape-block lock release on early consumer exit).
+
+### Known limitation
+
+- With two or more `abort` instructions in the SAME scope, `RunResult.state.name` reports the first-built one (unary commands share one cached `State` per scope). The final iter's `arrivalPath` always identifies the actual abort site — prefer it for abort-site reporting.
+
 ## [7.0.0] - 2026-06-03
 
 Stable v7. Adopts engine v7's composition-representation overhaul and reshaped debug surface. See alpha.2 through alpha.7 entries below for the step-by-step trajectory; this entry consolidates the cumulative public-API changes from v6.4.0.
