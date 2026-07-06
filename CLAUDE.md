@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-This is an npm-workspaces + Lerna monorepo with **one published package** so far:
+This is an npm-workspaces monorepo with npm-native release scripts (`scripts/release-version.mjs` + `scripts/release-publish.mjs`, mirroring the engine repo's shape — replaced lerna in #114; the `v<X>-<Y>-<Z>` bump-branch flow is unchanged) and **one published package** so far:
 
 - **`@post-machine-js/machine`** — a Post machine (a Turing-machine variant with a 2-symbol alphabet `{blank, mark}` and an instruction-numbered program model) implemented on top of `@turing-machine-js/machine`. The Turing engine is a **peer dependency** (see [Relationship to `@turing-machine-js/machine` v7.0.0-alpha.x](#relationship-to-turing-machine-jsmachine-v700-alphax) below for the full version-relationship writeup). PostMachine pulls `State`, `TapeBlock`, `TuringMachine`, `Tape`, and several runtime singletons (`haltState`, `ifOtherSymbol`, the `movements` constants) from the engine.
 
