@@ -10,7 +10,8 @@ export type BreakpointTarget = Path | string | State;
 
 export type Breakpoint =
   | { kind: 'instruction'; path: Path; filter: BreakpointFilter }
-  | { kind: 'halt'; filter: BreakpointFilter };
+  | { kind: 'halt'; filter: BreakpointFilter }
+  | { kind: 'abort'; filter: BreakpointFilter };
 
 export function validateBreakpointFilter(filter: BreakpointFilter): void {
   if (filter.before === undefined && filter.after === undefined) {

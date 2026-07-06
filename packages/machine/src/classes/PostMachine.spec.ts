@@ -1,5 +1,5 @@
 import {
-  PostMachine, call, check, erase, left, mark, noop, right, stop, Tape,
+  PostMachine, abort, abortState, call, check, erase, left, mark, noop, right, stop, Tape,
 } from '../index';
 import { subroutineNameValidator } from '../validators';
 import { getIxRange, getRandomInstructionIndex } from './PostMachine.test-helpers';
@@ -263,31 +263,20 @@ describe('constructor', () => {
       });
     });
 
-    test('stop', () => {
-      // using 'stop' with parenthesis
-      const ix = getRandomInstructionIndex();
-      const nextIx = ix + 1;
+    // `stop` / `abort` are non-callable `unique symbol` tokens — the
+    // bare form is the only representable one. A call of any arity fails as
+    // `TypeError: not a function` (previously a guarded
+    // "inappropriate 'stop' command usage" throw — both were always errors).
+    (['stop', 'abort'] as const).forEach((name) => {
+      test(`${name} — calling the token throws TypeError`, () => {
+        const token: unknown = name === 'stop' ? stop : abort;
+        const asFn = token as (...args: unknown[]) => unknown;
+        const ix = getRandomInstructionIndex();
 
-      expect(() => {
-          new PostMachine({
-          [ix]: stop(),
-        });
-      })
-        .toThrow('inappropriate \'stop\' command usage');
-
-      expect(() => {
-          new PostMachine({
-          [ix]: stop(nextIx),
-        });
-      })
-        .toThrow('inappropriate \'stop\' command usage');
-
-      expect(() => {
-          new PostMachine({
-          [ix]: stop(ix),
-        });
-      })
-        .toThrow('inappropriate \'stop\' command usage');
+        expect(() => asFn()).toThrow(TypeError);
+        expect(() => asFn(ix + 1)).toThrow(TypeError);
+        expect(() => asFn(Symbol('for test purpose'))).toThrow(TypeError);
+      });
     });
   });
 
@@ -734,7 +723,7 @@ describe('run tests', () => {
           .toThrow('the \'check\' command cannot be used in a group');
       });
 
-      test(stop.name, () => {
+      test('stop', () => {
         expect(() => {
           new PostMachine({
             [ixList[1]]: mark,
@@ -859,5 +848,159 @@ describe('run tests', () => {
 
     expect([...machine.runStepByStep()].length)
       .toBe(2);
+  });
+});
+
+// `abort` command — machine-wide abnormal termination adopting the engine's
+// abortState (design: docs/superpowers/plans/2026-07-05-abort-command.md).
+// The producer builds a NAMED per-instruction State transitioning into the
+// abortState sentinel, so the aborting instruction keeps a Post-level
+// identity (name, path, breakpoints) while the sentinel singleton stays out
+// of the per-machine maps.
+describe('abort command', () => {
+  describe('run() outcome surface', () => {
+    test('run() on a halting program returns {outcome: "halted", stack: []}', () => {
+      const machine = new PostMachine({ 10: mark, 20: stop });
+
+      const result = machine.run();
+
+      expect(result.outcome).toBe('halted');
+      expect(result.stack).toEqual([]);
+      expect(result.step).toBeGreaterThan(0);
+    });
+
+    test('top-level abort → {outcome: "aborted"}; tape untouched beyond prior steps', () => {
+      const machine = new PostMachine({ 10: mark, 20: abort });
+
+      const result = machine.run();
+
+      expect(result.outcome).toBe('aborted');
+      // The mark at 10 executed; the abort iter itself writes nothing.
+      expect(machine.tape.symbols.join('').trim()).toBe('*');
+      // One iter for the mark, one for the abort instruction's own state.
+      expect(result.step).toBe(2);
+    });
+
+    test('the abort instruction\'s state carries the instruction-derived name, surfaced via result.state.name', () => {
+      const machine = new PostMachine({ 10: mark, 20: abort });
+
+      const result = machine.run();
+
+      expect(result.state.name).toBe('20');
+      // The named per-instruction state is NOT the engine sentinel itself —
+      // the sentinel stays a process-global singleton outside this machine.
+      expect(machine.stateAt('20')).not.toBe(abortState);
+      expect(machine.stateAt('20').name).toBe('20');
+    });
+
+    test('abort inside a subroutine aborts the whole machine; result.stack carries the punched-through frames', () => {
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: mark,
+        foo: { 1: abort },
+      });
+
+      const result = machine.run();
+
+      expect(result.outcome).toBe('aborted');
+      // The caller's continuation was still pending when abort punched through.
+      expect(result.stack.length).toBeGreaterThan(0);
+      expect(result.state.name).toBe('foo::1');
+      // The mark at 20 never ran.
+      expect(machine.tape.symbols.join('').trim()).toBe('');
+    });
+
+    test('contrast: natural subroutine return still ends {outcome: "halted", stack: []}', () => {
+      const machine = new PostMachine({
+        10: call('foo'),
+        20: mark,
+        foo: { 1: mark },
+      });
+
+      const result = machine.run();
+
+      expect(result.outcome).toBe('halted');
+      expect(result.stack).toEqual([]);
+    });
+
+    test('abort works inside a group (unlike stop)', () => {
+      const machine = new PostMachine({
+        10: [mark, abort],
+        20: mark,
+      });
+
+      const result = machine.run();
+
+      expect(result.outcome).toBe('aborted');
+      expect(result.state.name).toBe('10.2');
+      expect(machine.tape.symbols.join('').trim()).toBe('*');
+    });
+
+    test('abort as the FIRST group member works too', () => {
+      const machine = new PostMachine({
+        10: [abort],
+        20: mark,
+      });
+
+      const result = machine.run();
+
+      expect(result.outcome).toBe('aborted');
+      expect(result.state.name).toBe('10.1');
+      expect(machine.tape.symbols.join('').trim()).toBe('');
+    });
+
+    test('two abort instructions in one scope share the cached state (unary-command caching convention)', () => {
+      const machine = new PostMachine({
+        10: check(30, 40),
+        30: abort,
+        40: abort,
+      });
+
+      expect(machine.stateAt('30')).toBe(machine.stateAt('40'));
+      expect(machine.candidatesFor('30')).toEqual([
+        { instructionIndex: 30 },
+        { instructionIndex: 40 },
+      ]);
+    });
+  });
+
+  describe('runStepByStep() terminal RunResult', () => {
+    test('draining manually yields the aborted RunResult as the generator return value', () => {
+      const machine = new PostMachine({ 10: mark, 20: abort });
+
+      const gen = machine.runStepByStep();
+      let r = gen.next();
+      while (!r.done) {
+        r = gen.next();
+      }
+
+      expect(r.value.outcome).toBe('aborted');
+      expect(r.value.state.name).toBe('20');
+    });
+
+    test('draining manually yields the halted RunResult on a normal run', () => {
+      const machine = new PostMachine({ 10: mark, 20: stop });
+
+      const gen = machine.runStepByStep();
+      let r = gen.next();
+      while (!r.done) {
+        r = gen.next();
+      }
+
+      expect(r.value.outcome).toBe('halted');
+      expect(r.value.stack).toEqual([]);
+    });
+
+    test('early consumer exit closes the engine generator and releases the tape lock', () => {
+      const machine = new PostMachine({ 10: mark, 20: mark, 30: stop });
+
+      const gen = machine.runStepByStep();
+      gen.next();
+      gen.return(undefined as never);
+
+      // A fresh run acquires the TapeBlock lock — it would throw
+      // 'Lock check failed' if the abandoned generator still held it.
+      expect(() => machine.run()).not.toThrow();
+    });
   });
 });

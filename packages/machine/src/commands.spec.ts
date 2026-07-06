@@ -1,6 +1,6 @@
 import {describe, expect, test} from 'vitest';
 
-import {PostMachine, $tag, mark, noop, right, stop} from './index';
+import {PostMachine, $tag, abort, mark, noop, right, stop} from './index';
 import {State, toMermaid} from '@turing-machine-js/machine';
 
 // Tests for the `$tag('label', command)` inline decorator (#86).
@@ -134,7 +134,7 @@ describe('$tag — inline tag decorator (#86)', () => {
     expect(mermaid).toContain('<br>');
     expect(mermaid).toContain('hot');
     expect(mermaid).toMatch(/classDef tag_hot /);
-    expect(mermaid).toMatch(/class s\d+ tag_hot/);
+    expect(mermaid).toMatch(/class u\d+ tag_hot/);
   });
 
   test('round-trip: machine reaches the tagged state and runs to completion', async () => {
@@ -147,5 +147,37 @@ describe('$tag — inline tag decorator (#86)', () => {
     machine.run();
 
     expect(machine.tape.symbols[0]).toBe('*');
+  });
+});
+
+// `stop` / `abort` are non-callable `unique symbol` tokens; $tag rejects
+// them explicitly — `stop` resolves to the global haltState singleton
+// (tagging it would leak into every machine's diagrams), and tokens carry
+// no invokable producer for $tag's dispatch. `pm.tag(<path>, ...)` is the
+// supported way to tag an abort instruction after construction.
+describe('$tag — terminal command tokens are rejected', () => {
+  test('$tag(\'x\', stop) throws with the pm.tag pointer', () => {
+    expect(() => new PostMachine({
+      10: $tag('x', stop as never),
+      20: stop,
+    })).toThrow(/terminal command token.*pm\.tag/s);
+  });
+
+  test('$tag(\'x\', abort) throws with the pm.tag pointer', () => {
+    expect(() => new PostMachine({
+      10: $tag('x', abort as never),
+      20: stop,
+    })).toThrow(/terminal command token.*pm\.tag/s);
+  });
+
+  test('pm.tag() path-tagging works on an abort instruction (the supported alternative)', () => {
+    const machine = new PostMachine({
+      10: mark,
+      20: abort,
+    });
+
+    machine.tag('20', 'bad-input');
+
+    expect(machine.tagsOf('20')).toContain('bad-input');
   });
 });

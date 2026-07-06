@@ -64,17 +64,17 @@ The state graph for the example above (`toMermaid(State.toGraph(machine.initialS
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>main"]
-  s2["20"]
-  s3["30"]
+  u1["10<br>main"]
+  u2["20"]
+  u3["30"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "['*'] → [K]/[S]" --> s2
-  s1 -- "[B] → [K]/[S]" --> s3
-  s2 -- "[*] → [K]/[R]" --> s1
-  s3 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "['*'] → [K]/[S]" --> u2
+  u1 -- "[B] → [K]/[S]" --> u3
+  u2 -- "[*] → [K]/[R]" --> u1
+  u3 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s1 tag_main
+  class u1 tag_main
 ```
 
 Reading the diagram:
@@ -101,9 +101,9 @@ The runtime. Subclasses `TuringMachine` from `@turing-machine-js/machine`: the c
 **Constructor.** `new PostMachine(instructions, options?)` — `instructions` is the numbered-instruction map (with optional string-keyed subroutine groups); `options` is `{ blankSymbol?, markSymbol? }` (see [Custom symbols](#custom-symbols)).
 
 **Methods.**
-- `run({ stepsLimit? } = {})` → `void`. Runs to halt or until `stepsLimit` (default `1e5`) is exhausted. **Synchronous and callback-free as of v7.0.0-alpha.6** (adopting engine [#102](https://github.com/mellonis/turing-machine-js/issues/102)) — for per-step observation use `runStepByStep()`; for breakpoints, throttling, or interactive stepping use `debugRun()`.
-- `debugRun({ stepsLimit? } = {})` → `PostDebugSession`. An interactive debugger session bound to this machine (see [Breakpoints](#breakpoints)). It emits `pause` / `step` / `iter` / `halt` events (`session.on(event, listener)`) and exposes `continue()` / `stepIn()` / `stepOver()` / `stepOut()` / **`stepInstruction()`** / `pause()` / `stop()` / `setRunInterval(ms)`; call `await session.start()` to begin. `pause`-event payloads carry `m.pause: { side: 'before' | 'after', cause: 'breakpoint' | 'step' | 'manual' }`. **`stepInstruction()` (v7.0.0-alpha.7, [#101](https://github.com/mellonis/post-machine-js/issues/101))** is the Post-level program-counter step — advance to the next numbered instruction in the *current* scope; skips sub-step transitions inside groups (`50.1 → 50.2`) and descents into called scopes (`call('foo') → foo::1`) because those aren't numbered instructions in your program. Two rules cover the whole semantics: (1) advance until the click-time `(scope, instructionIndex)` pair changes; (2) if there's no next numbered instruction in the current scope, the natural engine continuation fires (return to caller's continuation inside a call/group, halt at top level). Throws if no paused state.
-- `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`. Pure iteration — it does no breakpoint detection (that lives in `debugRun()`).
+- `run({ stepsLimit? } = {})` → `RunResult`. Runs to termination or until `stepsLimit` (default `1e5`) is exhausted, then returns the engine's call-scoped `RunResult`: `{ outcome: 'halted' | 'aborted', state, stack, step }` (re-exported from `@post-machine-js/machine`; **v7.1**, adopting engine [#239](https://github.com/mellonis/turing-machine-js/issues/239)). `outcome` is `'halted'` for a normal `stop` / fall-through ending (`stack` is `[]` by construction — every subroutine/group frame already popped) or `'aborted'` when an `abort` instruction punched through to the run (`stack` is the frozen backtrace of continuations `abort` short-circuited past — see [Author's extensions](#authors-extensions)). `state` is the State whose transition triggered the outcome; `state.name` is PostMachine's instruction-derived name (see [Naming convention](#naming-convention)). `step` is the 1-based iteration count at termination. **Synchronous and callback-free as of v7.0.0-alpha.6** (adopting engine [#102](https://github.com/mellonis/turing-machine-js/issues/102)) — for per-step observation use `runStepByStep()`; for breakpoints, throttling, or interactive stepping use `debugRun()`.
+- `debugRun({ stepsLimit? } = {})` → `PostDebugSession`. An interactive debugger session bound to this machine (see [Breakpoints](#breakpoints)). It emits `pause` / `step` / `iter` / `halt` / `abort` events (`session.on(event, listener)`) and exposes `continue()` / `stepIn()` / `stepOver()` / `stepOut()` / **`stepInstruction()`** / `pause()` / `stop()` / `setRunInterval(ms)`; call `await session.start()` to begin. `pause`-event payloads carry `m.pause: { side: 'before' | 'after', cause: 'breakpoint' | 'step' | 'manual' }`. `halt` and `abort` are the two mutually-exclusive terminal events — a run fires exactly one of the two, never both — and **both** carry the same `RunResult` payload `run()` returns (additive for `halt`, which previously fired with no arguments). Pausing right before the `abort` event: `abortState.debug = true` (boolean, mirrors `haltState.debug`) or `pm.setBreakpoint(abortState, filter)` arms a pause on the AFTER side of the iter whose transition targets `abortState` — see [Breakpoints](#breakpoints). **`stepInstruction()` (v7.0.0-alpha.7, [#101](https://github.com/mellonis/post-machine-js/issues/101))** is the Post-level program-counter step — advance to the next numbered instruction in the *current* scope; skips sub-step transitions inside groups (`50.1 → 50.2`) and descents into called scopes (`call('foo') → foo::1`) because those aren't numbered instructions in your program. Two rules cover the whole semantics: (1) advance until the click-time `(scope, instructionIndex)` pair changes; (2) if there's no next numbered instruction in the current scope, the natural engine continuation fires (return to caller's continuation inside a call/group, halt at top level). Throws if no paused state.
+- `runStepByStep({ stepsLimit? } = {})` → `Generator<MachineState, RunResult>`. Synchronous step-at-a-time execution; the consumer drives the loop with `for ... of` or `.next()`. Pure iteration — it does no breakpoint detection (that lives in `debugRun()`). The generator's `return` value is the same `RunResult` `run()` returns — a `for...of` loop discards it (that's how JS generators work), so drain manually (a `while (!r.done)` / `.next()` loop) if you need the terminal outcome from step-by-step iteration.
 - `replaceTapeWith(newTape)` — swap the active tape. Build the new tape against `machine.tape.alphabet` so symbol identities match the machine's interned alphabet.
 
 **Properties.**
@@ -157,7 +157,9 @@ console.log(machine.tape.symbols.join('').replace(/\.+$/, '')); // ###
 
 Each command has two forms: **bare** (`mark`) — falls through to the next position in its containing scope (the next numbered instruction in the map, or the next item in an [array group](#grouped-instructions)); or **with an explicit index** (`mark(20)`) — jumps to instruction `20`. The bare form is what you use when "next entry in this scope" is what you want; the indexed form is for back-edges, branches, and explicit jumps. A `—` in either form column means that form doesn't exist for that command.
 
-The first table is the **canonical instruction set** of a Post(–Turing) machine per Post's 1936 paper. The second is **the author's extensions** added on top of the classical machine in this implementation — subroutines (`call`) and a placeholder (`noop`); both are conveniences, not part of the original specification.
+Two commands break that callable pattern: `stop` and `abort` have no parameterized form at all — the only legal use of either was always bare — so they're exported as non-callable `unique symbol` **tokens** (the same shape as the upstream engine's `ifOtherSymbol` sentinel), not functions. Writing `stop()` or `abort(20)` throws a native `TypeError`, same as calling any other non-function value; a token makes the illegal call-form unrepresentable instead of merely guarded. Every command that DOES have an indexed form (`mark`, `erase`, `left`, `right`, `noop`, `call`, `check`) stays a function — calling it (bare or indexed) is what produces the bound state-producer PostMachine consumes.
+
+The first table is the **canonical instruction set** of a Post(–Turing) machine per Post's 1936 paper. The second is **the author's extensions** added on top of the classical machine in this implementation — subroutines (`call`), a placeholder (`noop`), and machine-wide abnormal termination (`abort`); all three are conveniences, not part of the original specification.
 
 ### Classical commands
 
@@ -168,9 +170,9 @@ The first table is the **canonical instruction set** of a Post(–Turing) machin
 | `left` | `left` | `left(ix)` | Move the head left; fall through / jump to `ix` |
 | `mark` | `mark` | `mark(ix)` | Write the mark symbol; fall through / jump to `ix` |
 | `right` | `right` | `right(ix)` | Move the head right; fall through / jump to `ix` |
-| `stop` | `stop` | — | Halt the machine |
+| `stop` | `stop` | — | Halt the machine — inside a subroutine, this *returns* to the caller (the call site's continuation) rather than ending the whole run; `stop` is illegal inside a [group](#grouped-instructions) (see below) |
 
-`check` requires both branch targets so has no bare form; `stop` always halts so has no indexed form.
+`check` requires both branch targets so has no bare form; `stop` always halts (or returns — see above) so has no indexed form, and (per the token note above) no callable form of any kind.
 
 ### Author's extensions
 
@@ -178,8 +180,11 @@ The first table is the **canonical instruction set** of a Post(–Turing) machin
 |---|---|---|---|
 | `call` | `call(name)` | `call(name, ix)` | Invoke subroutine `name`; fall through / jump to `ix` afterwards |
 | `noop` | `noop` | `noop(ix)` | Do nothing; fall through / jump to `ix` |
+| `abort` | `abort` | — | End the *entire run* immediately, from any depth |
 
 `call` and the [Subroutines](#subroutines) feature add procedure-like reuse to the classical numbered-instruction model. `noop` is the placeholder of choice: useful for reserving instruction numbers in a worked example, padding a sketch, or as a labelled jump target. (Bare `noop` has no classical analog; `noop(ix)` corresponds to Post's unconditional jump.)
+
+`abort` is machine-wide abnormal termination. Where `stop` only ends the *current* scope (the top-level program, or — inside a subroutine — just that call, returning to whatever invoked it), `abort` ends the run outright, no matter how deep the call stack is: `run()`'s `RunResult.outcome` becomes `'aborted'`, and `RunResult.stack` carries the frozen backtrace of continuations `abort` short-circuited past — the subroutine/group frames that were pending when it fired, preserved rather than popped (see [`run()`](#postmachine) below). Because `abort` never resolves to a continuation, there's no "where do I go next" ambiguity for it to trip over — which is exactly why `abort` is legal inside a [group](#grouped-instructions), where `stop` is not (a group has its own fall-through continuation that `stop`'s classical "halt right here" meaning conflicts with; `abort` isn't going anywhere, so there's no conflict to have). Like every other instruction, `abort` produces its own named per-instruction `State` — so executing it costs one iteration (`RunResult.step` counts it same as any other instruction); it isn't a zero-cost escape hatch.
 
 ### Scope rules for indexed forms
 
@@ -213,19 +218,19 @@ const machine = new PostMachine({
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>main"]
-  s2["20"]
-  s3["30"]
+  u1["10<br>main"]
+  u2["20"]
+  u3["30"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "[*] → ['*']/[S]" --> s2
-  s2 -- "[*] → [K]/[S]" --> s3
-  s3 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "[*] → ['*']/[S]" --> u2
+  u2 -- "[*] → [K]/[S]" --> u3
+  u3 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s1 tag_main
+  class u1 tag_main
 ```
 
-`s2` is the noop. Its single outgoing edge `[*] → [K]/[S]` is the signature: read anything, keep the cell (`K`, no write), stay in place (`S`, no move) — then fall through to instruction 30. The marks at `s1` and `s3` write `'*'` and move stay; the structural difference between a "useful" command and `noop` is the write cell (`'*'` vs `K`).
+`u2` is the noop. Its single outgoing edge `[*] → [K]/[S]` is the signature: read anything, keep the cell (`K`, no write), stay in place (`S`, no move) — then fall through to instruction 30. The marks at `u1` and `u3` write `'*'` and move stay; the structural difference between a "useful" command and `noop` is the write cell (`'*'` vs `K`).
 
 Indexed form `noop(40)` rewires the fall-through to instruction 40 — Post's unconditional jump:
 
@@ -242,12 +247,12 @@ const machine = new PostMachine({
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>main"]
+  u1["10<br>main"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "[*] → [K]/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "[*] → [K]/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s1 tag_main
+  class u1 tag_main
 ```
 
 Instruction `10` jumps directly to `40` (the trailing stop). Instructions `20` and `30` are unreachable — they don't appear in the graph at all. (`toGraph` only emits reachable states; unreachable ones are silently dropped.)
@@ -268,17 +273,118 @@ const machine = new PostMachine({
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>main"]
+  u1["10<br>main"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s1 tag_main
+  class u1 tag_main
 ```
 
-Notice: no `s20` node. `stop` halts the machine, so `s1` (`10: mark`) transitions directly to `s0(((halt)))` — there's no intermediate state for the `stop` instruction. The trailing `stop` is **elided** in the structural emit: it's a halt routing convention, not a State.
+Notice: no separate node for instruction `20`. `stop` halts the machine, so `u1` (`10: mark`) transitions directly to `s0(((halt)))` — there's no intermediate state for the `stop` instruction. The trailing `stop` is **elided** in the structural emit: it's a halt routing convention, not a State.
 
-The lookup API is asymmetric in a useful way — `pm.stateAt({ instructionIndex: 20 })` for this machine resolves to `haltState` (the canonical halt singleton), not `undefined`. The graph doesn't render `s20`, but the path still resolves.</details>
+The lookup API is asymmetric in a useful way — `pm.stateAt({ instructionIndex: 20 })` for this machine resolves to `haltState` (the canonical halt singleton), not `undefined`. The graph doesn't render a node for `20`, but the path still resolves.
+
+</details>
+
+<details>
+<summary><code>abort</code> — ends the run immediately, from any depth</summary>
+
+```javascript
+import { PostMachine, abort, check, stop, Tape } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  10: check(20, 30),
+  20: abort,
+  30: stop,
+});
+
+machine.replaceTapeWith(new Tape({
+  alphabet: machine.tape.alphabet,
+  symbols: ['*'],
+}));
+
+const result = machine.run();
+console.log(result.outcome);      // 'aborted'
+console.log(result.state.name);   // '20'
+console.log(result.stack.length); // 0 — nothing was pending; this is top-level code
+console.log(result.step);         // 2
+```
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s1(((abort)))
+  s0(((halt)))
+  u1["10<br>main"]
+  u2["20"]
+  idle([idle])
+  idle -. enter .-> u1
+  u1 -- "['*'] → [K]/[S]" --> u2
+  u1 -- "[B] → [K]/[S]" --> s0
+  u2 -- "[*] → [K]/[S]" --> s1
+  classDef abortSentinel stroke:#c0392b,stroke-width:2px,stroke-dasharray:4 3
+  class s1 abortSentinel
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  class u1 tag_main
+```
+
+Unlike trailing `stop` (elided above), `abort` gets its own node — `u2["20"]` — because it targets a DIFFERENT sentinel, `s1(((abort)))`, not `s0(((halt)))`. `run()` returns `{outcome: 'aborted', ...}`; `result.state.name` is `'20'` (the instruction that fired `abort`, per PostMachine's [instruction-derived naming](#naming-convention)), and `result.stack` is empty because no subroutine or group call was pending — see the next example for a non-empty stack.
+
+</details>
+
+<details>
+<summary><code>abort</code> inside a subroutine — the pending continuation freezes in <code>RunResult.stack</code></summary>
+
+```javascript
+import { PostMachine, abort, call, mark, stop } from '@post-machine-js/machine';
+
+const machine = new PostMachine({
+  sub: {
+    1: mark,
+    2: abort,
+  },
+  10: call('sub'),
+  20: stop,
+});
+
+const result = machine.run();
+console.log(result.outcome);                   // 'aborted'
+console.log(result.state.name);                // 'sub::2'
+console.log(result.stack.map((s) => s.name));   // ['10~20'] — the call's continuation, frozen
+console.log(result.step);                       // 2
+```
+
+```mermaid
+flowchart TD
+%% alphabets: [[" ","*"]]
+  s1(((abort)))
+  s0(((halt)))
+  u1["10~20"]
+  u2[["sub::1(10~20)<br>main"]]
+  idle([idle])
+  subgraph w_3["callable subtree of sub::1"]
+    u3["sub::1<br>sub"]
+    u4["sub::2"]
+    s0-3(((halt)))
+  end
+  idle -. enter .-> u2
+  u2 == "call" ==> u3
+  u2 --> u1
+  u3 -- "[*] → ['*']/[S]" --> u4
+  u4 -- "[*] → [K]/[S]" --> s1
+  u1 -- "[*] → [K]/[S]" --> s0
+  classDef abortSentinel stroke:#c0392b,stroke-width:2px,stroke-dasharray:4 3
+  class s1 abortSentinel
+  classDef tag_main fill:#dbeafe,stroke:#1e40af
+  classDef tag_sub fill:#fef3c7,stroke:#92400e
+  class u2 tag_main
+  class u3 tag_sub
+```
+
+Compare this to the [ordinary subroutine diagram](#subroutines): there, the subgraph has a dotted `w_N -. "return" .-> …` arrow feeding back to the wrapper. Here there ISN'T one — `u4`'s (`sub::2`, the `abort` instruction) only outgoing edge goes straight to `s1(((abort)))`, bypassing the wrapper's overridden-halt machinery entirely. The call-site continuation `u1["10~20"]` is never reached at runtime — and that's exactly what `result.stack` reports: `['10~20']` is the continuation that was PENDING (not popped) when `abort` fired, because `abort` short-circuited past it instead of returning through it the way a natural `stop`-triggered return would.
+
+</details>
 
 ## Grouped instructions
 
@@ -307,6 +413,8 @@ Bare commands inside a group fall through to the next item in the array; the las
 **Inside a group, only bare forms work for movement / write commands.** Indexed forms (`mark(20)`, `right(10)`, `call('sub', 5)`, ...) throw at construction time — an explicit jump conflicts with the group's sequential fall-through semantics.
 
 **`check` and `stop` always throw inside a group**, regardless of form. Branching and halting are control-flow boundaries that need their own top-level instruction number.
+
+**`abort` IS allowed inside a group**, bare (its only form) — the one exception to the rule above. `abort` has no continuation to reconcile with the group's own fall-through, so admitting it introduces no ambiguity. Hitting `abort` inside a group ends the entire run, not just the group — the group's continuation never resolves. See [Author's extensions](#authors-extensions) for the full explanation and `RunResult.stack` behavior.
 
 ## Subroutines
 
@@ -341,39 +449,39 @@ The state graph as the engine emits it — the subroutine and the wrapping `with
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s3["1~2"]
-  s5["2"]
-  s4[["rightToBlank::1(1~2)<br>main"]]
+  u1["1~2"]
+  u2["2"]
+  u3[["rightToBlank::1(1~2)<br>main"]]
   idle([idle])
-  subgraph w_1["callable subtree of rightToBlank::1"]
-    s1["rightToBlank::1<br>rightToBlank"]
-    s2["rightToBlank::2"]
-    c1(((halt)))
+  subgraph w_4["callable subtree of rightToBlank::1"]
+    u4["rightToBlank::1<br>rightToBlank"]
+    u5["rightToBlank::2"]
+    s0-4(((halt)))
   end
-  idle -. enter .-> s4
-  s4 == "call" ==> s1
-  w_1 -. "return" .-> s4
-  s4 --> s3
-  s1 -- "[*] → [K]/[R]" --> s2
-  s2 -- "['*'] → [K]/[S]" --> s1
-  s2 -- "[B] → [K]/[S]" --> c1
-  s3 -- "[*] → [K]/[S]" --> s5
-  s5 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u3
+  u3 == "call" ==> u4
+  w_4 -. "return" .-> u3
+  u3 --> u1
+  u4 -- "[*] → [K]/[R]" --> u5
+  u5 -- "['*'] → [K]/[S]" --> u4
+  u5 -- "[B] → [K]/[S]" --> s0-4
+  u1 -- "[*] → [K]/[S]" --> u2
+  u2 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
   classDef tag_rightToBlank fill:#dbeafe,stroke:#1e40af
-  class s4 tag_main
-  class s1 tag_rightToBlank
+  class u3 tag_main
+  class u4 tag_rightToBlank
 ```
 
 The `call('rightToBlank')` step at instruction 1 is built using the engine's `withOverriddenHaltState` composition primitive: the subroutine's halt is overridden to point at the next top-level instruction (instead of terminating the machine), so when the subroutine "halts" it actually returns to top-level execution at instruction 2.
 
 Reading the diagram (engine v7's callable-subtree emit + PostMachine's drop-acyclic-hopper rule from [#85](https://github.com/mellonis/post-machine-js/issues/85)):
-- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the composite `"rightToBlank::1(1~2)"` on the wrapper (the `[[…]]` double-square node `s4`). The `<br>main` and `<br>rightToBlank` suffixes are auto-tag annotations (#86) — the entry points of the top-level program and the subroutine, respectively. The `s\d+` node IDs are still auto-generated and shift between runs.
-- The wrapper `s4[["rightToBlank::1(1~2)<br>main"]]` is the **call site** — it sits OUTSIDE the subgraph. The `idle -. enter .-> s4` edge marks it as the top-level entry; the auto-tag `main` reflects that role. The double-square `[[…]]` shape signals "wrapper" — a state produced by `withOverriddenHaltState`. The wrapper has no transitions of its own; it delegates to the bare via the bold `== "call" ==>` arrow. Under [#85](https://github.com/mellonis/post-machine-js/issues/85), the wrapper now wraps `rightToBlank::1` (the first instruction) directly — there is no v6.x "hopper" anchor for this acyclic-in-the-call-graph case.
-- The `subgraph w_1["callable subtree of rightToBlank::1"]` is the **callable body** — it contains the bare entry `s1` (auto-tagged `rightToBlank` as the subroutine entry), the second-instruction state `s2`, and a frame-local halt marker `c1`. The body's halt-bound transition (`s2 -- "[B]" --> c1`) lands on `c1`, not on the real `s0` halt.
-- The dotted `w_1 -. "return" .-> s4` is the **return arrow** — when the body lands on `c1`, control returns to the wrapper `s4`. Then `s4 --> s3` (the solid wrapper-to-override arrow) hands off to the continuation. This replaces the alpha.1 `-. onHalt .->` keyword.
-- `s3` is the continuation; it falls through (keep+S) to `s5`.
-- `s5` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
+- The labels are PostMachine's instruction-derived names: `"rightToBlank::1"`/`"rightToBlank::2"` for the subroutine body, `"2"` for the top-level mark, `"1~2"` for the continuation, and the composite `"rightToBlank::1(1~2)"` on the wrapper (the `[[…]]` double-square node `u3`). The `<br>main` and `<br>rightToBlank` suffixes are auto-tag annotations (#86) — the entry points of the top-level program and the subroutine, respectively. The `u\d+` node IDs are still auto-generated and shift between runs.
+- The wrapper `u3[["rightToBlank::1(1~2)<br>main"]]` is the **call site** — it sits OUTSIDE the subgraph. The `idle -. enter .-> u3` edge marks it as the top-level entry; the auto-tag `main` reflects that role. The double-square `[[…]]` shape signals "wrapper" — a state produced by `withOverriddenHaltState`. The wrapper has no transitions of its own; it delegates to the bare via the bold `== "call" ==>` arrow. Under [#85](https://github.com/mellonis/post-machine-js/issues/85), the wrapper now wraps `rightToBlank::1` (the first instruction) directly — there is no v6.x "hopper" anchor for this acyclic-in-the-call-graph case.
+- The `subgraph w_4["callable subtree of rightToBlank::1"]` is the **callable body** — it contains the bare entry `u4` (auto-tagged `rightToBlank` as the subroutine entry), the second-instruction state `u5`, and a frame-local halt marker `s0-4` (the engine's `s0-{frame}` naming for a per-frame halt stand-in). The body's halt-bound transition (`u5 -- "[B]" --> s0-4`) lands on `s0-4`, not on the real `s0` halt.
+- The dotted `w_4 -. "return" .-> u3` is the **return arrow** — when the body lands on `s0-4`, control returns to the wrapper `u3`. Then `u3 --> u1` (the solid wrapper-to-override arrow) hands off to the continuation. This replaces the alpha.1 `-. onHalt .->` keyword.
+- `u1` is the continuation; it falls through (keep+S) to `u2`.
+- `u2` is the `mark` instruction at top-level 2 (writes `'*'`, then transitions to halt — the trailing top-level `3: stop` is what produces that halt edge).
 - The trailing `classDef tag_main` / `classDef tag_rightToBlank` + `class` lines are auto-tag styling (see [Auto-tag policy](#auto-tag-policy)).
 
 That's just syntax — for one call site, inlining is equivalent. Subroutines earn their keep when the same logic appears at multiple sites or when symmetric variants share a shape. Example: extend a marked region by one cell on each side, using mirrored `walkRightToBlank` / `walkLeftToBlank` helpers.
@@ -531,26 +639,26 @@ console.log(machine.tagsOf({ instructionIndex: 10 }));
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>hot, main"]
-  s2["20<br>loop-body, sampled"]
-  s3["30"]
+  u1["10<br>hot, main"]
+  u2["20<br>loop-body, sampled"]
+  u3["30"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "['*'] → [K]/[S]" --> s2
-  s1 -- "[B] → [K]/[S]" --> s3
-  s2 -- "[*] → [K]/[R]" --> s1
-  s3 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "['*'] → [K]/[S]" --> u2
+  u1 -- "[B] → [K]/[S]" --> u3
+  u2 -- "[*] → [K]/[R]" --> u1
+  u3 -- "[*] → ['*']/[S]" --> s0
   classDef tag_hot fill:#dbeafe,stroke:#1e40af
   classDef tag_loop-body fill:#fee2e2,stroke:#991b1b
   classDef tag_main fill:#dbeafe,stroke:#1e40af
   classDef tag_sampled fill:#ede9fe,stroke:#5b21b6
-  class s1 tag_hot
-  class s2 tag_loop-body
-  class s1 tag_main
-  class s2 tag_sampled
+  class u1 tag_hot
+  class u2 tag_loop-body
+  class u1 tag_main
+  class u2 tag_sampled
 ```
 
-`s1` carries two tags (`hot` from `$tag` + `main` from auto-tag) — the engine emits them comma-separated in the label and applies BOTH `classDef` lines via two `class s1 …` directives. Tag composition is additive.
+`u1` carries two tags (`hot` from `$tag` + `main` from auto-tag) — the engine emits them comma-separated in the label and applies BOTH `classDef` lines via two `class u1 …` directives. Tag composition is additive.
 
 **Per-member in a group.** `$tag` rejects wrapping a group as a whole (`$tag('foo', [mark, right])` throws). Tag each member individually instead — the inner tags land on the per-member states inside the group's callable subtree:
 
@@ -572,30 +680,30 @@ console.log(machine.tagsOf('10'));
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s6["10~20"]
-  s7[["10.1(10~20)<br>main"]]
+  u1["10~20"]
+  u2[["10.1(10~20)<br>main"]]
   idle([idle])
-  subgraph w_4["callable subtree of 10.1"]
-    s4["10.1<br>lift"]
-    s5["10.2<br>descend"]
-    c4(((halt)))
+  subgraph w_3["callable subtree of 10.1"]
+    u3["10.1<br>lift"]
+    u4["10.2<br>descend"]
+    s0-3(((halt)))
   end
-  idle -. enter .-> s7
-  s7 == "call" ==> s4
-  w_4 -. "return" .-> s7
-  s7 --> s6
-  s4 -- "[*] → ['*']/[S]" --> s5
-  s5 -- "[*] → [K]/[R]" --> c4
-  s6 -- "[*] → [K]/[S]" --> s0
+  idle -. enter .-> u2
+  u2 == "call" ==> u3
+  w_3 -. "return" .-> u2
+  u2 --> u1
+  u3 -- "[*] → ['*']/[S]" --> u4
+  u4 -- "[*] → [K]/[R]" --> s0-3
+  u1 -- "[*] → [K]/[S]" --> s0
   classDef tag_descend fill:#fef3c7,stroke:#92400e
   classDef tag_lift fill:#fee2e2,stroke:#991b1b
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s5 tag_descend
-  class s4 tag_lift
-  class s7 tag_main
+  class u4 tag_descend
+  class u3 tag_lift
+  class u2 tag_main
 ```
 
-The group expands into a `withOverriddenHaltState` chain wrapped in a callable subtree (same shape as a subroutine call). The wrapper `s7` is the top-level entry (auto-tagged `main`); the inner states `s4` (`lift`) and `s5` (`descend`) carry their per-member tags inside the subgraph. The group's outer path `'10'` resolves to the wrapper; group-inner paths use the `{ instructionIndex: 10, groupInstructionIndex: N }` shape.
+The group expands into a `withOverriddenHaltState` chain wrapped in a callable subtree (same shape as a subroutine call). The wrapper `u2` is the top-level entry (auto-tagged `main`); the inner states `u3` (`lift`) and `u4` (`descend`) carry their per-member tags inside the subgraph. The group's outer path `'10'` resolves to the wrapper; group-inner paths use the `{ instructionIndex: 10, groupInstructionIndex: N }` shape.
 
 Passing bare `$tag` (without invoking it) as an instruction or as a group member also throws — with a message pointing at the correct form.
 
@@ -682,17 +790,17 @@ The full rendered emit for this machine:
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>main"]
-  s2["20"]
-  s3["30"]
+  u1["10<br>main"]
+  u2["20"]
+  u3["30"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "['*'] → [K]/[S]" --> s2
-  s1 -- "[B] → [K]/[S]" --> s3
-  s2 -- "[*] → [K]/[R]" --> s1
-  s3 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "['*'] → [K]/[S]" --> u2
+  u1 -- "[B] → [K]/[S]" --> u3
+  u2 -- "[*] → [K]/[R]" --> u1
+  u3 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s1 tag_main
+  class u1 tag_main
 ```
 
 (Same machine as the [Quick start](#quick-start) example — see that section for the node/edge-shape reading guide.)
@@ -749,20 +857,20 @@ The two state graphs as the engine emits them — what the numbers above are sum
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s1["10<br>main"]
-  s2["20"]
-  s3["30"]
+  u1["10<br>main"]
+  u2["20"]
+  u3["30"]
   idle([idle])
-  idle -. enter .-> s1
-  s1 -- "['*'] → [K]/[S]" --> s2
-  s1 -- "[B] → [K]/[S]" --> s3
-  s2 -- "[*] → [K]/[R]" --> s1
-  s3 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u1
+  u1 -- "['*'] → [K]/[S]" --> u2
+  u1 -- "[B] → [K]/[S]" --> u3
+  u2 -- "[*] → [K]/[R]" --> u1
+  u3 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
-  class s1 tag_main
+  class u1 tag_main
 ```
 
-`s1` is `check`; on `'*'` it loops via `s2` (`right`); on blank it falls to `s3` (`mark`) → halt. Four nodes, one back-edge, zero subgraphs.
+`u1` is `check`; on `'*'` it loops via `u2` (`right`); on blank it falls to `u3` (`mark`) → halt. Four nodes, one back-edge, zero subgraphs.
 
 </details>
 
@@ -773,35 +881,35 @@ flowchart TD
 flowchart TD
 %% alphabets: [[" ","*"]]
   s0(((halt)))
-  s6["10~20"]
-  s8["20"]
-  s7[["walkToBlank::1(10~20)<br>main"]]
+  u1["10~20"]
+  u2["20"]
+  u3[["walkToBlank::1(10~20)<br>main"]]
   idle([idle])
   subgraph w_4["callable subtree of walkToBlank::1"]
-    s4["walkToBlank::1<br>walkToBlank"]
-    s5["walkToBlank::2"]
-    c4(((halt)))
+    u4["walkToBlank::1<br>walkToBlank"]
+    u5["walkToBlank::2"]
+    s0-4(((halt)))
   end
-  idle -. enter .-> s7
-  s7 == "call" ==> s4
-  w_4 -. "return" .-> s7
-  s7 --> s6
-  s4 -- "['*'] → [K]/[S]" --> s5
-  s4 -- "[B] → [K]/[S]" --> c4
-  s5 -- "[*] → [K]/[R]" --> s4
-  s6 -- "[*] → [K]/[S]" --> s8
-  s8 -- "[*] → ['*']/[S]" --> s0
+  idle -. enter .-> u3
+  u3 == "call" ==> u4
+  w_4 -. "return" .-> u3
+  u3 --> u1
+  u4 -- "['*'] → [K]/[S]" --> u5
+  u4 -- "[B] → [K]/[S]" --> s0-4
+  u5 -- "[*] → [K]/[R]" --> u4
+  u1 -- "[*] → [K]/[S]" --> u2
+  u2 -- "[*] → ['*']/[S]" --> s0
   classDef tag_main fill:#dbeafe,stroke:#1e40af
   classDef tag_walkToBlank fill:#ede9fe,stroke:#5b21b6
-  class s7 tag_main
-  class s4 tag_walkToBlank
+  class u3 tag_main
+  class u4 tag_walkToBlank
 ```
 
 The two extra nodes vs inline that drive `stateCount: 4 → 6`:
-- **`s7[["walkToBlank::1(10~20)"]]`** — the wrapper / call site, OUTSIDE the subgraph. Composite name `walkToBlank::1(10~20)` reflects that PostMachine drops the v6.x "hopper" anchor for acyclic subroutines with a plain first instruction (see [#85](https://github.com/mellonis/post-machine-js/issues/85)) — the wrapper wraps `walkToBlank::1` directly, saving one State.
-- **`s6["10~20"]`** — the continuation that PostMachine synthesizes between the `call('walkToBlank')` site at instruction `10` and the next top-level instruction `20`.
+- **`u3[["walkToBlank::1(10~20)"]]`** — the wrapper / call site, OUTSIDE the subgraph. Composite name `walkToBlank::1(10~20)` reflects that PostMachine drops the v6.x "hopper" anchor for acyclic subroutines with a plain first instruction (see [#85](https://github.com/mellonis/post-machine-js/issues/85)) — the wrapper wraps `walkToBlank::1` directly, saving one State.
+- **`u1["10~20"]`** — the continuation that PostMachine synthesizes between the `call('walkToBlank')` site at instruction `10` and the next top-level instruction `20`.
 
-The subroutine body (`s4`, `s5`) inside `subgraph w_4` mirrors `inline`'s `s1`, `s2` loop structurally — same algorithm, same internal back-edge. The extra cost is purely the wrapper + continuation machinery. `compositionEdgeCount: 0 → 1` and `maxCompositionDepth: 0 → 1` come from the single `withOverriddenHaltState` wrapper.
+The subroutine body (`u4`, `u5`) inside `subgraph w_4` mirrors `inline`'s `u1`, `u2` loop structurally — same algorithm, same internal back-edge. The extra cost is purely the wrapper + continuation machinery. `compositionEdgeCount: 0 → 1` and `maxCompositionDepth: 0 → 1` come from the single `withOverriddenHaltState` wrapper.
 
 (Subroutines with `1: stop`, a leading `call(...)`, a leading group `[...]`, or that participate in a call-graph cycle keep the hopper as a forward-declaration anchor. The common case — plain leading command — drops it.)
 
@@ -860,7 +968,7 @@ Returned States are the real engine States — `instanceof State`, usable with `
 
 ## Breakpoints
 
-Register pauses by instruction path or by `haltState`:
+Register pauses by instruction path, by `haltState`, or by `abortState`:
 
 ```javascript
 import { PostMachine, Tape, haltState, mark, right, check, stop } from '@post-machine-js/machine';
@@ -902,6 +1010,16 @@ pm.setBreakpoint(haltState, { before: true });       // pause at halt entry (fil
 
 > Engine [#207](https://github.com/mellonis/turing-machine-js/issues/207) collapsed `haltState.debug` to a `boolean` — halt has one meaningful pause moment. The `filter` shape passed to `pm.setBreakpoint(haltState, …)` is kept for API stability but is now decorative: any registered halt breakpoint enables the engine-level boolean, and the registry entry drives only the arrival-path filtering in the `debugRun()` session's pause filter. The pause fires on the AFTER side of the iter whose transition leads to halt.
 
+Abort breakpoints — same shape, the sibling sentinel:
+
+```javascript
+import { abortState } from '@post-machine-js/machine';
+
+pm.setBreakpoint(abortState, { before: true });      // pause before the abort-imminent iter (filter shape is decorative)
+```
+
+> `abortState.debug` (**v7.1**, engine [#239](https://github.com/mellonis/turing-machine-js/issues/239)) is the boolean sibling of `haltState.debug` — same shape, same decorative-filter caveat. A registered abort breakpoint pauses on the AFTER side of the iter whose transition targets `abortState`, right before the `debugRun()` session's terminal `abort` event fires (see [`debugRun()`](#postmachine)). This is a pause on the SENTINEL — pausing on the *abort instruction itself* (its own per-instruction `State`, e.g. path `'20'`) uses an ordinary instruction breakpoint (`pm.setBreakpoint('20', { before: true })`), no different from any other instruction; see [Author's extensions](#authors-extensions) for why `abort` gets its own named State in the first place.
+
 Management:
 
 ```javascript
@@ -936,6 +1054,16 @@ haltState.debug = { before: true };                  // throws: "haltState.debug
 ```
 
 Direct halt writes bypass PostMachine's registry — they enable the engine pause but `pm.listBreakpoints()` won't record them. Use `pm.setBreakpoint(haltState, …)` when arrival-path filtering or registry awareness matters; use the direct write for ad-hoc halt-pause toggling in tools that don't need the registry.
+
+`abortState` behaves identically — direct boolean writes pass straight through, object writes throw:
+
+```javascript
+abortState.debug = true;                             // ok — enables the abort breakpoint
+abortState.debug = false;                             // ok — disables
+abortState.debug = { before: true };                  // throws: boolean-only, same as haltState
+```
+
+Unlike `haltState`, `abortState` needs no explicit carve-out in PostMachine's lockdown-install loop (there's no `if (state.isAbort) continue;` anywhere) — it's structurally impossible for the sentinel to end up locked. An `abort` instruction's producer builds a NAMED per-instruction `State` whose one transition targets `abortState` (see [Author's extensions](#authors-extensions)); the `abortState` singleton itself never becomes a candidate path in any PostMachine instance, so it never enters `#stateToCandidatePaths` and the lockdown-install loop simply never sees it. `pm.setBreakpoint(abortState, …)` is still the registry-aware channel; the direct write is the same open, non-registry-tracked ad-hoc toggle `haltState.debug` is.
 
 This relaxed model preserves the single-channel invariant where it matters: `pm.listBreakpoints()` is still the source of truth for what the `debugRun()` session surfaces. The engine's pause itself is now an open channel — by design, since the halt-lockdown's "per-PostMachine routing" benefit was syntactic only (haltState is a process-global singleton).
 

@@ -1,5 +1,5 @@
 import {
-  haltState, ifOtherSymbol, movements, Reference, State, TapeBlock,
+  abortState, haltState, ifOtherSymbol, movements, Reference, State, TapeBlock,
 } from '@turing-machine-js/machine';
 
 type StateOrRef = State | Reference;
@@ -30,15 +30,29 @@ export type CommandStateProducer = (context: CommandContext) => State;
 // numbered instruction; calling with an explicit index jumps there.
 export type CommandConstructor = (nextInstructionIndex?: number | symbol) => CommandStateProducer;
 
+// Terminal command tokens. Commands with no parameterized form —
+// `stop` and `abort` — are exported as non-callable `unique symbol` tokens
+// (following the engine's `ifOtherSymbol` Symbol-sentinel precedent) rather
+// than functions with throw-on-call guards: the only legal form was always
+// bare (`10: stop`), and a token makes the illegal call unrepresentable
+// instead of guarded. Parameterized commands (`mark`, `erase`, `left`,
+// `right`, `noop`, `call`, `check`) remain functions.
+export const stop: unique symbol = Symbol('stop');
+export const abort: unique symbol = Symbol('abort');
+
+export type CommandToken = typeof stop | typeof abort;
+
 // The recursive type for what users pass to `new PostMachine(...)`.
-// Number-keyed values are commands or groups of commands; string-keyed values
-// are subroutines (themselves Instructions). The runtime validators decide
-// which key categories are valid where — TypeScript's index signature can't.
+// Number-keyed values are commands (functions or terminal tokens) or groups
+// of commands; string-keyed values are subroutines (themselves Instructions).
+// The runtime validators decide which key categories are valid where —
+// TypeScript's index signature can't.
 export type Instructions = {
   [key: string | number]:
     | CommandStateProducer
     | CommandConstructor
-    | Array<CommandStateProducer | CommandConstructor>
+    | CommandToken
+    | Array<CommandStateProducer | CommandConstructor | CommandToken>
     | Instructions;
 };
 
@@ -234,12 +248,48 @@ const markCommandStateProducer = makeUnaryCommandProducer(':markFn:', (ctx) => (
 const noopCommandStateProducer = makeUnaryCommandProducer(':noopFn:', null);
 const rightCommandStateProducer = makeUnaryCommandProducer(':rightFn:', () => ({ movement: movements.right }));
 
-function stopCommandStateProducer(this: null, { calledFromGroup }: CommandContext): State {
+// Producer behind the `stop` token. A single shared, stateless function —
+// tokens carry no per-instruction binding, so PostMachine's dispatch maps
+// the token to this producer directly (see the token-mapping switch in
+// PostMachine.#buildInitialState). The group prohibition lives HERE, in the
+// producer, not in the token: a group's continuation makes `stop` ambiguous.
+export function stopCommandStateProducer({ calledFromGroup }: CommandContext): State {
   if (calledFromGroup) {
     throw new Error('the \'stop\' command cannot be used in a group');
   }
 
   return haltState;
+}
+
+// Producer behind the `abort` token. Unlike `stop` (which resolves to
+// the engine's `haltState` singleton directly), `abort` produces a NAMED
+// per-instruction State whose single transition targets the engine's
+// `abortState` sentinel. The named intermediate is what gives the abort
+// instruction a Post-level identity: `result.state.name` reports the
+// instruction-derived name (e.g. `"20"`), the final iter's `arrivalPath` is
+// the aborting instruction's path (the Post-level backtrace), and the global
+// `abortState` singleton never enters PostMachine's per-instance path/lockdown
+// maps. The ONE deliberate divergence from `stop`'s semantics: NO group guard
+// — the continuation ambiguity that bans `stop` in groups doesn't exist for
+// `abort` (there is no continuation; the run ends).
+export function abortCommandStateProducer({
+  instructionIndex, states, instructionPrefix,
+}: CommandContext): State {
+  const hash = ':abortFn:';
+
+  if (states.has(hash)) {
+    return states.get(hash)!;
+  }
+
+  const state = new State({
+    [ifOtherSymbol]: {
+      nextState: abortState,
+    },
+  }, `${instructionPrefix}${instructionIndex}`);
+
+  states.set(hash, state);
+
+  return state;
 }
 
 // WeakMap from `call('foo')`-produced state-producers to the subroutine name
@@ -334,18 +384,6 @@ export function right(nextInstructionIndex?: number | symbol): (context: Command
   return actualCommand;
 }
 
-export function stop(nextInstructionIndex?: number | symbol): (context: CommandContext) => State {
-  if (arguments.length === 0 || (arguments.length >= 1 && nextInstructionIndex !== defaultNextInstructionIndex)) {
-    throw new Error('inappropriate \'stop\' command usage');
-  }
-
-  const actualCommand = stopCommandStateProducer.bind(null);
-
-  commandsSet.add(actualCommand as CommandFn);
-
-  return actualCommand;
-}
-
 commandsSet.add(call as CommandFn);
 commandsSet.add(check as CommandFn);
 commandsSet.add(erase as CommandFn);
@@ -353,7 +391,12 @@ commandsSet.add(left as CommandFn);
 commandsSet.add(mark as CommandFn);
 commandsSet.add(noop as CommandFn);
 commandsSet.add(right as CommandFn);
-commandsSet.add(stop as CommandFn);
+// The `stop` / `abort` tokens are symbols, not functions — they can't join
+// the WeakSet. Their shared producers register instead; the token-acceptance
+// sites (PostMachine's dispatch switch and group-member validation) compare
+// against the tokens by identity.
+commandsSet.add(stopCommandStateProducer as CommandFn);
+commandsSet.add(abortCommandStateProducer as CommandFn);
 
 /**
  * Inline `$tag` decorator (#86). Wraps a command (bare constructor like
@@ -394,6 +437,17 @@ export function $tag(...args: unknown[]): CommandStateProducer {
     );
   }
 
+  // Terminal command tokens: `stop` resolves to the global haltState
+  // singleton (tagging it would leak the tag into every machine's diagrams)
+  // and tokens carry no invokable producer surface for $tag's dispatch. Tag
+  // the instruction through the path registry after construction instead.
+  if (wrapped === stop || wrapped === abort) {
+    throw new Error(
+      '$tag() cannot wrap a terminal command token (stop / abort) — '
+      + 'use pm.tag(<path>, ...tags) to tag the instruction after construction.',
+    );
+  }
+
   if (typeof wrapped !== 'function') {
     throw new Error(
       `$tag() final argument must be a command, got ${typeof wrapped}`,
@@ -410,13 +464,13 @@ export function $tag(...args: unknown[]): CommandStateProducer {
   // Producers already in `commandsSet` (mark(20), call('foo'), check(20, 30),
   // $tag(...)) are invoked directly with context. `call`/`check` are excluded
   // — bare references throw at PostMachine's dispatch, so they can't reach
-  // here without first being bound by the caller.
+  // here without first being bound by the caller. `stop`/`abort` are tokens,
+  // rejected above.
   const isBareConstructor = wrappedFn === erase
     || wrappedFn === left
     || wrappedFn === mark
     || wrappedFn === noop
-    || wrappedFn === right
-    || wrappedFn === stop;
+    || wrappedFn === right;
 
   const taggedProducer: CommandStateProducer = (context) => {
     const producer: CommandStateProducer = isBareConstructor

@@ -23,13 +23,14 @@ export type {
 } from '@turing-machine-js/machine';
 export { alphabet, blankSymbol, markSymbol } from './consts';
 export {
-  $tag, call, check, erase, left, mark, noop, right, stop,
+  $tag, abort, call, check, erase, left, mark, noop, right, stop,
 } from './commands';
 export type {
   Instructions,
   CommandStateProducer,
   CommandConstructor,
   CommandContext,
+  CommandToken,
 } from './commands';
 export { PostMachine } from './classes/PostMachine';
 export type { PostMachineOptions } from './classes/PostMachine';
@@ -39,7 +40,8 @@ export {
 } from './wrappers';
 export { parsePath, formatPath, type Path } from './path';
 export type { Breakpoint, BreakpointFilter, BreakpointTarget } from './breakpoints';
-export { haltState } from '@turing-machine-js/machine';
+export { abortState, haltState } from '@turing-machine-js/machine';
+export type { RunResult } from '@turing-machine-js/machine';
 
 export type MachineState = EngineMachineState & {
   arrivalPath: Path;
