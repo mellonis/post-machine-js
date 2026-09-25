@@ -5,17 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - `npm run build` — TypeScript project-references build (`tsc --build tsconfig.build.json`) followed by `scripts/build-node-entries.mjs`, which uses Rollup to repackage `dist/index.js` into `index.mjs` (ESM) and `index.cjs` (CJS). The Rollup step marks `@turing-machine-js/machine` as `external`, so the upstream Turing-machine engine stays as a runtime dependency.
-- `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.ts`; tests are co-located with source at `packages/*/src/**/*.spec.ts` (per-file unit + integration tests next to the module under test, matching the upstream engine's convention) plus `test/**/*.spec.ts` (root cross-package tests like README examples). Vitest uses esbuild for TypeScript — no babel toolchain.
+- `npm test` — Vitest one-shot run (`vitest run`). Single root `vitest.config.mts`; tests are co-located with source at `packages/*/src/**/*.spec.ts` (per-file unit + integration tests next to the module under test, matching the upstream engine's convention) plus `test/**/*.spec.ts` (root cross-package tests like README examples). Vitest uses esbuild for TypeScript — no babel toolchain.
 - `npm run test:watch` — Vitest in watch mode (`vitest`).
-- `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.ts`: **100 / 100 / 100 / 100** (statements / branches / functions / lines) — pinned to current actuals as of v6.4.0. Any new code paths must be exercised by tests; if a real regression makes 100 untenable, relax intentionally rather than letting drift slip through silently.
-- `npm run lint` — ESLint (flat config, `typescript-eslint` recommended). `dist/` is ignored.
+- `npm run test:coverage` — `vitest run --coverage` using `@vitest/coverage-v8`. CI runs this and uploads `coverage/lcov.info` to Coveralls. Hard floors enforced in `vitest.config.mts`: **100 / 100 / 100 / 100** (statements / branches / functions / lines) — pinned to current actuals as of v6.4.0. Any new code paths must be exercised by tests; if a real regression makes 100 untenable, relax intentionally rather than letting drift slip through silently.
+- `npm run lint` — oxlint, configured in `.oxlintrc.json` (the `typescript` and `oxc` plugins, which cover what `typescript-eslint` recommended used to check). `dist/` and `coverage/` are ignored.
 - Run a single test: `npx vitest run packages/machine/src/classes/PostMachine.spec.ts -t "name"`.
 
 `npm` ≥ 7 is required (workspaces). Node 24 is what CI uses.
 
 ## Dependency notes
 
-- **`typescript` is held at `^6` on purpose — do not bump it to 7 yet.** `typescript-eslint` declares peer `typescript >=4.8.4 <6.1.0`, so the TS 7 native port breaks `npm run lint`. Re-attempt once a `typescript-eslint` release advertises TS 7 support.
+- **TypeScript is 7** (the native port). Linting is oxlint rather than ESLint, which is what made the move possible: `typescript-eslint` peers on `typescript <6.1.0`. The root tsconfig uses `moduleResolution: "bundler"`, since TS 7 removed `node10` (and `baseUrl`).
 - **`@types/node`'s major tracks the Node version CI runs on** (currently 24, the active LTS), not npm's latest — the types should describe the runtime the suite actually tests, not advertise APIs from a newer Node. When CI moves to a new Node line, bump the types major in the same change. Same policy across the sibling repos (turing-machine-js, machines-demo).
 
 ## Architecture
@@ -135,5 +135,5 @@ Previous v5/v6 engine changes still apply unchanged on v7 (note: `pm.run()`'s ow
 
 Source and specs always import the bare package names — `from '@post-machine-js/machine'` and `from '@turing-machine-js/machine'`. Two distinct resolution stories sit behind those specifiers:
 
-- **`@post-machine-js/machine`** (our own package). Vitest's `resolve.alias` in the single root `vitest.config.ts` intercepts the bare specifier and routes it to TypeScript source (`packages/machine/src`), so a change in source is picked up by tests with no rebuild step. After publishing, Node resolves the same specifier to `dist/index.{mjs,cjs}` via the package's `exports` field.
+- **`@post-machine-js/machine`** (our own package). Vitest's `resolve.alias` in the single root `vitest.config.mts` intercepts the bare specifier and routes it to TypeScript source (`packages/machine/src`), so a change in source is picked up by tests with no rebuild step. After publishing, Node resolves the same specifier to `dist/index.{mjs,cjs}` via the package's `exports` field.
 - **`@turing-machine-js/machine`** (the peer dep). No alias — vitest resolves the package's `exports` field correctly out of the installed `node_modules` copy. The upstream package ships only its bundled `dist/{index.mjs,index.cjs}`, so no `@turing-machine-js/machine/src/...` deep-import is possible (an old in-monorepo dev shim that pointed at the upstream's source has been retired). The previous Jest setup hand-mapped this specifier to `dist/index.cjs` because Jest's resolver was older; that hack was dropped during the v6 vitest migration.

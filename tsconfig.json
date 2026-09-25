@@ -5,9 +5,8 @@
     "module": "ES2020",
     "declaration": true,
     "strict": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
-    "ignoreDeprecations": "6.0",
     "types": ["vitest/globals", "node"]
   },
   "exclude": [
