@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit -p packages/machine/tsconfig.json"
   },
   "author": "Ruslan Gilmullin <mellonis@yandex.ru>",
@@ -20,13 +20,12 @@
   ],
   "devDependencies": {
     "@tsconfig/recommended": "^1.0.13",
-    "@types/node": "^24.13.3",
-    "@vitest/coverage-v8": "^4.1.9",
-    "eslint": "^10.6.0",
-    "rollup": "^4.62.2",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1",
-    "vitest": "^4.1.9"
+    "@types/node": "^24.13.6",
+    "@vitest/coverage-v8": "^5.0.2",
+    "oxlint": "^1.85.0",
+    "rollup": "^4.63.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
   },
   "dependencies": {
     "@turing-machine-js/machine": "^7.1.0"
